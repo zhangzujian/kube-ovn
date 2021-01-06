@@ -770,6 +770,8 @@ func (c *Controller) acquireAddress(pod *v1.Pod, podNet *kubeovnNet) (string, st
 		for _, staticIP := range ipPool {
 			if ip, mac, err := c.ipam.GetStaticAddress(key, staticIP, pod.Annotations[fmt.Sprintf(util.MacAddressAnnotationTemplate, provider)], subnet.Name); err == nil {
 				return ip, mac, nil
+			} else {
+				klog.Errorf("acquire address %s for %s failed, %v", staticIP, key, err)
 			}
 		}
 		return "", "", ipam.NoAvailableError
