@@ -2,6 +2,11 @@ package daemon
 
 import (
 	"fmt"
+	"net"
+	"os/exec"
+	"strings"
+	"time"
+
 	"github.com/Mellanox/sriovnet"
 	kubeovnv1 "github.com/alauda/kube-ovn/pkg/apis/kubeovn/v1"
 	"github.com/alauda/kube-ovn/pkg/ovs"
@@ -11,30 +16,27 @@ import (
 	goping "github.com/oilbeater/go-ping"
 	"github.com/vishvananda/netlink"
 	"k8s.io/klog"
-	"net"
-	"os/exec"
-	"strings"
-	"time"
 )
 
-func (csh cniServerHandler) configureNic(podName, podNamespace, netns, containerID, ifName, mac, ip, gateway, ingress, egress, vlanID, DeviceID string) error {
+//func (csh cniServerHandler) configureNic(podName, podNamespace, netns, containerID, ifName, mac, ip, gateway, ingress, egress, vlanID, DeviceID string) error {
+func (csh cniServerHandler) configureNic(podName, podNamespace, provider, netns, containerID, ifName, mac, ip, gateway, ingress, egress, vlanID, DeviceID string) error {
 	var err error
 	var hostNicName, containerNicName string
 	if DeviceID == "" {
-		hostNicName, containerNicName, err = setupVethPair(containerID, csh.Config.MTU)
+		hostNicName, containerNicName, err = setupVethPair(containerID, ifName, csh.Config.MTU)
 		if err != nil {
 			klog.Errorf("failed to create veth pair %v", err)
 			return err
 		}
 	} else {
-		hostNicName, containerNicName, err = setupSriovInterface(containerID, DeviceID, csh.Config.MTU)
+		hostNicName, containerNicName, err = setupSriovInterface(containerID, DeviceID, ifName, csh.Config.MTU)
 		if err != nil {
 			klog.Errorf("failed to create sriov interfaces %v", err)
 			return err
 		}
 	}
 
-	ifaceID := fmt.Sprintf("%s.%s", podName, podNamespace)
+	ifaceID := ovs.PodNameToPortName(podName, podNamespace, provider)
 	ovs.CleanDuplicatePort(ifaceID)
 	// Add veth pair host end to ovs port
 	output, err := ovs.Exec(ovs.MayExist, "add-port", "br-int", hostNicName, "--",
@@ -68,8 +70,8 @@ func (csh cniServerHandler) configureNic(podName, podNamespace, netns, container
 	return nil
 }
 
-func (csh cniServerHandler) deleteNic(podName, podNamespace, containerID, deviceID string) error {
-	hostNicName, _ := generateNicName(containerID)
+func (csh cniServerHandler) deleteNic(podName, podNamespace, containerID, deviceID, ifName string) error {
+	hostNicName, _ := generateNicName(containerID, ifName)
 	// Remove ovs port
 	output, err := ovs.Exec(ovs.IfExists, "--with-iface", "del-port", "br-int", hostNicName)
 	if err != nil {
@@ -96,8 +98,11 @@ func (csh cniServerHandler) deleteNic(podName, podNamespace, containerID, device
 	return nil
 }
 
-func generateNicName(containerID string) (string, string) {
-	return fmt.Sprintf("%s_h", containerID[0:12]), fmt.Sprintf("%s_c", containerID[0:12])
+func generateNicName(containerID, ifname string) (string, string) {
+	if ifname == "eth0" {
+		return fmt.Sprintf("%s_h", containerID[0:12]), fmt.Sprintf("%s_c", containerID[0:12])
+	}
+	return fmt.Sprintf("%s_%s_h", containerID[0:12-len(ifname)], ifname), fmt.Sprintf("%s_%s_c", containerID[0:12-len(ifname)], ifname)
 }
 
 func configureHostNic(nicName, vlanID string) error {
@@ -155,6 +160,11 @@ func configureContainerNic(nicName, ifName string, ipAddr, gateway string, macAd
 
 		if err = configureNic(ifName, ipAddr, macAddr, mtu); err != nil {
 			return err
+		}
+
+		if ifName != "eth0" {
+			// Only eth0 requires the default route and gateway
+			return nil
 		}
 
 		switch util.CheckProtocol(ipAddr) {
@@ -363,9 +373,9 @@ func configProviderNic(nicName string) error {
 	return err
 }
 
-func setupVethPair(containerID string, mtu int) (string, string, error) {
+func setupVethPair(containerID, ifName string, mtu int) (string, string, error) {
 	var err error
-	hostNicName, containerNicName := generateNicName(containerID)
+	hostNicName, containerNicName := generateNicName(containerID, ifName)
 	// Create a veth pair, put one end to container ,the other to ovs port
 	// NOTE: DO NOT use ovs internal type interface for container.
 	// Kubernetes will detect 'eth0' nic in pod, so the nic name in pod must be 'eth0'.
@@ -383,7 +393,7 @@ func setupVethPair(containerID string, mtu int) (string, string, error) {
 
 // Setup sriov interface in the pod
 // https://github.com/ovn-org/ovn-kubernetes/commit/6c96467d0d3e58cab05641293d1c1b75e5914795
-func setupSriovInterface(containerID, deviceID string, mtu int) (string, string, error) {
+func setupSriovInterface(containerID, deviceID, ifName string, mtu int) (string, string, error) {
 	// 1. get VF netdevice from PCI
 	vfNetdevices, err := sriovnet.GetNetDevicesFromPci(deviceID)
 	if err != nil {
@@ -420,7 +430,7 @@ func setupSriovInterface(containerID, deviceID string, mtu int) (string, string,
 	oldHostRepName := rep
 
 	// 5. rename the host VF representor
-	hostNicName, _ := generateNicName(containerID)
+	hostNicName, _ := generateNicName(containerID, ifName)
 	if err = renameLink(oldHostRepName, hostNicName); err != nil {
 		return "", "", fmt.Errorf("failed to rename %s to %s: %v", oldHostRepName, hostNicName, err)
 	}

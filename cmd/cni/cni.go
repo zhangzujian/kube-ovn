@@ -4,10 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/alauda/kube-ovn/pkg/util"
 	"net"
 	"runtime"
 	"strings"
+
+	"github.com/alauda/kube-ovn/pkg/util"
 
 	kubeovnv1 "github.com/alauda/kube-ovn/pkg/apis/kubeovn/v1"
 	"github.com/alauda/kube-ovn/pkg/request"
@@ -143,7 +144,7 @@ func loadNetConf(bytes []byte) (*netConf, string, error) {
 		return nil, "", fmt.Errorf("failed to load netconf: %v", err)
 	}
 
-	if n.IPAM != nil {
+	if n.Type != util.CniTypeName && n.IPAM != nil {
 		n.Provider = n.IPAM.Provider
 		n.ServerSocket = n.IPAM.ServerSocket
 	}

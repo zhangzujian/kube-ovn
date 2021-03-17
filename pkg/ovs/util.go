@@ -9,8 +9,11 @@ import (
 )
 
 // PodNameToPortName return the ovn port name for a given pod
-func PodNameToPortName(pod, namespace string) string {
-	return fmt.Sprintf("%s.%s", pod, namespace)
+func PodNameToPortName(pod, namespace, provider string) string {
+	if provider == util.OvnProvider {
+		return fmt.Sprintf("%s.%s", pod, namespace)
+	}
+	return fmt.Sprintf("%s.%s.%s", pod, namespace, provider)
 }
 
 func PodNameToLocalnetName(subnet string) string {
