@@ -494,12 +494,13 @@ func (c *Controller) handleDeletePod(key string) error {
 		}
 	}
 
-	podNets, err := c.getPodKubeovnNets(pod)
+	ports, err := c.getPodAttachPorts(name, namespace)
 	if err != nil {
+		klog.Errorf("failed to get attachPorts of pod '%s', %v", name, err)
 		return err
 	}
-	for _, podNet := range podNets {
-		portName := ovs.PodNameToPortName(name, namespace, podNet.ProviderName)
+	ports = append(ports, ovs.PodNameToPortName(name, namespace, util.OvnProvider))
+	for _, portName := range ports {
 		if err := c.ovnClient.DeleteLogicalSwitchPort(portName); err != nil {
 			klog.Errorf("failed to delete lsp %s, %v", portName, err)
 			return err
@@ -514,6 +515,41 @@ func (c *Controller) handleDeletePod(key string) error {
 
 	c.ipam.ReleaseAddressByPod(key)
 	return nil
+}
+
+func (c *Controller) getPodAttachPorts(pod, namespace string) (ports []string, err error) {
+	defaultPort := ovs.PodNameToPortName(pod, namespace, util.OvnProvider)
+	if c.ovnClient.IsLogicalSwitchPortExist(defaultPort) {
+		ports = append(ports, defaultPort)
+	}
+
+	allNs, err := c.namespacesLister.List(labels.Everything())
+	if err != nil {
+		return nil, err
+	}
+
+	for _, ns := range allNs {
+		attachNets, err := c.config.AttachNetClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions(ns.Name).List(metav1.ListOptions{})
+		if err != nil {
+			if k8serrors.IsForbidden(err) {
+				return ports, nil
+			} else {
+				klog.Errorf("failed to list attach-net-def, %v", err)
+				return nil, err
+			}
+		}
+		for _, attachNet := range attachNets.Items {
+			netCfg, err := loadNetConf([]byte(attachNet.Spec.Config))
+			if err != nil || netCfg.Type != util.CniTypeName {
+				continue
+			}
+			port := ovs.PodNameToPortName(pod, namespace, fmt.Sprintf("%s.%s.ovn", attachNet.Name, attachNet.Namespace))
+			if c.ovnClient.IsLogicalSwitchPortExist(port) {
+				ports = append(ports, port)
+			}
+		}
+	}
+	return ports, nil
 }
 
 func (c *Controller) handleUpdatePod(key string) error {
@@ -660,6 +696,11 @@ func (c *Controller) getPodDefaultSubnet(pod *v1.Pod) (*kubeovnv1.Subnet, error)
 		klog.Errorf("failed to get default subnet %v", err)
 		return nil, err
 	}
+
+	if pod.Annotations == nil {
+		return subnet, nil
+	}
+
 	subnets, err := c.subnetsLister.List(labels.Everything())
 	if err != nil {
 		klog.Errorf("failed to list subnets %v", err)
