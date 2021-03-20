@@ -48,6 +48,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 	client := request.NewCniServerClient(netConf.ServerSocket)
 
 	response, err := client.Add(request.CniRequest{
+		CniType:      netConf.Type,
 		PodName:      podName,
 		PodNamespace: podNamespace,
 		ContainerID:  args.ContainerID,
@@ -115,6 +116,7 @@ func cmdDel(args *skel.CmdArgs) error {
 	}
 
 	return client.Del(request.CniRequest{
+		CniType:      netConf.Type,
 		PodName:      podName,
 		PodNamespace: podNamespace,
 		ContainerID:  args.ContainerID,

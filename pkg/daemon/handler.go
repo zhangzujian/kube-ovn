@@ -199,8 +199,7 @@ func (csh cniServerHandler) handleDel(req *restful.Request, resp *restful.Respon
 	}
 
 	klog.Infof("delete port request %v", podRequest)
-	if strings.Contains(podRequest.Provider, util.OvnProvider) &&
-		pod.Annotations[fmt.Sprintf(util.LogicalSwitchAnnotationTemplate, podRequest.Provider)] != "" {
+	if podRequest.Provider == util.OvnProvider || podRequest.CniType == util.CniTypeName {
 		err = csh.deleteNic(podRequest.PodName, podRequest.PodNamespace, podRequest.ContainerID, podRequest.DeviceID, podRequest.IfName)
 		if err != nil {
 			errMsg := fmt.Errorf("del nic failed %v", err)
