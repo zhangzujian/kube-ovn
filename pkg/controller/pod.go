@@ -705,9 +705,10 @@ func (c *Controller) getPodDefaultSubnet(pod *v1.Pod) (*kubeovnv1.Subnet, error)
 }
 
 func (c *Controller) getPodAttachmentNet(pod *v1.Pod) ([]*kubeovnNet, error) {
-	podAttachNetworks := pod.Annotations[util.DefaultNetworkAnnotation]
-	if pod.Annotations[util.AttachmentNetworkAnnotation] != "" {
-		podAttachNetworks = podAttachNetworks + "," + pod.Annotations[util.AttachmentNetworkAnnotation]
+	podAttachNetworks := pod.Annotations[util.AttachmentNetworkAnnotation]
+	defaultAttachNetworks := pod.Annotations[util.DefaultNetworkAnnotation]
+	if defaultAttachNetworks != "" {
+		podAttachNetworks = podAttachNetworks + "," + defaultAttachNetworks
 	}
 
 	attachments, err := util.ParsePodNetworkAnnotation(podAttachNetworks, pod.Namespace)
