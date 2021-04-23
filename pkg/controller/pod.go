@@ -707,35 +707,33 @@ func (c *Controller) getPodDefaultSubnet(pod *v1.Pod) (*kubeovnv1.Subnet, error)
 	return subnet, nil
 }
 
-func (c *Controller) getPodAttachmentNet(pod *v1.Pod) ([]*kubeovnNet, error) {
-	var networkList []string
-
+func (c *Controller) getPodAttachmentNet(pod *v1.Pod) (nets []*kubeovnNet, err error) {
+	var multusNets []*multustypes.NetworkSelectionElement
 	defaultAttachNetworks := pod.Annotations[util.DefaultNetworkAnnotation]
 	if defaultAttachNetworks != "" {
-		networkList = append(networkList, defaultAttachNetworks)
+		attachments, err := util.ParsePodNetworkAnnotation(defaultAttachNetworks, pod.Namespace)
+		if err != nil {
+			return nil, err
+		}
+		multusNets = attachments
 	}
 
 	attachNetworks := pod.Annotations[util.AttachmentNetworkAnnotation]
 	if attachNetworks != "" {
-		networkList = append(networkList, attachNetworks)
+		attachments, err := util.ParsePodNetworkAnnotation(attachNetworks, pod.Namespace)
+		if err != nil {
+			return nil, err
+		}
+		multusNets = append(multusNets, attachments...)
 	}
 
-	wholeAttachNets := strings.Join(networkList, ",")
-	if wholeAttachNets == "" {
-		return nil, nil
-	}
-
-	attachments, err := util.ParsePodNetworkAnnotation(wholeAttachNets, pod.Namespace)
-	if err != nil {
-		return nil, err
-	}
 	subnets, err := c.subnetsLister.List(labels.Everything())
 	if err != nil {
 		return nil, err
 	}
 
-	result := make([]*kubeovnNet, 0, len(attachments))
-	for _, attach := range attachments {
+	result := make([]*kubeovnNet, 0, len(multusNets))
+	for _, attach := range multusNets {
 		networkClient := c.config.AttachNetClient.K8sCniCncfIoV1().NetworkAttachmentDefinitions(attach.Namespace)
 		network, err := networkClient.Get(attach.Name, metav1.GetOptions{})
 		if err != nil {
