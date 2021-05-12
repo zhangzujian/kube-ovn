@@ -28,6 +28,8 @@ const (
 	IpPoolAnnotationTemplate        = "%s.kubernetes.io/ip_pool"
 	LogicalSwitchAnnotationTemplate = "%s.kubernetes.io/logical_switch"
 	VlanIdAnnotationTemplate        = "%s.kubernetes.io/vlan_id"
+	IngressRateAnnotationTemplate   = "%s.ovn.kubernetes.io/ingress_rate"
+	EgressRateAnnotationTemplate    = "%s.ovn.kubernetes.io/egress_rate"
 
 	ExcludeIpsAnnotation = "ovn.kubernetes.io/exclude_ips"
 
