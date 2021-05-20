@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"os/exec"
+	"strings"
 	"time"
 
 	"k8s.io/client-go/kubernetes/scheme"
@@ -292,9 +293,18 @@ func (c *Controller) enqueuePod(old, new interface{}) {
 	oldPod := old.(*v1.Pod)
 	newPod := new.(*v1.Pod)
 
-	if oldPod.Annotations[util.IngressRateAnnotation] != newPod.Annotations[util.IngressRateAnnotation] ||
-		oldPod.Annotations[util.EgressRateAnnotation] != newPod.Annotations[util.EgressRateAnnotation] ||
-		oldPod.Annotations[util.VlanIdAnnotation] != newPod.Annotations[util.VlanIdAnnotation] {
+	trafficeRateChange := false
+	for k, _ := range newPod.Annotations {
+		if !strings.HasSuffix(k, util.IngressRateAnnotation) && !strings.HasSuffix(k, util.EgressRateAnnotation) {
+			continue
+		}
+		if oldPod.Annotations[k] != newPod.Annotations[k] {
+			trafficeRateChange = true
+			break
+		}
+	}
+
+	if trafficeRateChange || oldPod.Annotations[util.VlanIdAnnotation] != newPod.Annotations[util.VlanIdAnnotation] {
 		var key string
 		var err error
 		if key, err = cache.MetaNamespaceKeyFunc(new); err != nil {
@@ -364,7 +374,26 @@ func (c *Controller) handlePod(key string) error {
 		return err
 	}
 
-	return ovs.SetInterfaceBandwidth(fmt.Sprintf("%s.%s", pod.Name, pod.Namespace), pod.Annotations[util.EgressRateAnnotation], pod.Annotations[util.IngressRateAnnotation])
+	// set default nic bandwidth
+	ifaceID := ovs.PodNameToPortName(pod.Name, pod.Namespace, util.OvnProvider)
+	err = ovs.SetInterfaceBandwidth(pod.Name, pod.Namespace, ifaceID, pod.Annotations[util.EgressRateAnnotation], pod.Annotations[util.IngressRateAnnotation])
+	if err != nil {
+		return err
+	}
+
+	// set multis-nic bandwidth
+	attachNets, err := util.ParsePodNetworkAnnotation(pod.Annotations[util.AttachmentNetworkAnnotation], pod.Namespace)
+	for _, multiNet := range attachNets {
+		provider := fmt.Sprintf("%s.%s.ovn", multiNet.Name, multiNet.Namespace)
+		if pod.Annotations[fmt.Sprintf(util.AllocatedAnnotationTemplate, provider)] == "true" {
+			ifaceID = ovs.PodNameToPortName(pod.Name, pod.Namespace, provider)
+			err = ovs.SetInterfaceBandwidth(pod.Name, pod.Namespace, ifaceID, pod.Annotations[fmt.Sprintf(util.IngressRateAnnotationTemplate, provider)], pod.Annotations[fmt.Sprintf(util.EgressRateAnnotationTemplate, provider)])
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // Run starts controller
