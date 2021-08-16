@@ -1,5 +1,5 @@
 GOFILES_NOVENDOR = $(shell find . -type f -name '*.go' -not -path "./vendor/*")
-GO_VERSION = 1.15
+GO_VERSION = 1.16
 
 REGISTRY = kubeovn
 DEV_TAG = dev
@@ -213,20 +213,22 @@ ut:
 
 .PHONY: e2e
 e2e:
+	$(eval NODE_COUNT = $(shell kind get nodes --name kube-ovn | wc -l))
 	$(eval NETWORK_BRIDGE = $(shell docker inspect -f '{{json .NetworkSettings.Networks.bridge}}' kube-ovn-control-plane))
-	if [ '$(NETWORK_BRIDGE)' = 'null' ]; then \
+	@if [ '$(NETWORK_BRIDGE)' = 'null' ]; then \
 		kind get nodes --name kube-ovn | while read node; do \
 		docker network connect bridge $$node; \
 		done; \
 	fi
 
-	printf "package e2e\n\nvar nodeNetworks = map[string]string{\n" > test/e2e/network.go
-	kind get nodes --name kube-ovn | while read node; do \
-		printf "\t\`$$node\`: \`" >> test/e2e/network.go; \
-		docker inspect -f '{{json .NetworkSettings.Networks.bridge}}' $$node >> test/e2e/network.go; \
-		printf "\`,\n" >> test/e2e/network.go; \
+	@echo "{" > test/e2e/network.json
+	@i=0; kind get nodes --name kube-ovn | while read node; do \
+	    i=$$((i+1)); \
+		printf '"%s": ' "$$node" >> test/e2e/network.json; \
+		docker inspect -f "{{json .NetworkSettings.Networks.bridge}}" "$$node" >> test/e2e/network.json; \
+		if [ $$i -ne $(NODE_COUNT) ]; then echo "," >> test/e2e/network.json; fi; \
 	done
-	echo "}" >> test/e2e/network.go
+	@echo "}" >> test/e2e/network.json
 
 	docker pull kubeovn/pause:3.2
 	kind load docker-image --name kube-ovn kubeovn/pause:3.2
@@ -234,9 +236,7 @@ e2e:
 
 .PHONY: e2e-vlan-single-nic
 e2e-vlan-single-nic:
-	printf "package node\n\nvar networkJSON = []byte(\`" > test/e2e-vlan-single-nic/node/network.go
-	docker inspect -f '{{json .NetworkSettings.Networks.kind}}' kube-ovn-control-plane >> test/e2e-vlan-single-nic/node/network.go
-	echo "\`)" >> test/e2e-vlan-single-nic/node/network.go
+	docker inspect -f '{{json .NetworkSettings.Networks.kind}}' kube-ovn-control-plane > test/e2e-vlan-single-nic/node/network.json
 	ginkgo -mod=mod -progress -reportPassed --slowSpecThreshold=60 test/e2e-vlan-single-nic
 
 .PHONY: clean
