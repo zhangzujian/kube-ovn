@@ -6,19 +6,19 @@ import (
 	"os"
 	"time"
 
-	"github.com/kubeovn/kube-ovn/pkg/util"
-	"github.com/kubeovn/kube-ovn/test/e2e/framework"
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
+
+	"github.com/kubeovn/kube-ovn/pkg/util"
+	"github.com/kubeovn/kube-ovn/test/e2e/framework"
 )
 
-const (
-	TestImage = "kubeovn/pause:3.2"
-)
+const TestImage = "kubeovn/pause:3.2"
 
 var _ = Describe("[IP Allocation]", func() {
 	namespace := "static-ip"
