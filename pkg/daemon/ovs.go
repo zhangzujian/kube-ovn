@@ -24,6 +24,11 @@ import (
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
 
+const (
+	ovnBridgeMappings     = "ovn-bridge-mappings"
+	ovnChassisMacMappings = "ovn-chassis-mac-mappings"
+)
+
 func (csh cniServerHandler) configureNic(podName, podNamespace, provider, netns, containerID, vfDriver, ifName, mac string, mtu int, ip, gateway string, isDefaultRoute bool, routes []request.Route, ingress, egress, DeviceID, nicType, podNetns string, checkGw bool) error {
 	var err error
 	var hostNicName, containerNicName string
@@ -506,27 +511,12 @@ func configExternalBridge(provider, bridge, nic string) error {
 		}
 	}
 
-	if output, err = ovs.Exec(ovs.IfExists, "get", "open", ".", "external-ids:ovn-bridge-mappings"); err != nil {
-		return fmt.Errorf("failed to get ovn-bridge-mappings, %v", err)
-	}
-
-	bridgeMappings := fmt.Sprintf("%s:%s", provider, bridge)
-	if util.IsStringIn(bridgeMappings, strings.Split(output, ",")) {
-		return nil
-	}
-	if output != "" {
-		bridgeMappings = fmt.Sprintf("%s,%s", output, bridgeMappings)
-	}
-	if output, err = ovs.Exec("set", "open", ".", "external-ids:ovn-bridge-mappings="+bridgeMappings); err != nil {
-		return fmt.Errorf("failed to set ovn-bridge-mappings, %v: %q", err, output)
-	}
-
-	return nil
+	return setOvnMapping(ovnBridgeMappings, provider, bridge)
 }
 
 // Add host nic to external bridge
 // Mac address, MTU, IP addresses & routes will be copied/transferred to the external bridge
-func configProviderNic(nicName, brName string) (int, error) {
+func configProviderNic(nicName, brName, provider string) (int, error) {
 	nic, err := netlink.LinkByName(nicName)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get nic by name %s: %v", nicName, err)
@@ -534,6 +524,12 @@ func configProviderNic(nicName, brName string) (int, error) {
 	bridge, err := netlink.LinkByName(brName)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get bridge by name %s: %v", brName, err)
+	}
+
+	if provider != "" {
+		if err = setOvnMapping(ovnChassisMacMappings, provider, nic.Attrs().HardwareAddr.String()); err != nil {
+			return 0, err
+		}
 	}
 
 	sysctlDisableIPv6 := fmt.Sprintf("net.ipv6.conf.%s.disable_ipv6", brName)
@@ -965,5 +961,62 @@ func setVfMac(deviceID string, vfIndex int, mac string) error {
 	if err := netlink.LinkSetVfHardwareAddr(pfLink, vfIndex, macAddr); err != nil {
 		return fmt.Errorf("can not set mac address to vf nic:%s vf:%d %v", pfName, vfIndex, err)
 	}
+	return nil
+}
+
+func setOvnMapping(name, provider, value string) error {
+	output, err := ovs.Exec(ovs.IfExists, "get", "open", ".", "external-ids:"+name)
+	if err != nil {
+		return fmt.Errorf("failed to get %s, %v: %q", name, err, output)
+	}
+
+	var found bool
+	prefix := provider + ":"
+	value = prefix + value
+	mappings := strings.Split(output, ",")
+	for i := range mappings {
+		if strings.HasPrefix(mappings[i], prefix) {
+			if mappings[i] == value {
+				return nil
+			}
+
+			found = true
+			mappings[i] = value
+			break
+		}
+	}
+	if !found {
+		mappings = append(mappings, value)
+	}
+
+	if _, err = ovs.Exec("set", "open", ".", fmt.Sprintf("external-ids:%s=%s", name, strings.Join(mappings, ","))); err != nil {
+		return fmt.Errorf("failed to set %s, %v: %q", name, err, output)
+	}
+
+	return nil
+}
+
+func removeOvnMapping(name, provider string) error {
+	output, err := ovs.Exec(ovs.IfExists, "get", "open", ".", "external-ids:"+name)
+	if err != nil {
+		return fmt.Errorf("failed to get %s, %v: %q", name, err, output)
+	}
+
+	prefix := provider + ":"
+	mappings := strings.Split(output, ",")
+	for i := range mappings {
+		if strings.HasPrefix(mappings[i], prefix) {
+			if s := strings.Join(append(mappings[:i], mappings[i+1:]...), ","); s == "" {
+				output, err = ovs.Exec(ovs.IfExists, "remove", "open", ".", "external-ids", name)
+			} else {
+				output, err = ovs.Exec("set", "open", ".", fmt.Sprintf("external-ids:%s=%s", name, s))
+			}
+			if err != nil {
+				return fmt.Errorf("failed to set %s, %v: %q", name, err, output)
+			}
+			break
+		}
+	}
+
 	return nil
 }

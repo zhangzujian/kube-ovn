@@ -37,13 +37,17 @@ func InitOVSBridges() error {
 		}
 
 		if output != "" {
+			var provider string
+			if strings.HasPrefix(brName, "br-") {
+				provider = brName[3:]
+			}
 			for _, port := range strings.Split(output, "\n") {
 				ok, err := ovs.ValidatePortVendor(port)
 				if err != nil {
 					return fmt.Errorf("failed to check vendor of port %s: %v", port, err)
 				}
 				if ok {
-					if _, err = configProviderNic(port, brName); err != nil {
+					if _, err = configProviderNic(port, brName, provider); err != nil {
 						return err
 					}
 				}
@@ -108,7 +112,7 @@ func ovsInitProviderNetwork(provider, nic string) (int, error) {
 	}
 
 	// add host nic to the external bridge
-	mtu, err := configProviderNic(nic, brName)
+	mtu, err := configProviderNic(nic, brName, provider)
 	if err != nil {
 		errMsg := fmt.Errorf("failed to add nic %s to external bridge %s: %v", nic, brName, err)
 		klog.Error(errMsg)
@@ -119,6 +123,13 @@ func ovsInitProviderNetwork(provider, nic string) (int, error) {
 }
 
 func ovsCleanProviderNetwork(provider string) error {
+	if err := removeOvnMapping(ovnBridgeMappings, provider); err != nil {
+		return err
+	}
+	if err := removeOvnMapping(ovnChassisMacMappings, provider); err != nil {
+		return err
+	}
+
 	output, err := ovs.Exec("list-br")
 	if err != nil {
 		return fmt.Errorf("failed to list OVS bridge %v: %q", err, output)
@@ -127,31 +138,6 @@ func ovsCleanProviderNetwork(provider string) error {
 	brName := util.ExternalBridgeName(provider)
 	if !util.ContainsString(strings.Split(output, "\n"), brName) {
 		return nil
-	}
-
-	if output, err = ovs.Exec(ovs.IfExists, "get", "open", ".", "external-ids:ovn-bridge-mappings"); err != nil {
-		return fmt.Errorf("failed to get ovn-bridge-mappings, %v: %q", err, output)
-	}
-
-	mappings := strings.Split(output, ",")
-	brMap := fmt.Sprintf("%s:%s", provider, brName)
-
-	var idx int
-	for idx = range mappings {
-		if mappings[idx] == brMap {
-			break
-		}
-	}
-	if idx != len(mappings) {
-		mappings = append(mappings[:idx], mappings[idx+1:]...)
-		if len(mappings) == 0 {
-			output, err = ovs.Exec(ovs.IfExists, "remove", "open", ".", "external-ids", "ovn-bridge-mappings")
-		} else {
-			output, err = ovs.Exec("set", "open", ".", "external-ids:ovn-bridge-mappings="+strings.Join(mappings, ","))
-		}
-		if err != nil {
-			return fmt.Errorf("failed to set ovn-bridge-mappings, %v: %q", err, output)
-		}
 	}
 
 	// get host nic
