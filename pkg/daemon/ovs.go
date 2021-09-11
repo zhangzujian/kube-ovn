@@ -986,7 +986,11 @@ func setOvnMapping(name, provider, value string) error {
 		}
 	}
 	if !found {
-		mappings = append(mappings, value)
+		if len(mappings) == 1 && mappings[0] == "" {
+			mappings[0] = value
+		} else {
+			mappings = append(mappings, value)
+		}
 	}
 
 	if _, err = ovs.Exec("set", "open", ".", fmt.Sprintf("external-ids:%s=%s", name, strings.Join(mappings, ","))); err != nil {
