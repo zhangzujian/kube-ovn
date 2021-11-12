@@ -23,12 +23,13 @@ import (
 )
 
 const (
-	ServiceSet   = "services"
-	SubnetSet    = "subnets"
-	SubnetNatSet = "subnets-nat"
-	LocalPodSet  = "local-pod-ip-nat"
-	OtherNodeSet = "other-node"
-	IPSetPrefix  = "ovn"
+	ServiceSet        = "services"
+	SubnetSet         = "subnets"
+	UnderlaySubnetSet = "underlay-subnets"
+	SubnetNatSet      = "subnets-nat"
+	LocalPodSet       = "local-pod-ip-nat"
+	OtherNodeSet      = "other-node"
+	IPSetPrefix       = "ovn"
 )
 
 type policyRouteMeta struct {
@@ -85,6 +86,11 @@ func (c *Controller) setIPSet() error {
 			klog.Errorf("get subnets failed, %+v", err)
 			return err
 		}
+		underlaySubnets, err := c.getUnderlaySubnetsCIDR(protocol)
+		if err != nil {
+			klog.Errorf("get subnets failed, %+v", err)
+			return err
+		}
 		localPodIPs, err := c.getLocalPodIPsNeedNAT(protocol)
 		if err != nil {
 			klog.Errorf("get local pod ips failed, %+v", err)
@@ -110,6 +116,11 @@ func (c *Controller) setIPSet() error {
 			SetID:   SubnetSet,
 			Type:    ipsets.IPSetTypeHashNet,
 		}, subnets)
+		c.ipsets[protocol].AddOrReplaceIPSet(ipsets.IPSetMetadata{
+			MaxSize: 1048576,
+			SetID:   UnderlaySubnetSet,
+			Type:    ipsets.IPSetTypeHashNet,
+		}, underlaySubnets)
 		c.ipsets[protocol].AddOrReplaceIPSet(ipsets.IPSetMetadata{
 			MaxSize: 1048576,
 			SetID:   LocalPodSet,
@@ -421,14 +432,14 @@ func (c *Controller) setIptables() error {
 
 	var (
 		v4Rules = []util.IPTableRule{
+			// traffic from underlay to underlay via node port
+			{Table: "nat", Chain: "POSTROUTING", Rule: strings.Fields(`-m set --match-set ovn40underlay-subnets src -m set --match-set ovn40underlay-subnets dst -m mark --mark 0x4000/0x4000 -j MASQUERADE`)},
 			// do not nat route traffic
 			{Table: "nat", Chain: "POSTROUTING", Rule: strings.Fields(`-m set ! --match-set ovn40subnets src -m set ! --match-set ovn40other-node src -m set --match-set ovn40local-pod-ip-nat dst -j RETURN`)},
 			{Table: "nat", Chain: "POSTROUTING", Rule: strings.Fields(`-m set ! --match-set ovn40subnets src -m set ! --match-set ovn40other-node src -m set --match-set ovn40subnets-nat dst -j RETURN`)},
-
 			// nat outgoing
 			{Table: "nat", Chain: "POSTROUTING", Rule: strings.Fields(`-m set --match-set ovn40subnets-nat src -m set ! --match-set ovn40subnets dst -j MASQUERADE`)},
 			{Table: "nat", Chain: "POSTROUTING", Rule: strings.Fields(`-m set --match-set ovn40local-pod-ip-nat src -m set ! --match-set ovn40subnets dst -j MASQUERADE`)},
-
 			// external traffic to overlay pod or to service
 			// {Table: "nat", Chain: "POSTROUTING", Rule: strings.Fields(fmt.Sprintf(`! -s %s -m set --match-set ovn40subnets dst -j MASQUERADE`, nodeIPv4))},
 			// masq traffic from overlay pod to service
@@ -449,10 +460,11 @@ func (c *Controller) setIptables() error {
 			{Table: "filter", Chain: "OUTPUT", Rule: strings.Fields(`-p udp -m udp --dport 6081 -j MARK --set-xmark 0x0`)},
 		}
 		v6Rules = []util.IPTableRule{
+			// traffic from underlay to underlay via node port
+			{Table: "nat", Chain: "POSTROUTING", Rule: strings.Fields(`-m set --match-set ovn60underlay-subnets src -m set --match-set ovn60underlay-subnets dst -m mark --mark 0x4000/0x4000 -j MASQUERADE`)},
 			// do not nat route traffic
 			{Table: "nat", Chain: "POSTROUTING", Rule: strings.Fields(`-m set ! --match-set ovn60subnets src -m set ! --match-set ovn60other-node src -m set --match-set ovn60local-pod-ip-nat dst -j RETURN`)},
 			{Table: "nat", Chain: "POSTROUTING", Rule: strings.Fields(`-m set ! --match-set ovn60subnets src -m set ! --match-set ovn60other-node src -m set --match-set ovn60subnets-nat dst -j RETURN`)},
-
 			// nat outgoing
 			{Table: "nat", Chain: "POSTROUTING", Rule: strings.Fields(`-m set --match-set ovn60subnets-nat src -m set ! --match-set ovn60subnets dst -j MASQUERADE`)},
 			{Table: "nat", Chain: "POSTROUTING", Rule: strings.Fields(`-m set --match-set ovn60local-pod-ip-nat src -m set ! --match-set ovn60subnets dst -j MASQUERADE`)},
@@ -508,9 +520,9 @@ func (c *Controller) setIptables() error {
 			abandonedRules = append(abandonedRules, util.IPTableRule{Table: "nat", Chain: "POSTROUTING", Rule: strings.Fields(fmt.Sprintf(`-o ovn0 ! -s %s -m mark --mark 0x4000/0x4000 -j MASQUERADE`, nodeIP))})
 
 			rules := make([]util.IPTableRule, len(iptablesRules)+1)
-			copy(rules[:2], iptablesRules[:2])
-			rules[2] = util.IPTableRule{Table: "nat", Chain: "POSTROUTING", Rule: strings.Fields(fmt.Sprintf(`! -s %s -m set --match-set %s dst -j MASQUERADE`, nodeIP, matchset))}
-			copy(rules[3:], iptablesRules[2:])
+			copy(rules[:4], iptablesRules[:4])
+			rules[4] = util.IPTableRule{Table: "nat", Chain: "POSTROUTING", Rule: strings.Fields(fmt.Sprintf(`! -s %s -m set --match-set %s dst -j MASQUERADE`, nodeIP, matchset))}
+			copy(rules[5:], iptablesRules[4:])
 			iptablesRules = rules
 		}
 
@@ -895,6 +907,23 @@ func (c *Controller) getOverlaySubnetsCIDR(protocol string) ([]string, error) {
 	}
 	for _, subnet := range subnets {
 		if subnet.Spec.Vpc == util.DefaultVpc && subnet.Spec.Vlan == "" {
+			cidrBlock := getCidrByProtocol(subnet.Spec.CIDRBlock, protocol)
+			ret = append(ret, cidrBlock)
+		}
+	}
+	return ret, nil
+}
+
+func (c *Controller) getUnderlaySubnetsCIDR(protocol string) ([]string, error) {
+	subnets, err := c.subnetsLister.List(labels.Everything())
+	if err != nil {
+		klog.Error("failed to list subnets")
+		return nil, err
+	}
+
+	ret := make([]string, 0, len(subnets))
+	for _, subnet := range subnets {
+		if subnet.Spec.Vlan != "" {
 			cidrBlock := getCidrByProtocol(subnet.Spec.CIDRBlock, protocol)
 			ret = append(ret, cidrBlock)
 		}
