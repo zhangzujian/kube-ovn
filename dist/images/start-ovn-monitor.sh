@@ -12,10 +12,10 @@ function gen_conn_str {
   echo "$x"
 }
 
-if [[ "$ENABLE_SSL" == "false" ]]; then
-  export OVN_NB_DAEMON=$(ovn-nbctl --db="$(gen_conn_str 6641)" --pidfile --detach --overwrite-pidfile)
-else
-  export OVN_NB_DAEMON=$(ovn-nbctl -p /var/run/tls/key -c /var/run/tls/cert -C /var/run/tls/cacert --db="$(gen_conn_str 6641)" --pidfile --detach --overwrite-pidfile)
-fi
+# if [[ "$ENABLE_SSL" == "false" ]]; then
+#   export OVN_NB_DAEMON=$(ovn-nbctl --db="$(gen_conn_str 6641)" --pidfile --detach --overwrite-pidfile)
+# else
+#   export OVN_NB_DAEMON=$(ovn-nbctl -p /var/run/tls/key -c /var/run/tls/cert -C /var/run/tls/cacert --db="$(gen_conn_str 6641)" --pidfile --detach --overwrite-pidfile)
+# fi
 
 exec ./kube-ovn-monitor $@

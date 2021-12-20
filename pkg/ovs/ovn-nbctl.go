@@ -1576,7 +1576,7 @@ func StartOvnNbctlDaemon(ovnNbAddr string) error {
 		return err
 	}
 	command := []string{
-		fmt.Sprintf("--db=%s", ovnNbAddr),
+		// fmt.Sprintf("--db=%s", ovnNbAddr),
 		"--pidfile",
 		"--detach",
 		"--overwrite-pidfile",

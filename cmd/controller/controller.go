@@ -3,7 +3,6 @@ package controller
 import (
 	"context"
 	"fmt"
-	"github.com/kubeovn/kube-ovn/pkg/util"
 	"net/http"
 	_ "net/http/pprof" // #nosec
 	"os"
@@ -17,6 +16,7 @@ import (
 
 	"github.com/kubeovn/kube-ovn/pkg/controller"
 	"github.com/kubeovn/kube-ovn/pkg/ovs"
+	"github.com/kubeovn/kube-ovn/pkg/util"
 	"github.com/kubeovn/kube-ovn/versions"
 )
 
@@ -38,7 +38,7 @@ func CmdMain() {
 		klog.Fatalf("failed to check permission %v", err)
 	}
 
-	go loopOvnNbctlDaemon(config)
+	// go loopOvnNbctlDaemon(config)
 	go func() {
 		http.Handle("/metrics", promhttp.Handler())
 		klog.Fatal(http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d", config.PprofPort), nil))
