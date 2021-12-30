@@ -2734,16 +2734,28 @@ diagnose(){
         nodeName=$(kubectl get pod "$pinger" -n "$KUBE_OVN_NS" -o jsonpath={.spec.nodeName})
         echo "### start to diagnose node $nodeName"
         echo "#### ovn-controller log:"
-        kubectl exec -n $KUBE_OVN_NS "$pinger" -- tail /var/log/ovn/ovn-controller.log
+        if ! kubectl exec -n $KUBE_OVN_NS "$pinger" -- tail /var/log/ovn/ovn-controller.log; then
+          kubectl -n $KUBE_OVN_NS get pod -o wide -l app=kube-ovn-pinger
+          kubectl -n $KUBE_OVN_NS describe pod "$pinger"
+          kubectl -n $KUBE_OVN_NS logs "$pinger"
+        fi
         echo ""
         echo "#### ovs-vswitchd log:"
-        kubectl exec -n $KUBE_OVN_NS "$pinger" -- tail /var/log/openvswitch/ovs-vswitchd.log
+        if ! kubectl exec -n $KUBE_OVN_NS "$pinger" -- tail /var/log/openvswitch/ovs-vswitchd.log; then
+          kubectl -n $KUBE_OVN_NS get pod -o wide -l app=kube-ovn-pinger
+          kubectl -n $KUBE_OVN_NS describe pod "$pinger"
+          kubectl -n $KUBE_OVN_NS logs "$pinger"
+        fi
         echo ""
         echo "#### ovs-vsctl show results:"
         kubectl exec -n $KUBE_OVN_NS "$pinger" -- ovs-vsctl show
         echo ""
         echo "#### pinger diagnose results:"
-        kubectl exec -n $KUBE_OVN_NS "$pinger" -- /kube-ovn/kube-ovn-pinger --mode=job
+        if ! kubectl exec -n $KUBE_OVN_NS "$pinger" -- /kube-ovn/kube-ovn-pinger --mode=job; then
+          kubectl -n $KUBE_OVN_NS get pod -o wide -l app=kube-ovn-pinger
+          kubectl -n $KUBE_OVN_NS describe pod "$pinger"
+          kubectl -n $KUBE_OVN_NS logs "$pinger"
+        fi
         echo "### finish diagnose node $nodeName"
         echo ""
       done
