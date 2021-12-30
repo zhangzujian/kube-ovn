@@ -1825,7 +1825,7 @@ fi
 
 kubectl apply -f kube-ovn-crd.yaml
 kubectl apply -f ovn.yaml
-kubectl rollout status deployment/ovn-central -n kube-system
+kubectl rollout status deployment/ovn-central -n kube-system --timeout 300s
 echo "-------------------------------"
 echo ""
 
@@ -2962,8 +2962,8 @@ if ! sh -c "echo \":$PATH:\" | grep -q \":/usr/local/bin:\""; then
 fi
 
 echo "[Step 6/6] Run network diagnose"
+kubectl rollout status ds/kube-ovn-pinger -n kube-system --timeout 300s
 kubectl ko diagnose all
-
 
 echo "-------------------------------"
 echo "
