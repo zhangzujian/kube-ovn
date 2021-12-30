@@ -2413,8 +2413,8 @@ spec:
 EOF
 
 kubectl apply -f kube-ovn.yaml
-kubectl rollout status deployment/kube-ovn-controller -n kube-system
-kubectl rollout status daemonset/kube-ovn-cni -n kube-system
+kubectl rollout status deployment/kube-ovn-controller -n kube-system --timeout 300s
+kubectl rollout status daemonset/kube-ovn-cni -n kube-system --timeout 300s
 echo "-------------------------------"
 echo ""
 
@@ -2425,8 +2425,9 @@ for ns in $(kubectl get ns --no-headers -o  custom-columns=NAME:.metadata.name);
   done
 done
 
-kubectl rollout status daemonset/kube-ovn-pinger -n kube-system
-kubectl rollout status deployment/coredns -n kube-system
+sleep 5
+kubectl rollout status daemonset/kube-ovn-pinger -n kube-system --timeout 300s
+kubectl rollout status deployment/coredns -n kube-system --timeout 300s
 echo "-------------------------------"
 echo ""
 
@@ -2962,7 +2963,6 @@ if ! sh -c "echo \":$PATH:\" | grep -q \":/usr/local/bin:\""; then
 fi
 
 echo "[Step 6/6] Run network diagnose"
-kubectl rollout status ds/kube-ovn-pinger -n kube-system --timeout 300s
 kubectl ko diagnose all
 
 echo "-------------------------------"
