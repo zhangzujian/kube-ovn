@@ -1,6 +1,6 @@
 GO_VERSION = 1.16
 
-REGISTRY = kubeovn
+REGISTRY = zhangzujian
 DEV_TAG = dev
 RELEASE_TAG = $(shell cat VERSION)
 COMMIT = git-$(shell git rev-parse --short HEAD)

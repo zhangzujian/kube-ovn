@@ -65,12 +65,12 @@ jobs:
         run: |
           TAG=$(cat VERSION)
           echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-          docker tag kubeovn/kube-ovn:$TAG kubeovn/kube-ovn:$TAG-arm
-          docker tag kubeovn/kube-ovn:$TAG kubeovn/kube-ovn-dev:$COMMIT-arm
-          docker tag kubeovn/kube-ovn:$TAG kubeovn/vpc-nat-gateway:$TAG-arm
-          docker tag kubeovn/kube-ovn:$TAG kubeovn/vpc-nat-gateway-dev:$COMMIT-arm
+          docker tag zhangzujian/kube-ovn:$TAG zhangzujian/kube-ovn:$TAG-arm
+          docker tag zhangzujian/kube-ovn:$TAG zhangzujian/kube-ovn-dev:$COMMIT-arm
+          docker tag zhangzujian/kube-ovn:$TAG zhangzujian/vpc-nat-gateway:$TAG-arm
+          docker tag zhangzujian/kube-ovn:$TAG zhangzujian/vpc-nat-gateway-dev:$COMMIT-arm
           docker images
-          docker push kubeovn/kube-ovn:$TAG-arm
-          docker push kubeovn/kube-ovn-dev:$COMMIT-arm
-          docker push kubeovn/vpc-nat-gateway:$TAG-arm
-          docker push kubeovn/vpc-nat-gateway-dev:$COMMIT-arm
+          docker push zhangzujian/kube-ovn:$TAG-arm
+          docker push zhangzujian/kube-ovn-dev:$COMMIT-arm
+          docker push zhangzujian/vpc-nat-gateway:$TAG-arm
+          docker push zhangzujian/vpc-nat-gateway-dev:$COMMIT-arm

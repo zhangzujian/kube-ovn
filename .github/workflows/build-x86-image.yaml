@@ -278,12 +278,12 @@ jobs:
             kubectl get no --no-headers | awk "{print \$1}" | while read node; do
               docker inspect $node -f "{{.NetworkSettings.Networks.kind.IPAddress}}"
             done | while read ip; do
-              docker run --rm --network kind kubeovn/kube-ovn:$(cat VERSION) ping -c1 -w1 $ip
+              docker run --rm --network kind zhangzujian/kube-ovn:$(cat VERSION) ping -c1 -w1 $ip
             done
             kubectl get no --no-headers | awk "{print \$1}" | while read node; do
               docker inspect $node -f "{{.NetworkSettings.Networks.kind.GlobalIPv6Address}}"
             done | while read ip; do
-              docker run --rm --network kind kubeovn/kube-ovn:$(cat VERSION) ping6 -c1 -w1 $ip
+              docker run --rm --network kind zhangzujian/kube-ovn:$(cat VERSION) ping6 -c1 -w1 $ip
             done
           '
 
@@ -533,12 +533,12 @@ jobs:
             kubectl get no --no-headers | awk "{print \$1}" | while read node; do
               docker inspect $node -f "{{.NetworkSettings.Networks.kind.IPAddress}}"
             done | while read ip; do
-              docker run --rm --network kind kubeovn/kube-ovn:$(cat VERSION) ping -c1 -w1 $ip
+              docker run --rm --network kind zhangzujian/kube-ovn:$(cat VERSION) ping -c1 -w1 $ip
             done
             kubectl get no --no-headers | awk "{print \$1}" | while read node; do
               docker inspect $node -f "{{.NetworkSettings.Networks.kind.GlobalIPv6Address}}"
             done | while read ip; do
-              docker run --rm --network kind kubeovn/kube-ovn:$(cat VERSION) ping6 -c1 -w1 $ip
+              docker run --rm --network kind zhangzujian/kube-ovn:$(cat VERSION) ping6 -c1 -w1 $ip
             done
           '
 
@@ -655,12 +655,12 @@ jobs:
             kubectl get no --no-headers | awk "{print \$1}" | while read node; do
               docker inspect $node -f "{{.NetworkSettings.Networks.kind.IPAddress}}"
             done | while read ip; do
-              docker run --rm --network kind kubeovn/kube-ovn:$(cat VERSION) ping -c1 -w1 $ip
+              docker run --rm --network kind zhangzujian/kube-ovn:$(cat VERSION) ping -c1 -w1 $ip
             done
             kubectl get no --no-headers | awk "{print \$1}" | while read node; do
               docker inspect $node -f "{{.NetworkSettings.Networks.kind.GlobalIPv6Address}}"
             done | while read ip; do
-              docker run --rm --network kind kubeovn/kube-ovn:$(cat VERSION) ping6 -c1 -w1 $ip
+              docker run --rm --network kind zhangzujian/kube-ovn:$(cat VERSION) ping6 -c1 -w1 $ip
             done
           '
 
@@ -724,12 +724,12 @@ jobs:
             kubectl get no --no-headers | awk "{print \$1}" | while read node; do
               docker inspect $node -f "{{.NetworkSettings.Networks.kind.IPAddress}}"
             done | while read ip; do
-              docker run --rm --network kind kubeovn/kube-ovn:$(cat VERSION) ping -c1 -w1 $ip
+              docker run --rm --network kind zhangzujian/kube-ovn:$(cat VERSION) ping -c1 -w1 $ip
             done
             kubectl get no --no-headers | awk "{print \$1}" | while read node; do
               docker inspect $node -f "{{.NetworkSettings.Networks.kind.GlobalIPv6Address}}"
             done | while read ip; do
-              docker run --rm --network kind kubeovn/kube-ovn:$(cat VERSION) ping6 -c1 -w1 $ip
+              docker run --rm --network kind zhangzujian/kube-ovn:$(cat VERSION) ping6 -c1 -w1 $ip
             done
           '
 
@@ -1054,12 +1054,12 @@ jobs:
           cat VERSION
           TAG=$(cat VERSION)
           echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-          docker tag kubeovn/kube-ovn:$TAG kubeovn/kube-ovn-dev:$COMMIT-x86
-          docker tag kubeovn/kube-ovn:$TAG kubeovn/kube-ovn:$TAG-x86
-          docker tag kubeovn/vpc-nat-gateway:$TAG kubeovn/vpc-nat-gateway-dev:$COMMIT-x86
-          docker tag kubeovn/vpc-nat-gateway:$TAG kubeovn/vpc-nat-gateway:$TAG-x86
+          docker tag zhangzujian/kube-ovn:$TAG zhangzujian/kube-ovn-dev:$COMMIT-x86
+          docker tag zhangzujian/kube-ovn:$TAG zhangzujian/kube-ovn:$TAG-x86
+          docker tag zhangzujian/vpc-nat-gateway:$TAG zhangzujian/vpc-nat-gateway-dev:$COMMIT-x86
+          docker tag zhangzujian/vpc-nat-gateway:$TAG zhangzujian/vpc-nat-gateway:$TAG-x86
           docker images
-          docker push kubeovn/kube-ovn:$TAG-x86
-          docker push kubeovn/kube-ovn-dev:$COMMIT-x86
-          docker push kubeovn/vpc-nat-gateway:$TAG-x86
-          docker push kubeovn/vpc-nat-gateway-dev:$COMMIT-x86
+          docker push zhangzujian/kube-ovn:$TAG-x86
+          docker push zhangzujian/kube-ovn-dev:$COMMIT-x86
+          docker push zhangzujian/vpc-nat-gateway:$TAG-x86
+          docker push zhangzujian/vpc-nat-gateway-dev:$COMMIT-x86
