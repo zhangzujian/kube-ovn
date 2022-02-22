@@ -89,10 +89,11 @@ func (c *Controller) handleUpdateProviderNetwork(key string) error {
 	}
 
 	if pn.Status.Ready != ready {
-		patchPayload := []byte(fmt.Sprintf(`[{ "op": "replace", "path": "/status/ready", "value": %t }]`, ready))
-		_, err = c.config.KubeOvnClient.KubeovnV1().ProviderNetworks().Patch(context.Background(), pn.Name, types.JSONPatchType, patchPayload, metav1.PatchOptions{})
+		newPn := pn.DeepCopy()
+		newPn.Status.Ready = ready
+		_, err = c.config.KubeOvnClient.KubeovnV1().ProviderNetworks().Update(context.Background(), newPn, metav1.UpdateOptions{})
 		if err != nil {
-			klog.Errorf("failed to patch provider network %s: %v", pn.Name, err)
+			klog.Errorf("failed to update status of provider network %s: %v", pn.Name, err)
 			return err
 		}
 	}
