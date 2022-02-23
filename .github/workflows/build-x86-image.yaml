@@ -270,7 +270,7 @@ jobs:
         run: |
           sh -c 'while :; do if [ $(kubectl get --no-headers subnet | wc -l) -eq 2 ]; then break; fi; sleep 5; done'
           sh dist/images/cleanup.sh
-      
+
       - name: Check Node Network
         run: |
           sh -c '
