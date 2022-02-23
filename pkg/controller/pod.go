@@ -570,7 +570,30 @@ func (c *Controller) handleDeletePod(pod *v1.Pod) error {
 
 	p, _ := c.podsLister.Pods(pod.Namespace).Get(pod.Name)
 	if p != nil && p.UID != pod.UID {
-		// Pod with same name exists, just return here
+		// Pod with same name exists, check OVN static route
+		if pod.Spec.NodeName == "" || pod.Spec.NodeName == p.Spec.NodeName {
+			return nil
+		}
+
+		addresses := c.ipam.GetPodAddress(key)
+		for _, address := range addresses {
+			if strings.TrimSpace(address.Ip) == "" {
+				continue
+			}
+
+			subnet, err := c.subnetsLister.Get(address.Subnet.Name)
+			if err != nil {
+				return err
+			}
+			vpc, err := c.vpcsLister.Get(subnet.Spec.Vpc)
+			if err != nil {
+				return err
+			}
+			if err := c.ovnClient.DeleteStaticRoute(address.Ip, vpc.Status.Router); err != nil {
+				return err
+			}
+		}
+
 		return nil
 	}
 
