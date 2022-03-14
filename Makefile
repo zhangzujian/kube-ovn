@@ -8,6 +8,9 @@ COMMIT = git-$(shell git rev-parse --short HEAD)
 DATE = $(shell date +"%Y-%m-%d_%H:%M:%S")
 GOLDFLAGS = "-w -s -extldflags '-z now' -X github.com/kubeovn/kube-ovn/versions.COMMIT=$(COMMIT) -X github.com/kubeovn/kube-ovn/versions.VERSION=$(RELEASE_TAG) -X github.com/kubeovn/kube-ovn/versions.BUILDDATE=$(DATE)"
 
+MULTUS_IMAGE = ghcr.io/k8snetworkplumbingwg/multus-cni:stable
+MULTUS_YAML = https://raw.githubusercontent.com/k8snetworkplumbingwg/multus-cni/master/deployments/multus-daemonset.yml
+
 # ARCH could be amd64,arm64
 ARCH = amd64
 
@@ -272,6 +275,16 @@ kind-install-underlay-logical-gateway-dual:
 	fi
 	ENABLE_SSL=true DUAL_STACK=true ENABLE_VLAN=true VLAN_NIC=eth0 LOGICAL_GATEWAY=true bash install-underlay.sh
 
+.PHONY: kind-install-multus
+kind-install-multus:
+	docker pull "$(MULTUS_IMAGE)"
+	kind load docker-image --name kube-ovn "$(MULTUS_IMAGE)"
+	kubectl apply -f "$(MULTUS_YAML)"
+	kubectl -n kube-system rollout status ds kube-multus-ds
+	kind load docker-image --name kube-ovn $(REGISTRY)/kube-ovn:$(RELEASE_TAG)
+	ENABLE_SSL=true CNI_CONFIG_PRIORITY=10 dist/images/install.sh
+	kubectl describe no
+
 .PHONY: kind-install-ic
 kind-install-ic:
 	docker run -d --name ovn-ic-db --network kind $(REGISTRY)/kube-ovn:$(RELEASE_TAG) bash start-ic-db.sh
@@ -404,6 +417,12 @@ e2e-vlan-ipv6:
 e2e-underlay-single-nic:
 	@docker inspect -f '{{json .NetworkSettings.Networks.kind}}' kube-ovn-control-plane > test/e2e-underlay-single-nic/node/network.json
 	ginkgo -mod=mod -progress -reportPassed --slowSpecThreshold=60 test/e2e-underlay-single-nic
+
+.PHONY: e2e-vpc-nat-gateway
+e2e-vpc-nat-gateway:
+	sudo bash test/e2e-vpc-nat-gateway/kind-prepare.sh
+	kind load docker-image --name kube-ovn $(REGISTRY)/vpc-nat-gateway:$(RELEASE_TAG)
+	ginkgo -mod=mod -ldflags $(GOLDFLAGS) -progress -reportPassed --slowSpecThreshold=60 test/e2e-vpc-nat-gateway
 
 .PHONY: e2e-ovn-ic
 e2e-ovn-ic:
