@@ -12,6 +12,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/klog/v2"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -189,7 +190,13 @@ var _ = Describe("[normal]", func() {
 		Expect(pods.Items).To(HaveLen(1))
 
 		gwPod := &pods.Items[0]
-		stdout, _, err := f.ExecToPodThroughAPI(fmt.Sprintf("ip route show table %d", routeTable), "vpc-nat-gw", gwPod.Name, "kube-system", nil)
+		klog.Infof("Pod: %s/%s, %s", gwPod.Namespace, gwPod.Name, gwPod.Status.Phase)
+		{
+			stdout, _, err := f.ExecToPodThroughAPI("ip rule show", gwPod.Spec.Containers[0].Name, gwPod.Name, gwPod.Namespace, nil)
+			Expect(err).NotTo(HaveOccurred())
+			klog.Info(stdout)
+		}
+		stdout, _, err := f.ExecToPodThroughAPI(fmt.Sprintf("ip route show table %d", routeTable), gwPod.Spec.Containers[0].Name, gwPod.Name, gwPod.Namespace, nil)
 		Expect(err).NotTo(HaveOccurred())
 		var eth0Route, net1Route, defaultRoute bool
 		net1CIDR := (&net.IPNet{IP: net.ParseIP(externalIP1), Mask: net.CIDRMask(externalNetworkPrefix, 32)}).String()
