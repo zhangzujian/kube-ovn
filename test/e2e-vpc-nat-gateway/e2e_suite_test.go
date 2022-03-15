@@ -192,6 +192,7 @@ var _ = Describe("[normal]", func() {
 		gwPod := &pods.Items[0]
 		klog.Infof("Pod: %s/%s, %s", gwPod.Namespace, gwPod.Name, gwPod.Status.Phase)
 		{
+			time.Sleep(60 * time.Second)
 			stdout, _, err := f.ExecToPodThroughAPI("ip rule show", gwPod.Spec.Containers[0].Name, gwPod.Name, gwPod.Namespace, nil)
 			Expect(err).NotTo(HaveOccurred())
 			klog.Info(stdout)
