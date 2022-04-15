@@ -536,6 +536,7 @@ var _ = Describe("[Subnet]", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			By("validate subnet")
+			klog.Infof("wait subnet %s to be ready", name)
 			err = f.WaitSubnetReady(name)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -567,6 +568,7 @@ var _ = Describe("[Subnet]", func() {
 			_, err = f.KubeClientSet.CoreV1().Pods(namespace).Create(context.Background(), pod, metav1.CreateOptions{})
 			Expect(err).NotTo(HaveOccurred())
 
+			klog.Infof("wait pod %s/%s to be ready", namespace, name)
 			pod, err = f.WaitPodReady(name, namespace)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -607,6 +609,7 @@ var _ = Describe("[Subnet]", func() {
 			err = f.KubeClientSet.CoreV1().Pods(namespace).Delete(context.Background(), name, metav1.DeleteOptions{})
 			Expect(err).NotTo(HaveOccurred())
 
+			klog.Infof("wait pod %s/%s to be deleted", namespace, name)
 			err = f.WaitPodDeleted(name, namespace)
 			Expect(err).NotTo(HaveOccurred())
 
