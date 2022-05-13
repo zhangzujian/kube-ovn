@@ -319,6 +319,8 @@ var _ = Describe("[Underlay]", func() {
 			By("delete pod")
 			err = f.KubeClientSet.CoreV1().Pods(pod.Namespace).Delete(context.Background(), pod.Name, metav1.DeleteOptions{})
 			Expect(err).NotTo(HaveOccurred())
+			err = f.WaitPodDeleted(pod.Name, pod.Namespace)
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 
@@ -354,10 +356,16 @@ var _ = Describe("[Underlay]", func() {
 				if err != nil && !k8serrors.IsNotFound(err) {
 					klog.Fatalf("failed to delete pod %s: %v", f.GetName(), err)
 				}
+				if err = f.WaitPodDeleted(f.GetName(), Namespace); err != nil {
+					klog.Fatalf("failed to delete pod %s: %v", f.GetName(), err)
+				}
 			})
 			AfterEach(func() {
 				err := f.KubeClientSet.CoreV1().Pods(Namespace).Delete(context.Background(), f.GetName(), metav1.DeleteOptions{})
 				if err != nil && !k8serrors.IsNotFound(err) {
+					klog.Fatalf("failed to delete pod %s: %v", f.GetName(), err)
+				}
+				if err = f.WaitPodDeleted(f.GetName(), Namespace); err != nil {
 					klog.Fatalf("failed to delete pod %s: %v", f.GetName(), err)
 				}
 			})
@@ -425,10 +433,16 @@ var _ = Describe("[Underlay]", func() {
 					if err != nil && !k8serrors.IsNotFound(err) {
 						klog.Fatalf("failed to delete pod %s: %v", f.GetName(), err)
 					}
+					if err = f.WaitPodDeleted(f.GetName(), Namespace); err != nil {
+						klog.Fatalf("failed to delete pod %s: %v", f.GetName(), err)
+					}
 				})
 				AfterEach(func() {
 					err := f.KubeClientSet.CoreV1().Pods(Namespace).Delete(context.Background(), f.GetName(), metav1.DeleteOptions{})
 					if err != nil && !k8serrors.IsNotFound(err) {
+						klog.Fatalf("failed to delete pod %s: %v", f.GetName(), err)
+					}
+					if err = f.WaitPodDeleted(f.GetName(), Namespace); err != nil {
 						klog.Fatalf("failed to delete pod %s: %v", f.GetName(), err)
 					}
 				})
@@ -502,10 +516,16 @@ var _ = Describe("[Underlay]", func() {
 					if err != nil && !k8serrors.IsNotFound(err) {
 						klog.Fatalf("failed to delete pod %s: %v", f.GetName(), err)
 					}
+					if err = f.WaitPodDeleted(f.GetName(), Namespace); err != nil {
+						klog.Fatalf("failed to delete pod %s: %v", f.GetName(), err)
+					}
 				})
 				AfterEach(func() {
 					err := f.KubeClientSet.CoreV1().Pods(Namespace).Delete(context.Background(), f.GetName(), metav1.DeleteOptions{})
 					if err != nil && !k8serrors.IsNotFound(err) {
+						klog.Fatalf("failed to delete pod %s: %v", f.GetName(), err)
+					}
+					if err = f.WaitPodDeleted(f.GetName(), Namespace); err != nil {
 						klog.Fatalf("failed to delete pod %s: %v", f.GetName(), err)
 					}
 				})
@@ -593,12 +613,24 @@ var _ = Describe("[Underlay]", func() {
 							klog.Fatalf("failed to delete pod %s: %v", name, err)
 						}
 					}
+					for i := 0; i < len(cniPods); i++ {
+						name := fmt.Sprintf("%s-%d", f.GetName(), i+1)
+						if err := f.WaitPodDeleted(name, Namespace); err != nil {
+							klog.Fatalf("failed to delete pod %s: %v", name, err)
+						}
+					}
 				})
 				AfterEach(func() {
 					for i := 0; i < len(cniPods); i++ {
 						name := fmt.Sprintf("%s-%d", f.GetName(), i+1)
 						err := f.KubeClientSet.CoreV1().Pods(Namespace).Delete(context.Background(), name, metav1.DeleteOptions{})
 						if err != nil && !k8serrors.IsNotFound(err) {
+							klog.Fatalf("failed to delete pod %s: %v", name, err)
+						}
+					}
+					for i := 0; i < len(cniPods); i++ {
+						name := fmt.Sprintf("%s-%d", f.GetName(), i+1)
+						if err := f.WaitPodDeleted(name, Namespace); err != nil {
 							klog.Fatalf("failed to delete pod %s: %v", name, err)
 						}
 					}
@@ -692,6 +724,12 @@ var _ = Describe("[Underlay]", func() {
 					if err != nil && !k8serrors.IsNotFound(err) {
 						klog.Fatalf("failed to delete pod %s/%s: %v", overlayNamespace, f.GetName(), err)
 					}
+					if err = f.WaitPodDeleted(f.GetName(), Namespace); err != nil {
+						klog.Fatalf("failed to delete pod %s: %v", f.GetName(), err)
+					}
+					if err = f.WaitPodDeleted(f.GetName(), overlayNamespace); err != nil {
+						klog.Fatalf("failed to delete pod %s: %v", f.GetName(), err)
+					}
 				})
 				AfterEach(func() {
 					err := f.KubeClientSet.CoreV1().Pods(Namespace).Delete(context.Background(), f.GetName(), metav1.DeleteOptions{})
@@ -701,6 +739,12 @@ var _ = Describe("[Underlay]", func() {
 					err = f.KubeClientSet.CoreV1().Pods(overlayNamespace).Delete(context.Background(), f.GetName(), metav1.DeleteOptions{})
 					if err != nil && !k8serrors.IsNotFound(err) {
 						klog.Fatalf("failed to delete pod %s/%s: %v", overlayNamespace, f.GetName(), err)
+					}
+					if err = f.WaitPodDeleted(f.GetName(), Namespace); err != nil {
+						klog.Fatalf("failed to delete pod %s: %v", f.GetName(), err)
+					}
+					if err = f.WaitPodDeleted(f.GetName(), overlayNamespace); err != nil {
+						klog.Fatalf("failed to delete pod %s: %v", f.GetName(), err)
 					}
 				})
 
@@ -788,10 +832,16 @@ var _ = Describe("[Underlay]", func() {
 			if err != nil && !k8serrors.IsNotFound(err) {
 				klog.Fatalf("failed to delete pod %s: %v", f.GetName(), err)
 			}
+			if err = f.WaitPodDeleted(f.GetName(), Namespace); err != nil {
+				klog.Fatalf("failed to delete pod %s: %v", f.GetName(), err)
+			}
 		})
 		AfterEach(func() {
 			err := f.KubeClientSet.CoreV1().Pods(Namespace).Delete(context.Background(), f.GetName(), metav1.DeleteOptions{})
 			if err != nil && !k8serrors.IsNotFound(err) {
+				klog.Fatalf("failed to delete pod %s: %v", f.GetName(), err)
+			}
+			if err = f.WaitPodDeleted(f.GetName(), Namespace); err != nil {
 				klog.Fatalf("failed to delete pod %s: %v", f.GetName(), err)
 			}
 		})

@@ -92,6 +92,8 @@ var _ = Describe("[Qos]", func() {
 		By("Delete pod")
 		err = f.KubeClientSet.CoreV1().Pods(namespace).Delete(context.Background(), pod.Name, metav1.DeleteOptions{})
 		Expect(err).NotTo(HaveOccurred())
+		err = f.WaitPodDeleted(name, namespace)
+		Expect(err).NotTo(HaveOccurred())
 	})
 
 	It("update netem qos", func() {
@@ -156,6 +158,8 @@ var _ = Describe("[Qos]", func() {
 		By("Delete pod")
 		err = f.KubeClientSet.CoreV1().Pods(namespace).Delete(context.Background(), pod.Name, metav1.DeleteOptions{})
 		Expect(err).NotTo(HaveOccurred())
+		err = f.WaitPodDeleted(name, namespace)
+		Expect(err).NotTo(HaveOccurred())
 	})
 
 	It("create htb qos", func() {
@@ -211,6 +215,8 @@ var _ = Describe("[Qos]", func() {
 
 		By("Delete pod")
 		err = f.KubeClientSet.CoreV1().Pods(namespace).Delete(context.Background(), pod.Name, metav1.DeleteOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		err = f.WaitPodDeleted(name, namespace)
 		Expect(err).NotTo(HaveOccurred())
 	})
 
@@ -325,6 +331,8 @@ var _ = Describe("[Qos]", func() {
 
 		By("Delete pod")
 		err = f.KubeClientSet.CoreV1().Pods(namespace).Delete(context.Background(), pod.Name, metav1.DeleteOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		err = f.WaitPodDeleted(name, namespace)
 		Expect(err).NotTo(HaveOccurred())
 	})
 })

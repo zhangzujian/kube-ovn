@@ -74,6 +74,8 @@ var _ = Describe("[IP Allocation]", func() {
 			By("Delete pod")
 			err = f.KubeClientSet.CoreV1().Pods(namespace).Delete(context.Background(), pod.Name, metav1.DeleteOptions{})
 			Expect(err).NotTo(HaveOccurred())
+			err = f.WaitPodDeleted(name, namespace)
+			Expect(err).NotTo(HaveOccurred())
 		})
 
 		It("deployment with ippool", func() {
