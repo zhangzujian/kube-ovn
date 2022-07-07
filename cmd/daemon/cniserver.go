@@ -89,7 +89,7 @@ func CmdMain() {
 }
 
 func mvCNIConf(configDir, configFile, confName string) error {
-	data, err := os.ReadFile(configFile)
+	data, err := os.ReadFile(configFile) // #nosec
 	if err != nil {
 		return err
 	}
