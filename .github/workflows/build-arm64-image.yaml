@@ -43,7 +43,7 @@ jobs:
       - name: Go Build Cache
         uses: actions/cache@v3
         with:
-          path: /home/runner/.cache/go-build
+          path: ~/.cache/go-build
           key: ${{ runner.os }}-go${{ env.GO_VERSION }}-arm64-build-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go${{ env.GO_VERSION }}-arm64-build-
