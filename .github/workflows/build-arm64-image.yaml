@@ -40,18 +40,12 @@ jobs:
       - name: Docker Buildx
         uses: docker/setup-buildx-action@v2
 
-      - name: Go Build Cache
+      - name: Go Cache
         uses: actions/cache@v3
         with:
-          path: ~/.cache/go-build
-          key: ${{ runner.os }}-go${{ env.GO_VERSION }}-arm64-build-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go${{ env.GO_VERSION }}-arm64-build-
-
-      - name: Go Mod Cache
-        uses: actions/cache@v3
-        with:
-          path: ~/go/pkg/mod
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
           key: ${{ runner.os }}-go${{ env.GO_VERSION }}-arm64-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go${{ env.GO_VERSION }}-arm64-
