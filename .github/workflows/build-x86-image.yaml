@@ -50,9 +50,9 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go{{ env.GO_VERSION }}-x86-${{ hashFiles('**/go.sum') }}
+          key: ${{ runner.os }}-go${{ env.GO_VERSION }}-x86-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-go{{ env.GO_VERSION }}-x86-
+            ${{ runner.os }}-go${{ env.GO_VERSION }}-x86-
 
       - name: Unit test
         run: |
