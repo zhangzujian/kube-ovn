@@ -141,7 +141,7 @@ jobs:
       - name: Go Build Cache
         uses: actions/cache@v3
         with:
-          path: /home/runner/.cache/go-build
+          path: ~\AppData\Local\go-build
           key: ${{ runner.os }}-go${{ env.GO_VERSION }}-build-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go${{ env.GO_VERSION }}-build-
@@ -149,7 +149,7 @@ jobs:
       - name: Go Mod Cache
         uses: actions/cache@v3
         with:
-          path: ~/go/pkg/mod
+          path: ~\go\pkg\mod
           key: ${{ runner.os }}-go${{ env.GO_VERSION }}-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go${{ env.GO_VERSION }}-
