@@ -539,7 +539,7 @@ checkDeployment(){
 }
 
 checkKubeProxy(){
-  if kubectl get ds -n kube-system --no-headers -o custom-columns=NAME:.metadata.name | grep -q '^kube-proxy$'; then
+  if kubectl get ds -n kube-system --no-headers -o custom-columns=NAME:.metadata.name | grep '^kube-proxy$' >/dev/null; then
     checkDaemonSet kube-proxy
   else
     nodeIps=`kubectl get node -o wide | grep -v "INTERNAL-IP" | awk '{print $6}'`
