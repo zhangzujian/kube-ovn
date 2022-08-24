@@ -101,7 +101,7 @@ func (suite *OvnClientTestSuite) Test_LogicalSwitchUpdateLoadBalancerOp() {
 }
 
 func (suite *OvnClientTestSuite) Test_logicalSwitchUpdateAclOp() {
-	suite.testlogicalSwitchUpdateAclOp()
+	suite.test_logicalSwitchUpdateAclOp()
 }
 
 func (suite *OvnClientTestSuite) Test_LogicalSwitchOp() {
@@ -158,7 +158,7 @@ func (suite *OvnClientTestSuite) Test_UpdateLogicalSwitchPort() {
 }
 
 func (suite *OvnClientTestSuite) Test_getLogicalSwitchPortSgs() {
-	suite.testgetLogicalSwitchPortSgs()
+	suite.test_getLogicalSwitchPortSgs()
 }
 
 func (suite *OvnClientTestSuite) Test_DeleteLogicalSwitchPort() {
@@ -212,6 +212,10 @@ func (suite *OvnClientTestSuite) Test_LogicalRouterUpdatePolicyOp() {
 
 func (suite *OvnClientTestSuite) Test_LogicalRouterUpdateNatOp() {
 	suite.testLogicalRouterUpdateNatOp()
+}
+
+func (suite *OvnClientTestSuite) Test_LogicalRouterUpdateStaticRouteOp() {
+	suite.testLogicalRouterUpdateStaticRouteOp()
 }
 
 func (suite *OvnClientTestSuite) Test_LogicalRouterOp() {
@@ -311,15 +315,15 @@ func (suite *OvnClientTestSuite) Test_PortGroupALLNotExist() {
 }
 
 func (suite *OvnClientTestSuite) Test_portGroupUpdatePortOp() {
-	suite.testportGroupUpdatePortOp()
+	suite.test_portGroupUpdatePortOp()
 }
 
 func (suite *OvnClientTestSuite) Test_portGroupUpdateAclOp() {
-	suite.testportGroupUpdateAclOp()
+	suite.test_portGroupUpdateAclOp()
 }
 
 func (suite *OvnClientTestSuite) Test_portGroupOp() {
-	suite.testportGroupOp()
+	suite.test_portGroupOp()
 }
 
 /* address_set unit test */
@@ -344,7 +348,7 @@ func (suite *OvnClientTestSuite) Test_ListAddressSets() {
 }
 
 func (suite *OvnClientTestSuite) Test_addressSetFilter() {
-	suite.testaddressSetFilter()
+	suite.test_addressSetFilter()
 }
 
 /* acl unit test */
@@ -381,7 +385,7 @@ func (suite *OvnClientTestSuite) Test_SetLogicalSwitchPrivate() {
 }
 
 func (suite *OvnClientTestSuite) Test_newSgRuleACL() {
-	suite.testnewSgRuleACL()
+	suite.test_newSgRuleACL()
 }
 
 func (suite *OvnClientTestSuite) Test_CreateAcls() {
@@ -401,15 +405,15 @@ func (suite *OvnClientTestSuite) Test_ListAcls() {
 }
 
 func (suite *OvnClientTestSuite) Test_newAcl() {
-	suite.testnewAcl()
+	suite.test_newAcl()
 }
 
 func (suite *OvnClientTestSuite) Test_newAllowAclMatch() {
-	suite.testnewAllowAclMatch()
+	suite.test_newAllowAclMatch()
 }
 
 func (suite *OvnClientTestSuite) Test_aclFilter() {
-	suite.testaclFilter()
+	suite.test_aclFilter()
 }
 
 /* logical_router_policy unit test */
@@ -417,8 +421,8 @@ func (suite *OvnClientTestSuite) Test_AddLogicalRouterPolicy() {
 	suite.testAddLogicalRouterPolicy()
 }
 
-func (suite *OvnClientTestSuite) Test_CreateLogicalRouterPolicys() {
-	suite.testCreateLogicalRouterPolicys()
+func (suite *OvnClientTestSuite) Test_CreateLogicalRouterPolicies() {
+	suite.testCreateLogicalRouterPolicies()
 }
 
 func (suite *OvnClientTestSuite) Test_DeleteLogicalRouterPolicy() {
@@ -434,7 +438,7 @@ func (suite *OvnClientTestSuite) Test_GetLogicalRouterPolicy() {
 }
 
 func (suite *OvnClientTestSuite) Test_newLogicalRouterPolicy() {
-	suite.testnewLogicalRouterPolicy()
+	suite.test_newLogicalRouterPolicy()
 }
 
 /* nat unit test */
@@ -459,11 +463,40 @@ func (suite *OvnClientTestSuite) Test_GetNat() {
 }
 
 func (suite *OvnClientTestSuite) Test_newNat() {
-	suite.testnewNat()
+	suite.test_newNat()
 }
 
 func (suite *OvnClientTestSuite) Test_natFilter() {
-	suite.testnatFilter()
+	suite.test_natFilter()
+}
+
+/* logical_router_static_route unit test */
+func (suite *OvnClientTestSuite) Test_CreateLogicalRouterStaticRoutes() {
+	suite.testCreateLogicalRouterStaticRoutes()
+}
+
+func (suite *OvnClientTestSuite) Test_AddLogicalRouterStaticRoute() {
+	suite.testAddLogicalRouterStaticRoute()
+}
+
+func (suite *OvnClientTestSuite) Test_DeleteLogicalRouterStaticRoute() {
+	suite.testDeleteLogicalRouterStaticRoute()
+}
+
+func (suite *OvnClientTestSuite) Test_ClearLogicalRouterStaticRoute() {
+	suite.testClearLogicalRouterStaticRoute()
+}
+
+func (suite *OvnClientTestSuite) Test_GetLogicalRouterStaticRoute() {
+	suite.testGetLogicalRouterStaticRoute()
+}
+
+func (suite *OvnClientTestSuite) Test_ListLogicalRouterStaticRoutes() {
+	suite.testListLogicalRouterStaticRoutes()
+}
+
+func (suite *OvnClientTestSuite) Test_newLogicalRouterStaticRoute() {
+	suite.test_newLogicalRouterStaticRoute()
 }
 
 /* mixed operations unit test */
@@ -504,10 +537,10 @@ func newOVSDBServer(t *testing.T, dbModel model.ClientDBModel, schema ovsdb.Data
 	dbMod, errs := model.NewDatabaseModel(schema, dbModel)
 	require.Empty(t, errs)
 
-	servMod, errs := model.NewDatabaseModel(serverSchema, serverDBModel)
+	svrMod, errs := model.NewDatabaseModel(serverSchema, serverDBModel)
 	require.Empty(t, errs)
 
-	server, err := server.NewOvsdbServer(db, dbMod, servMod)
+	server, err := server.NewOvsdbServer(db, dbMod, svrMod)
 	require.NoError(t, err)
 
 	tmpfile := fmt.Sprintf("/tmp/ovsdb-%d.sock", rand.Intn(10000))
