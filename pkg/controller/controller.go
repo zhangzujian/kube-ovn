@@ -673,8 +673,9 @@ func (c *Controller) Run(ctx context.Context) {
 	if err := c.ovnLegacyClient.SetLsDnatModDlDst(c.config.LsDnatModDlDst); err != nil {
 		util.LogFatalAndExit(err, "failed to set NB_Global option ls_dnat_mod_dl_dst")
 	}
-	if err := c.ovnLegacyClient.SetUseCtInvMatch(); err != nil {
-		util.LogFatalAndExit(err, "failed to set NB_Global option use_ct_inv_match")
+
+	if err := c.ovnClient.SetUseCtInvMatch(); err != nil {
+		klog.Fatalf("failed to set NB_Global option use_ct_inv_match to false: %v", err)
 	}
 
 	if err := c.InitDefaultVpc(); err != nil {

@@ -60,8 +60,20 @@ func (suite *OvnClientTestSuite) Test_UpdateNbGlobal() {
 	suite.testUpdateNbGlobal()
 }
 
+func (suite *OvnClientTestSuite) Test_SetAzName() {
+	suite.testSetAzName()
+}
+
 func (suite *OvnClientTestSuite) Test_SetICAutoRoute() {
 	suite.testSetICAutoRoute()
+}
+
+func (suite *OvnClientTestSuite) Test_SetUseCtInvMatch() {
+	suite.testSetUseCtInvMatch()
+}
+
+func (suite *OvnClientTestSuite) Test_SetLBCIDR() {
+	suite.testSetLBCIDR()
 }
 
 /* logical_switch unit test */

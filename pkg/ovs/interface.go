@@ -7,6 +7,10 @@ import (
 
 type NbGlobal interface {
 	UpdateNbGlobal(nbGlobal *ovnnb.NBGlobal, fields ...interface{}) error
+	SetAzName(azName string) error
+	SetUseCtInvMatch() error
+	SetICAutoRoute(enable bool, blackList []string) error
+	SetLBCIDR(serviceCIDR string) error
 	GetNbGlobal() (*ovnnb.NBGlobal, error)
 }
 
@@ -43,9 +47,9 @@ type LogicalRouterPolicy interface {
 }
 
 type OvnClient interface {
+	NbGlobal
 	LogicalRouter
 	LogicalRouterPort
-	NbGlobal
 	LogicalSwitchPort
 	PortGroup
 	LogicalRouterStaticRoute

@@ -70,6 +70,36 @@ func (c *ovnClient) UpdateNbGlobal(nbGlobal *ovnnb.NBGlobal, fields ...interface
 	return nil
 }
 
+func (c *ovnClient) SetAzName(azName string) error {
+	nbGlobal, err := c.GetNbGlobal()
+	if err != nil {
+		return fmt.Errorf("get nb global: %v", err)
+	}
+
+	nbGlobal.Name = azName
+
+	if err := c.UpdateNbGlobal(nbGlobal, &nbGlobal.Name); err != nil {
+		return fmt.Errorf("set nb_global az name %s: %v", azName, err)
+	}
+
+	return nil
+}
+
+func (c *ovnClient) SetUseCtInvMatch() error {
+	nbGlobal, err := c.GetNbGlobal()
+	if err != nil {
+		return fmt.Errorf("get nb global: %v", err)
+	}
+
+	nbGlobal.Options["use_ct_inv_match"] = "false"
+
+	if err := c.UpdateNbGlobal(nbGlobal, &nbGlobal.Options); err != nil {
+		return fmt.Errorf("set use_ct_inv_match to false, %v", err)
+	}
+
+	return nil
+}
+
 func (c *ovnClient) SetICAutoRoute(enable bool, blackList []string) error {
 	nbGlobal, err := c.GetNbGlobal()
 	if err != nil {
@@ -92,5 +122,20 @@ func (c *ovnClient) SetICAutoRoute(enable bool, blackList []string) error {
 	if err := c.UpdateNbGlobal(nbGlobal, &nbGlobal.Options); err != nil {
 		return fmt.Errorf("enable ovn-ic auto route, %v", err)
 	}
+	return nil
+}
+
+func (c *ovnClient) SetLBCIDR(serviceCIDR string) error {
+	nbGlobal, err := c.GetNbGlobal()
+	if err != nil {
+		return fmt.Errorf("get nb global: %v", err)
+	}
+
+	nbGlobal.Options["svc_ipv4_cidr"] = serviceCIDR
+
+	if err := c.UpdateNbGlobal(nbGlobal, &nbGlobal.Options); err != nil {
+		return fmt.Errorf("set svc cidr %s for lb, %v", serviceCIDR, err)
+	}
+
 	return nil
 }

@@ -87,7 +87,7 @@ func (c *Controller) resyncInterConnection() {
 				blackList = append(blackList, ipv6)
 			}
 		}
-		if err := c.ovnLegacyClient.SetICAutoRoute(autoRoute, blackList); err != nil {
+		if err := c.ovnClient.SetICAutoRoute(autoRoute, blackList); err != nil {
 			klog.Errorf("failed to config auto route, %v", err)
 			return
 		}
@@ -197,8 +197,7 @@ func (c *Controller) establishInterConnection(config map[string]string) error {
 		klog.Infof("ts port %s already exists", tsPort)
 		return nil
 	}
-
-	if err := c.setAzName(config["az-name"]); err != nil {
+	if err := c.ovnClient.SetAzName(config["az-name"]); err != nil {
 		klog.Errorf("failed to set az name. %v", err)
 		return err
 	}

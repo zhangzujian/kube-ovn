@@ -50,6 +50,62 @@ func (mr *MockNbGlobalMockRecorder) GetNbGlobal() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNbGlobal", reflect.TypeOf((*MockNbGlobal)(nil).GetNbGlobal))
 }
 
+// SetAzName mocks base method.
+func (m *MockNbGlobal) SetAzName(azName string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetAzName", azName)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetAzName indicates an expected call of SetAzName.
+func (mr *MockNbGlobalMockRecorder) SetAzName(azName interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetAzName", reflect.TypeOf((*MockNbGlobal)(nil).SetAzName), azName)
+}
+
+// SetICAutoRoute mocks base method.
+func (m *MockNbGlobal) SetICAutoRoute(enable bool, blackList []string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetICAutoRoute", enable, blackList)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetICAutoRoute indicates an expected call of SetICAutoRoute.
+func (mr *MockNbGlobalMockRecorder) SetICAutoRoute(enable, blackList interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetICAutoRoute", reflect.TypeOf((*MockNbGlobal)(nil).SetICAutoRoute), enable, blackList)
+}
+
+// SetLBCIDR mocks base method.
+func (m *MockNbGlobal) SetLBCIDR(serviceCIDR string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetLBCIDR", serviceCIDR)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetLBCIDR indicates an expected call of SetLBCIDR.
+func (mr *MockNbGlobalMockRecorder) SetLBCIDR(serviceCIDR interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetLBCIDR", reflect.TypeOf((*MockNbGlobal)(nil).SetLBCIDR), serviceCIDR)
+}
+
+// SetUseCtInvMatch mocks base method.
+func (m *MockNbGlobal) SetUseCtInvMatch() error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetUseCtInvMatch")
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetUseCtInvMatch indicates an expected call of SetUseCtInvMatch.
+func (mr *MockNbGlobalMockRecorder) SetUseCtInvMatch() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetUseCtInvMatch", reflect.TypeOf((*MockNbGlobal)(nil).SetUseCtInvMatch))
+}
+
 // UpdateNbGlobal mocks base method.
 func (m *MockNbGlobal) UpdateNbGlobal(nbGlobal *ovnnb.NBGlobal, fields ...interface{}) error {
 	m.ctrl.T.Helper()
@@ -671,6 +727,62 @@ func (mr *MockOvnClientMockRecorder) PortGroupUpdatePorts(pgName, op interface{}
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]interface{}{pgName, op}, lspNames...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PortGroupUpdatePorts", reflect.TypeOf((*MockOvnClient)(nil).PortGroupUpdatePorts), varargs...)
+}
+
+// SetAzName mocks base method.
+func (m *MockOvnClient) SetAzName(azName string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetAzName", azName)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetAzName indicates an expected call of SetAzName.
+func (mr *MockOvnClientMockRecorder) SetAzName(azName interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetAzName", reflect.TypeOf((*MockOvnClient)(nil).SetAzName), azName)
+}
+
+// SetICAutoRoute mocks base method.
+func (m *MockOvnClient) SetICAutoRoute(enable bool, blackList []string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetICAutoRoute", enable, blackList)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetICAutoRoute indicates an expected call of SetICAutoRoute.
+func (mr *MockOvnClientMockRecorder) SetICAutoRoute(enable, blackList interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetICAutoRoute", reflect.TypeOf((*MockOvnClient)(nil).SetICAutoRoute), enable, blackList)
+}
+
+// SetLBCIDR mocks base method.
+func (m *MockOvnClient) SetLBCIDR(serviceCIDR string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetLBCIDR", serviceCIDR)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetLBCIDR indicates an expected call of SetLBCIDR.
+func (mr *MockOvnClientMockRecorder) SetLBCIDR(serviceCIDR interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetLBCIDR", reflect.TypeOf((*MockOvnClient)(nil).SetLBCIDR), serviceCIDR)
+}
+
+// SetUseCtInvMatch mocks base method.
+func (m *MockOvnClient) SetUseCtInvMatch() error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetUseCtInvMatch")
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetUseCtInvMatch indicates an expected call of SetUseCtInvMatch.
+func (mr *MockOvnClientMockRecorder) SetUseCtInvMatch() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetUseCtInvMatch", reflect.TypeOf((*MockOvnClient)(nil).SetUseCtInvMatch))
 }
 
 // UpdateNbGlobal mocks base method.
