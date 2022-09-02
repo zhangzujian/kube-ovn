@@ -35,7 +35,7 @@ func (c *ovnClient) CreateGatewayLogicalSwitch(lsName, lrName, provider, ip, mac
 		return fmt.Errorf("create localnet logical switch port %s failed: %v", localnetLspName, err)
 	}
 
-	if err := c.CreateRouterPort(lsName, lrName, ip, mac, chassises...); err != nil {
+	if err := c.CreateRouterPort(lsName, lrName, lspName, lrpName, ip, mac, chassises...); err != nil {
 		return fmt.Errorf("create router port %s and %s failed: %v", lspName, lrpName, err)
 	}
 
@@ -43,7 +43,7 @@ func (c *ovnClient) CreateGatewayLogicalSwitch(lsName, lrName, provider, ip, mac
 }
 
 // createRouterPort create logical router port and associated logical switch port which type is router
-func (c *ovnClient) CreateRouterPort(lsName, lrName, ip, mac string, chassises ...string) error {
+func (c *ovnClient) CreateRouterPort(lsName, lrName, lspName, lrpName, ip, mac string, chassises ...string) error {
 	if len(ip) != 0 {
 		// check ip format: 192.168.231.1/24,fc00::0af4:01/112
 		if err := util.CheckCidrs(ip); err != nil {
@@ -52,13 +52,12 @@ func (c *ovnClient) CreateRouterPort(lsName, lrName, ip, mac string, chassises .
 	}
 
 	// create gateway chassis
-	lrpName := fmt.Sprintf("%s-%s", lrName, lsName)
 	if err := c.CreateGatewayChassises(lrpName, chassises); err != nil {
 		return err
 	}
 
 	// create router type port
-	return c.CreateRouterTypePort(lsName, lrName, mac, func(lrp *ovnnb.LogicalRouterPort) {
+	return c.CreateRouterTypePort(lsName, lrName, lspName, lrpName, mac, func(lrp *ovnnb.LogicalRouterPort) {
 		if len(ip) != 0 {
 			lrp.Networks = strings.Split(ip, ",")
 		}
@@ -147,10 +146,7 @@ func (c *ovnClient) DeleteSecurityGroup(sgName string) error {
 	return nil
 }
 
-func (c *ovnClient) CreateRouterTypePort(lsName, lrName, mac string, LrpOptions ...func(lrp *ovnnb.LogicalRouterPort)) error {
-	lspName := fmt.Sprintf("%s-%s", lsName, lrName)
-	lrpName := fmt.Sprintf("%s-%s", lrName, lsName)
-
+func (c *ovnClient) CreateRouterTypePort(lsName, lrName, lspName, lrpName, mac string, LrpOptions ...func(lrp *ovnnb.LogicalRouterPort)) error {
 	/* do nothing if logical switch port or logical router port exist */
 	lspExist, err := c.LogicalSwitchPortExists(lspName)
 	if err != nil {

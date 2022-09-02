@@ -111,6 +111,29 @@ func (c *ovnClient) CreateLogicalRouterPort(lrName string, lrp *ovnnb.LogicalRou
 }
 
 // DeleteLogicalRouterPort delete logical router port from logical router
+func (c *ovnClient) DeleteLogicalRouterPorts(externalIDs map[string]string, filter func(lrp *ovnnb.LogicalRouterPort) bool) error {
+	lrpList, err := c.ListLogicalRouterPorts(externalIDs, filter)
+	if err != nil {
+		return fmt.Errorf("list logical router ports: %v", err)
+	}
+
+	ops := make([]ovsdb.Operation, 0, len(lrpList))
+	for _, lrp := range lrpList {
+		op, err := c.DeleteLogicalRouterPortOp(lrp.Name)
+		if err != nil {
+			return fmt.Errorf("generate operations for deleting logical router port %s: %v", lrp.Name, err)
+		}
+		ops = append(ops, op...)
+	}
+
+	if err := c.Transact("lrps-del", ops); err != nil {
+		return fmt.Errorf("del logical router ports: %v", err)
+	}
+
+	return nil
+}
+
+// DeleteLogicalRouterPort delete logical router port from logical router
 func (c *ovnClient) DeleteLogicalRouterPort(lrpName string) error {
 	ops, err := c.DeleteLogicalRouterPortOp(lrpName)
 	if err != nil {
@@ -136,6 +159,17 @@ func (c *ovnClient) GetLogicalRouterPort(lrpName string, ignoreNotFound bool) (*
 	}
 
 	return lrp, nil
+}
+
+// ListLogicalRouterPorts list logical router ports
+func (c *ovnClient) ListLogicalRouterPorts(externalIDs map[string]string, filter func(lrp *ovnnb.LogicalRouterPort) bool) ([]ovnnb.LogicalRouterPort, error) {
+	lrpList := make([]ovnnb.LogicalRouterPort, 0)
+
+	if err := c.WhereCache(logicalRouterPortFilter(externalIDs, filter)).List(context.TODO(), &lrpList); err != nil {
+		return nil, fmt.Errorf("list logical router ports: %v", err)
+	}
+
+	return lrpList, nil
 }
 
 func (c *ovnClient) LogicalRouterPortExists(lrpName string) (bool, error) {
@@ -257,4 +291,36 @@ func (c *ovnClient) DeleteLogicalRouterPortOp(lrpName string) ([]ovsdb.Operation
 	ops = append(ops, lrpDelOp...)
 
 	return ops, nil
+}
+
+// logicalRouterPortFilter filter logical router port which match the given externalIDs and external filter func
+func logicalRouterPortFilter(externalIDs map[string]string, filter func(lrp *ovnnb.LogicalRouterPort) bool) func(lrp *ovnnb.LogicalRouterPort) bool {
+	return func(lrp *ovnnb.LogicalRouterPort) bool {
+		if len(lrp.ExternalIDs) < len(externalIDs) {
+			return false
+		}
+
+		if len(lrp.ExternalIDs) != 0 {
+			for k, v := range externalIDs {
+				// if only key exist but not value in externalIDs, we should include this lsp,
+				// it's equal to shell command `ovn-nbctl --columns=xx find logical_router_port external_ids:key!=\"\"`
+				if len(v) == 0 {
+					if len(lrp.ExternalIDs[k]) == 0 {
+						return false
+					}
+				} else {
+					if lrp.ExternalIDs[k] != v {
+						return false
+					}
+				}
+			}
+		}
+
+		// need meet custom filter
+		if filter != nil {
+			return filter(lrp)
+		}
+
+		return true
+	}
 }

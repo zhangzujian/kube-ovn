@@ -19,6 +19,8 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
+	"github.com/ovn-org/libovsdb/ovsdb"
+
 	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
 	"github.com/kubeovn/kube-ovn/pkg/ipam"
 	"github.com/kubeovn/kube-ovn/pkg/ovs"
@@ -636,7 +638,7 @@ func (c *Controller) handleAddOrUpdateSubnet(key string) error {
 		}
 	}
 
-	exist, err := c.ovnLegacyClient.LogicalSwitchExists(subnet.Name, c.config.EnableExternalVpc)
+	exist, err := c.ovnClient.LogicalSwitchExists(subnet.Name)
 	if err != nil {
 		klog.Errorf("failed to list logical switch, %v", err)
 		c.patchSubnetStatus(subnet, "ListLogicalSwitchFailed", err.Error())
@@ -683,6 +685,8 @@ func (c *Controller) handleAddOrUpdateSubnet(key string) error {
 		}
 	}
 
+	subnet.Status.EnsureStandardConditions()
+
 	var dhcpOptionsUUIDs *ovs.DHCPOptionsUUIDs
 	dhcpOptionsUUIDs, err = c.ovnLegacyClient.UpdateDHCPOptions(subnet.Name, subnet.Spec.CIDRBlock, subnet.Spec.Gateway, subnet.Spec.DHCPv4Options, subnet.Spec.DHCPv6Options, subnet.Spec.EnableDHCP)
 	if err != nil {
@@ -713,16 +717,10 @@ func (c *Controller) handleAddOrUpdateSubnet(key string) error {
 	}
 
 	if c.config.EnableLb && subnet.Name != c.config.NodeSwitch {
-		if subnet.Spec.EnableLb != nil && *subnet.Spec.EnableLb {
-			if err := c.ovnLegacyClient.AddLbToLogicalSwitch(vpc.Status.TcpLoadBalancer, vpc.Status.TcpSessionLoadBalancer, vpc.Status.UdpLoadBalancer, vpc.Status.UdpSessionLoadBalancer, subnet.Name); err != nil {
-				c.patchSubnetStatus(subnet, "AddLbToLogicalSwitchFailed", err.Error())
-				return err
-			}
-		} else {
-			if err := c.ovnLegacyClient.RemoveLbFromLogicalSwitch(vpc.Status.TcpLoadBalancer, vpc.Status.TcpSessionLoadBalancer, vpc.Status.UdpLoadBalancer, vpc.Status.UdpSessionLoadBalancer, subnet.Name); err != nil {
-				klog.Error("remove load-balancer from subnet %s failed: %v", subnet.Name, err)
-				return err
-			}
+		lbs := []string{vpc.Status.TcpLoadBalancer, vpc.Status.TcpSessionLoadBalancer, vpc.Status.UdpLoadBalancer, vpc.Status.UdpSessionLoadBalancer}
+		if err := c.ovnClient.LogicalSwitchUpdateLoadBalancers(subnet.Name, ovsdb.MutateOperationInsert, lbs...); err != nil {
+			c.patchSubnetStatus(subnet, "AddLbToLogicalSwitchFailed", err.Error())
+			return err
 		}
 	}
 
@@ -787,13 +785,20 @@ func (c *Controller) handleDeleteRoute(subnet *kubeovnv1.Subnet) error {
 func (c *Controller) handleDeleteLogicalSwitch(key string) (err error) {
 	c.ipam.DeleteSubnet(key)
 
-	exist, err := c.ovnLegacyClient.LogicalSwitchExists(key, c.config.EnableExternalVpc)
+	exist, err := c.ovnClient.LogicalSwitchExists(key)
 	if err != nil {
-		klog.Errorf("failed to list logical switch, %v", err)
+		klog.Errorf("check logical switch %s exist, %v", key, err)
 		return err
 	}
+
+	// not found, skip
 	if !exist {
 		return nil
+	}
+
+	if err = c.ovnLegacyClient.CleanLogicalSwitchAcl(key); err != nil {
+		klog.Errorf("failed to delete acl of logical switch %s %v", key, err)
+		return err
 	}
 
 	if err = c.ovnLegacyClient.CleanLogicalSwitchAcl(key); err != nil {
@@ -806,7 +811,7 @@ func (c *Controller) handleDeleteLogicalSwitch(key string) (err error) {
 		return err
 	}
 
-	if err = c.ovnLegacyClient.DeleteLogicalSwitch(key); err != nil {
+	if err = c.ovnClient.DeleteLogicalSwitch(key); err != nil {
 		klog.Errorf("failed to delete logical switch %s %v", key, err)
 		return err
 	}

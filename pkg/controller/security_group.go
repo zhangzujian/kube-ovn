@@ -466,18 +466,17 @@ func (c *Controller) securityGroupALLNotExist(sgs []string) (bool, error) {
 		return true, nil
 	}
 
-	notExistsCount := 0
 	// sgs format: sg1/sg2/sg3
 	for _, sg := range sgs {
 		ok, err := c.ovnClient.PortGroupExists(ovs.GetSgPortGroupName(sg))
 		if err != nil {
-			return true, err
+			return false, err
 		}
 
-		if !ok {
-			notExistsCount++
+		if ok {
+			return false, nil
 		}
 	}
 
-	return notExistsCount == len(sgs), nil
+	return true, nil
 }

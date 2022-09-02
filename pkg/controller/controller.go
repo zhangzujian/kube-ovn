@@ -862,20 +862,17 @@ func (c *Controller) startWorkers(ctx context.Context) {
 	go wait.Until(c.runUpdateVpcSubnetWorker, time.Second, ctx.Done())
 
 	// add default/join subnet and wait them ready
-	go wait.Until(c.runAddSubnetWorker, time.Second, ctx.Done())
-	go wait.Until(c.runAddVlanWorker, time.Second, ctx.Done())
-	go wait.Until(c.runAddNamespaceWorker, time.Second, ctx.Done())
-	for {
-		klog.Infof("wait for %s and %s ready", c.config.DefaultLogicalSwitch, c.config.NodeSwitch)
-		time.Sleep(3 * time.Second)
-		lss, err := c.ovnLegacyClient.ListLogicalSwitch(c.config.EnableExternalVpc)
-		if err != nil {
-			util.LogFatalAndExit(err, "failed to list logical switch")
-		}
+	go wait.Until(c.runAddSubnetWorker, time.Second, stopCh)
+	go wait.Until(c.runAddVlanWorker, time.Second, stopCh)
+	go wait.Until(c.runAddNamespaceWorker, time.Second, stopCh)
+	err := wait.PollUntil(3*time.Second, func() (done bool, err error) {
+		subnets := []string{c.config.DefaultLogicalSwitch, c.config.NodeSwitch}
+		klog.Infof("wait for subnets %v ready", subnets)
 
-		if util.IsStringIn(c.config.DefaultLogicalSwitch, lss) && util.IsStringIn(c.config.NodeSwitch, lss) && c.addNamespaceQueue.Len() == 0 {
-			break
-		}
+		return c.allSubnetReady(subnets...)
+	}, stopCh)
+	if err != nil {
+		klog.Fatalf("wait default/join subnet ready error: %v", err)
 	}
 
 	go wait.Until(c.runAddSgWorker, time.Second, ctx.Done())
@@ -1038,4 +1035,19 @@ func (c *Controller) startWorkers(ctx context.Context) {
 		go wait.Until(c.runAddPodAnnotatedIptablesFipWorker, time.Second, ctx.Done())
 		go wait.Until(c.runDelPodAnnotatedIptablesFipWorker, time.Second, ctx.Done())
 	}
+}
+
+func (c *Controller) allSubnetReady(subnets ...string) (bool, error) {
+	for _, lsName := range subnets {
+		exist, err := c.ovnClient.LogicalSwitchExists(lsName)
+		if err != nil {
+			return false, fmt.Errorf("check logical switch %s exist: %v", lsName, err)
+		}
+
+		if !exist {
+			return false, nil
+		}
+	}
+
+	return true, nil
 }

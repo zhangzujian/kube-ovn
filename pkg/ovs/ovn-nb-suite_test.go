@@ -252,6 +252,10 @@ func (suite *OvnClientTestSuite) Test_UpdateLogicalRouterPort() {
 	suite.testUpdateLogicalRouterPort()
 }
 
+func (suite *OvnClientTestSuite) Test_DeleteLogicalRouterPorts() {
+	suite.testDeleteLogicalRouterPorts()
+}
+
 func (suite *OvnClientTestSuite) Test_DeleteLogicalRouterPort() {
 	suite.testDeleteLogicalRouterPort()
 }
@@ -262,6 +266,10 @@ func (suite *OvnClientTestSuite) Test_CreateLogicalRouterPortOp() {
 
 func (suite *OvnClientTestSuite) Test_DeleteLogicalRouterPortOp() {
 	suite.testDeleteLogicalRouterPortOp()
+}
+
+func (suite *OvnClientTestSuite) Test_logicalRouterPortFilter() {
+	suite.testlogicalRouterPortFilter()
 }
 
 /* gateway_chassis unit test */

@@ -9,7 +9,20 @@ import (
 
 	ovsclient "github.com/kubeovn/kube-ovn/pkg/ovsdb/client"
 	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
+	"github.com/kubeovn/kube-ovn/pkg/util"
 )
+
+func newLogicalRouterPort(lrName, lrpName, mac string, networks []string) *ovnnb.LogicalRouterPort {
+	return &ovnnb.LogicalRouterPort{
+		UUID:     ovsclient.NamedUUID(),
+		Name:     lrpName,
+		MAC:      mac,
+		Networks: networks,
+		ExternalIDs: map[string]string{
+			logicalRouterKey: lrName,
+		},
+	}
+}
 
 func (suite *OvnClientTestSuite) testCreatePeerRouterPort() {
 	t := suite.T()
@@ -273,6 +286,57 @@ func (suite *OvnClientTestSuite) testUpdateLogicalRouterPort() {
 	})
 }
 
+func (suite *OvnClientTestSuite) testDeleteLogicalRouterPorts() {
+	t := suite.T()
+	t.Parallel()
+
+	ovnClient := suite.ovnClient
+	prefix := "test-del-ports-lrp"
+	lrName := "test-del-ports-lr"
+
+	err := ovnClient.CreateLogicalRouter(lrName)
+	require.NoError(t, err)
+
+	for i := 0; i < 3; i++ {
+		lrpName := fmt.Sprintf("%s-%d", prefix, i)
+		lrp := &ovnnb.LogicalRouterPort{
+			UUID:     ovsclient.NamedUUID(),
+			Name:     lrpName,
+			MAC:      "00:11:22:37:af:62",
+			Networks: []string{"192.168.123.1/24"},
+		}
+
+		err = ovnClient.CreateLogicalRouterPort(lrName, lrp)
+		require.NoError(t, err)
+	}
+
+	lr, err := ovnClient.GetLogicalRouter(lrName, false)
+	require.NoError(t, err)
+
+	for i := 0; i < 3; i++ {
+		lrpName := fmt.Sprintf("%s-%d", prefix, i)
+		lrp, err := ovnClient.GetLogicalRouterPort(lrpName, false)
+		require.NoError(t, err)
+		require.Contains(t, lr.Ports, lrp.UUID)
+	}
+
+	err = ovnClient.DeleteLogicalRouterPorts(nil, func(lrp *ovnnb.LogicalRouterPort) bool {
+		return len(lrp.ExternalIDs) != 0 && lrp.ExternalIDs[logicalRouterKey] == lrName
+	})
+
+	require.NoError(t, err)
+
+	for i := 0; i < 3; i++ {
+		lrpName := fmt.Sprintf("%s-%d", prefix, i)
+		_, err := ovnClient.GetLogicalRouterPort(lrpName, false)
+		require.ErrorContains(t, err, "object not found")
+	}
+
+	lr, err = ovnClient.GetLogicalRouter(lrName, false)
+	require.NoError(t, err)
+	require.Empty(t, lr.Ports)
+}
+
 func (suite *OvnClientTestSuite) testDeleteLogicalRouterPort() {
 	t := suite.T()
 	t.Parallel()
@@ -458,4 +522,97 @@ func (suite *OvnClientTestSuite) testDeleteLogicalRouterPortOp() {
 				},
 			},
 		}, ops[1])
+}
+
+func (suite *OvnClientTestSuite) testlogicalRouterPortFilter() {
+	t := suite.T()
+	t.Parallel()
+
+	lrName := "test-filter-lrp-lr"
+	prefix := "test-filter-lrp"
+	networks := []string{"192.168.200.1/24"}
+	lrps := make([]*ovnnb.LogicalRouterPort, 0)
+
+	i := 0
+	// create thress normal lsp
+	for ; i < 3; i++ {
+		lrpName := fmt.Sprintf("%s-%d", prefix, i)
+		lrp := newLogicalRouterPort(lrName, lrpName, util.GenerateMac(), networks)
+		lrps = append(lrps, lrp)
+	}
+
+	// create two peer lsp
+	for ; i < 5; i++ {
+		lrpName := fmt.Sprintf("%s-%d", prefix, i)
+		lrp := newLogicalRouterPort(lrName, lrpName, util.GenerateMac(), networks)
+		peer := lrpName + "-peer"
+		lrp.Peer = &peer
+		lrps = append(lrps, lrp)
+	}
+
+	// create two normal lsp with different logical router name
+	for ; i < 6; i++ {
+		lrpName := fmt.Sprintf("%s-%d", prefix, i)
+		lrp := newLogicalRouterPort(lrName, lrpName, util.GenerateMac(), networks)
+		lrp.ExternalIDs[logicalRouterKey] = lrName + "-test"
+		lrps = append(lrps, lrp)
+	}
+
+	t.Run("include all lsp", func(t *testing.T) {
+		filterFunc := logicalRouterPortFilter(nil, nil)
+		count := 0
+		for _, lrp := range lrps {
+			if filterFunc(lrp) {
+				count++
+			}
+		}
+		require.Equal(t, count, 6)
+	})
+
+	t.Run("include all lrp with external ids", func(t *testing.T) {
+		filterFunc := logicalRouterPortFilter(map[string]string{logicalRouterKey: lrName}, nil)
+		count := 0
+		for _, lrp := range lrps {
+			if filterFunc(lrp) {
+				count++
+			}
+		}
+		require.Equal(t, count, 5)
+	})
+
+	t.Run("include all logicalRouterKey lrp with external ids key's value is empty", func(t *testing.T) {
+		filterFunc := logicalRouterPortFilter(map[string]string{logicalRouterKey: ""}, nil)
+		count := 0
+		for _, lrp := range lrps {
+			if filterFunc(lrp) {
+				count++
+			}
+		}
+		require.Equal(t, count, 6)
+	})
+
+	t.Run("meet custom filter func", func(t *testing.T) {
+		filterFunc := logicalRouterPortFilter(nil, func(lrp *ovnnb.LogicalRouterPort) bool {
+			return lrp.Peer != nil && len(*lrp.Peer) != 0
+		})
+		count := 0
+		for _, lrp := range lrps {
+			if filterFunc(lrp) {
+				count++
+			}
+		}
+		require.Equal(t, count, 2)
+	})
+
+	t.Run("result should exclude lrp when externalIDs's length is not equal", func(t *testing.T) {
+		t.Parallel()
+
+		lrp := newLogicalRouterPort(lrName, prefix+"-test", util.GenerateMac(), networks)
+		filterFunc := logicalRouterPortFilter(map[string]string{
+			logicalRouterKey: lrName,
+			"key":            "value",
+		}, nil)
+
+		require.False(t, filterFunc(lrp))
+	})
 }

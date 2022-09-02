@@ -548,7 +548,7 @@ scan:
 	trivy image --exit-code=1 --ignore-unfixed --scanners vuln $(REGISTRY)/vpc-nat-gateway:$(RELEASE_TAG)
 
 .PHONY: ut
-ut: # Please run 'make mocks' before this target
+ut: # Please exec 'hack/mockgen.sh' before this target
 	ginkgo -mod=mod -progress -reportPassed --slowSpecThreshold=60 test/unittest
 	go test ./pkg/...
 

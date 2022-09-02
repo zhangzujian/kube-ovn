@@ -276,9 +276,7 @@ func (c *ovnClient) SetLogicalSwitchPrivate(lsName, cidrBlock string, allowSubne
 	acls := make([]*ovnnb.ACL, 0)
 
 	/* default drop acl */
-	AllIpMatch := NewAndAclMatch(
-		NewAclMatch("ip", "", "", ""),
-	)
+	AllIpMatch := NewAclMatch("ip", "", "", "")
 
 	options := func(acl *ovnnb.ACL) {
 		acl.Name = &lsName
@@ -461,7 +459,7 @@ func (c *ovnClient) CreateBareAcl(parentName, direction, priority, match, action
 func (c *ovnClient) DeleteAcls(parentName, parentType string, direction string) error {
 	externalIDs := map[string]string{aclParentKey: parentName}
 
-	/* delete acls from port group or logical switch*/
+	/* delete acls from port group or logical switch */
 	acls, err := c.ListAcls(direction, externalIDs)
 	if err != nil {
 		return fmt.Errorf("list type %s %s acls: %v", parentType, parentName, err)

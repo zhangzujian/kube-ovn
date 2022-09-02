@@ -50,6 +50,7 @@ func (suite *OvnClientTestSuite) testCreateRouterPort() {
 	ovnClient := suite.ovnClient
 	lsName := "test-create-router-ls"
 	lrName := "test-create-router-lr"
+	lspName := fmt.Sprintf("%s-%s", lsName, lrName)
 	lrpName := fmt.Sprintf("%s-%s", lrName, lsName)
 	chassises := []string{"5de32fcb-495a-40df-919e-f09812c4dffe", "25310674-65ce-41fd-bcfa-65b25268926b"}
 
@@ -61,7 +62,7 @@ func (suite *OvnClientTestSuite) testCreateRouterPort() {
 
 	t.Run("create router port with chassises", func(t *testing.T) {
 		t.Parallel()
-		err := ovnClient.CreateRouterPort(lsName, lrName, "192.168.230.1/24,fc00::0af4:01/112", util.GenerateMac(), chassises...)
+		err := ovnClient.CreateRouterPort(lsName, lrName, lspName, lrpName, "192.168.230.1/24,fc00::0af4:01/112", util.GenerateMac(), chassises...)
 		require.NoError(t, err)
 
 		lrp, err := ovnClient.GetLogicalRouterPort(lrpName, false)
@@ -86,7 +87,7 @@ func (suite *OvnClientTestSuite) testCreateRouterPort() {
 		err = ovnClient.CreateBareLogicalSwitch(lsName)
 		require.NoError(t, err)
 
-		err = ovnClient.CreateRouterPort(lsName, lrName, "192.168.230.1/24,fc00::0af4:01/112", util.GenerateMac())
+		err = ovnClient.CreateRouterPort(lsName, lrName, lspName, lrpName, "192.168.230.1/24,fc00::0af4:01/112", util.GenerateMac())
 		require.NoError(t, err)
 	})
 
@@ -94,6 +95,7 @@ func (suite *OvnClientTestSuite) testCreateRouterPort() {
 		t.Parallel()
 		lsName := "test-create-ls-no-ip"
 		lrName := "test-create-lr-no-ip"
+		lspName := fmt.Sprintf("%s-%s", lsName, lrName)
 		lrpName := fmt.Sprintf("%s-%s", lrName, lsName)
 
 		err := ovnClient.CreateLogicalRouter(lrName)
@@ -102,7 +104,7 @@ func (suite *OvnClientTestSuite) testCreateRouterPort() {
 		err = ovnClient.CreateBareLogicalSwitch(lsName)
 		require.NoError(t, err)
 
-		err = ovnClient.CreateRouterPort(lsName, lrName, "", util.GenerateMac())
+		err = ovnClient.CreateRouterPort(lsName, lrName, lspName, lrpName, "", util.GenerateMac())
 		require.NoError(t, err)
 
 		lrp, err := ovnClient.GetLogicalRouterPort(lrpName, false)
@@ -129,7 +131,7 @@ func (suite *OvnClientTestSuite) testCreateRouterTypePort() {
 	require.NoError(t, err)
 
 	t.Run("normal add router type port", func(t *testing.T) {
-		err = ovnClient.CreateRouterTypePort(lsName, lrName, util.GenerateMac(), func(lrp *ovnnb.LogicalRouterPort) {
+		err = ovnClient.CreateRouterTypePort(lsName, lrName, lspName, lrpName, util.GenerateMac(), func(lrp *ovnnb.LogicalRouterPort) {
 			lrp.Networks = []string{"192.168.230.1/24", "fc00::0af4:01/112"}
 			if len(chassises) != 0 {
 				lrp.GatewayChassis = chassises
@@ -162,7 +164,7 @@ func (suite *OvnClientTestSuite) testCreateRouterTypePort() {
 	})
 
 	t.Run("should no err when add router type port repeatedly", func(t *testing.T) {
-		err = ovnClient.CreateRouterTypePort(lsName, lrName, util.GenerateMac(), func(lrp *ovnnb.LogicalRouterPort) {
+		err = ovnClient.CreateRouterTypePort(lsName, lrName, lspName, lrpName, util.GenerateMac(), func(lrp *ovnnb.LogicalRouterPort) {
 			if len(chassises) != 0 {
 				lrp.GatewayChassis = chassises
 			}
@@ -188,7 +190,7 @@ func (suite *OvnClientTestSuite) testRemoveRouterTypePort() {
 	require.NoError(t, err)
 
 	t.Run("normal del router type port", func(t *testing.T) {
-		err = ovnClient.CreateRouterPort(lsName, lrName, "192.168.230.1/24,fc00::0af4:01/112", util.GenerateMac())
+		err = ovnClient.CreateRouterPort(lsName, lrName, lspName, lrpName, "192.168.230.1/24,fc00::0af4:01/112", util.GenerateMac())
 		require.NoError(t, err)
 
 		err = ovnClient.RemoveRouterTypePort(lspName, lrpName)

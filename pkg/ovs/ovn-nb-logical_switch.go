@@ -40,7 +40,7 @@ func (c *ovnClient) CreateLogicalSwitch(lsName, lrName, cidrBlock, gateway strin
 	}
 
 	if needRouter {
-		if err := c.CreateRouterPort(lsName, lrName, networks, util.GenerateMac()); err != nil {
+		if err := c.CreateRouterPort(lsName, lrName, lspName, lrpName, networks, util.GenerateMac()); err != nil {
 			return fmt.Errorf("create router type port %s and %s: %v", lspName, lrpName, err)
 		}
 	} else {
@@ -292,7 +292,7 @@ func (c *ovnClient) LogicalSwitchOp(lsName string, mutationsFunc ...func(ls *ovn
 func (c *ovnClient) DeleteLogicalSwitchOp(lsName string) ([]ovsdb.Operation, error) {
 	ls, err := c.GetLogicalSwitch(lsName, true)
 	if err != nil {
-		return nil, fmt.Errorf("get logical switch %s when generate delete operations: %v", lsName, err)
+		return nil, fmt.Errorf("get logical switch %s: %v", lsName, err)
 	}
 
 	// not found, skip

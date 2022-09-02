@@ -63,15 +63,6 @@ func (suite *OvnClientTestSuite) testCreateLogicalSwitch() {
 	t.Run("should no err when router type port doest't exist", func(t *testing.T) {
 		err = ovnClient.CreateLogicalSwitch(lsName+"-1", lrName+"-1", "192.168.2.0/24,fd00::c0a8:9900/120", "192.168.2.1,fd00::c0a8:9901", false)
 		require.NoError(t, err)
-
-		_, err = ovnClient.GetLogicalSwitchPort(lspName, false)
-		require.ErrorContains(t, err, "object not found")
-
-		_, err = ovnClient.GetLogicalRouterPort(lrpName, false)
-		require.ErrorContains(t, err, "object not found")
-
-		err = ovnClient.CreateLogicalSwitch(lsName+"-1", lrName+"-1", "192.168.2.0/24,fd00::c0a8:9900/120", "192.168.2.1,fd00::c0a8:9901", false)
-		require.NoError(t, err)
 	})
 }
 

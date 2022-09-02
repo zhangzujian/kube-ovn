@@ -194,17 +194,17 @@ func (c *Controller) initNodeSwitch() error {
 
 // InitClusterRouter init cluster router to connect different logical switches
 func (c *Controller) initClusterRouter() error {
-	lrs, err := c.ovnLegacyClient.ListLogicalRouter(c.config.EnableExternalVpc)
+	exists, err := c.ovnClient.LogicalRouterExists(c.config.ClusterRouter)
 	if err != nil {
 		return err
 	}
-	klog.Infof("exists routers: %v", lrs)
-	for _, r := range lrs {
-		if c.config.ClusterRouter == r {
-			return nil
-		}
+
+	// found, ingnore
+	if exists {
+		return nil
 	}
-	return c.ovnLegacyClient.CreateLogicalRouter(c.config.ClusterRouter)
+
+	return c.ovnClient.CreateLogicalRouter(c.config.ClusterRouter)
 }
 
 // InitLoadBalancer init the default tcp and udp cluster loadbalancer

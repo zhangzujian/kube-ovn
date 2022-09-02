@@ -37,7 +37,6 @@ type LegacyClient struct {
 
 type ovnClient struct {
 	ovnNbClient
-	ClusterRouter  string
 	NodeSwitchCIDR string
 }
 

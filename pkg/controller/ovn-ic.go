@@ -255,7 +255,8 @@ func (c *Controller) establishInterConnection(config map[string]string) error {
 		return err
 	}
 
-	if err := c.ovnLegacyClient.CreateICLogicalRouterPort(config["az-name"], util.GenerateMac(), subnet, chassises); err != nil {
+	lrpName := fmt.Sprintf("%s-ts", config["az-name"])
+	if err := c.ovnClient.CreateRouterPort(util.InterconnectionSwitch, c.config.ClusterRouter, tsPort, lrpName, subnet, util.GenerateMac(), chassises...); err != nil {
 		klog.Errorf("failed to create ovn-ic lrp %v", err)
 		return err
 	}
@@ -321,19 +322,20 @@ func (c *Controller) stopOvnIC() error {
 func (c *Controller) waitTsReady() error {
 	retry := 6
 	for retry > 0 {
-		exists, err := c.ovnLegacyClient.LogicalSwitchExists(util.InterconnectionSwitch, false)
+		ready, err := c.allSubnetReady(util.InterconnectionSwitch)
 		if err != nil {
-			klog.Errorf("failed to list logical switch, %v", err)
 			return err
 		}
-		if exists {
+
+		if ready {
 			return nil
 		}
-		klog.Info("wait for ts logical switch ready")
+
+		klog.Info("wait for logical switch %s ready", util.InterconnectionSwitch)
 		time.Sleep(5 * time.Second)
 		retry = retry - 1
 	}
-	return fmt.Errorf("timeout to wait ts ready")
+	return fmt.Errorf("timeout to wait for logical switch %s ready", util.InterconnectionSwitch)
 }
 
 func (c *Controller) delLearnedRoute() error {

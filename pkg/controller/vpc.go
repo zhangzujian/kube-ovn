@@ -814,22 +814,22 @@ func (c *Controller) getVpcSubnets(vpc *kubeovnv1.Vpc) (subnets []string, defaul
 
 // createVpcRouter create router to connect logical switches in vpc
 func (c *Controller) createVpcRouter(lr string) error {
-	lrs, err := c.ovnLegacyClient.ListLogicalRouter(c.config.EnableExternalVpc)
+	exists, err := c.ovnClient.LogicalRouterExists(lr)
 	if err != nil {
 		return err
 	}
-	klog.Infof("exists routers %v", lrs)
-	for _, r := range lrs {
-		if lr == r {
-			return nil
-		}
+
+	// found, ingnore
+	if exists {
+		return nil
 	}
-	return c.ovnLegacyClient.CreateLogicalRouter(lr)
+
+	return c.ovnClient.CreateLogicalRouter(lr)
 }
 
 // deleteVpcRouter delete router to connect logical switches in vpc
 func (c *Controller) deleteVpcRouter(lr string) error {
-	return c.ovnLegacyClient.DeleteLogicalRouter(lr)
+	return c.ovnClient.DeleteLogicalRouter(lr)
 }
 
 func (c *Controller) handleAddVpcExternal(key string) error {

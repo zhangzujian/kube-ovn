@@ -678,14 +678,6 @@ func (c LegacyClient) DeleteGatewaySwitch(name string) error {
 	return err
 }
 
-// ListLogicalSwitch list logical switch names
-func (c LegacyClient) ListLogicalSwitch(needVendorFilter bool, args ...string) ([]string, error) {
-	if needVendorFilter {
-		args = append(args, fmt.Sprintf("external_ids:vendor=%s", util.CniTypeName))
-	}
-	return c.ListLogicalEntity("logical_switch", args...)
-}
-
 func (c LegacyClient) ListLogicalEntity(entity string, args ...string) ([]string, error) {
 	cmd := []string{"--format=csv", "--data=bare", "--no-heading", "--columns=name", "find", entity}
 	cmd = append(cmd, args...)
@@ -764,19 +756,6 @@ func (c LegacyClient) GetEntityInfo(entity string, index string, attris []string
 	return result, nil
 }
 
-func (c LegacyClient) LogicalSwitchExists(logicalSwitch string, needVendorFilter bool, args ...string) (bool, error) {
-	lss, err := c.ListLogicalSwitch(needVendorFilter, args...)
-	if err != nil {
-		return false, err
-	}
-	for _, ls := range lss {
-		if ls == logicalSwitch {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
 func (c LegacyClient) ListLogicalSwitchPort(needVendorFilter bool) ([]string, error) {
 	cmdArg := []string{"--format=csv", "--data=bare", "--no-heading", "--columns=name", "find", "logical_switch_port", "type=\"\""}
 	if needVendorFilter {
@@ -830,36 +809,6 @@ func (c LegacyClient) ListRemoteLogicalSwitchPortAddress() ([]string, error) {
 		result = append(result, strings.TrimSpace(cidr))
 	}
 	return result, nil
-}
-
-// ListLogicalRouter list logical router names
-func (c LegacyClient) ListLogicalRouter(needVendorFilter bool, args ...string) ([]string, error) {
-	if needVendorFilter {
-		args = append(args, fmt.Sprintf("external_ids:vendor=%s", util.CniTypeName))
-	}
-	return c.ListLogicalEntity("logical_router", args...)
-}
-
-// DeleteLogicalSwitch delete logical switch
-func (c LegacyClient) DeleteLogicalSwitch(ls string) error {
-	if _, err := c.ovnNbCommand(IfExists, "ls-del", ls); err != nil {
-		klog.Errorf("failed to del ls %s, %v", ls, err)
-		return err
-	}
-	return nil
-}
-
-// CreateLogicalRouter delete logical router in ovn
-func (c LegacyClient) CreateLogicalRouter(lr string) error {
-	_, err := c.ovnNbCommand(MayExist, "lr-add", lr, "--",
-		"set", "Logical_Router", lr, fmt.Sprintf("external_ids:vendor=%s", util.CniTypeName))
-	return err
-}
-
-// DeleteLogicalRouter create logical router in ovn
-func (c LegacyClient) DeleteLogicalRouter(lr string) error {
-	_, err := c.ovnNbCommand(IfExists, "lr-del", lr)
-	return err
 }
 
 func (c LegacyClient) RemoveRouterPort(ls, lr string) error {
@@ -1492,27 +1441,6 @@ func (c LegacyClient) SetLoadBalancerAffinityTimeout(lb string, timeout int) err
 // CreateLoadBalancerRule create loadbalancer rul in ovn
 func (c LegacyClient) CreateLoadBalancerRule(lb, vip, ips, protocol string) error {
 	_, err := c.ovnNbCommand(MayExist, "lb-add", lb, vip, ips, strings.ToLower(protocol))
-	return err
-}
-
-func (c LegacyClient) addLoadBalancerToLogicalSwitch(lb, ls string) error {
-	_, err := c.ovnNbCommand(MayExist, "ls-lb-add", ls, lb)
-	return err
-}
-
-func (c LegacyClient) removeLoadBalancerFromLogicalSwitch(lb, ls string) error {
-	if lb == "" {
-		return nil
-	}
-	lbUuid, err := c.FindLoadbalancer(lb)
-	if err != nil {
-		return err
-	}
-	if lbUuid == "" {
-		return nil
-	}
-
-	_, err = c.ovnNbCommand(IfExists, "ls-lb-del", ls, lb)
 	return err
 }
 
