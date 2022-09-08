@@ -167,8 +167,10 @@ func (c *Controller) removeInterConnection(azName string) error {
 	}
 
 	if azName != "" {
-		if err := c.ovnLegacyClient.DeleteICLogicalRouterPort(azName); err != nil {
-			klog.Errorf("failed to delete ovn-ic lrp, %v", err)
+		lspName := fmt.Sprintf("ts-%s", azName)
+		lrpName := fmt.Sprintf("%s-ts", azName)
+		if err := c.ovnClient.RemoveRouterPort(lspName, lrpName); err != nil {
+			klog.Errorf("delete ovn-ic logical port %s and %s: %v", lspName, lrpName, err)
 			return err
 		}
 	}
@@ -188,15 +190,17 @@ func (c *Controller) establishInterConnection(config map[string]string) error {
 	}
 
 	tsPort := fmt.Sprintf("ts-%s", config["az-name"])
-	exist, err := c.ovnLegacyClient.LogicalSwitchPortExists(tsPort)
+	exist, err := c.ovnClient.LogicalSwitchPortExists(tsPort)
 	if err != nil {
 		klog.Errorf("failed to list logical switch ports, %v", err)
 		return err
 	}
+
 	if exist {
 		klog.Infof("ts port %s already exists", tsPort)
 		return nil
 	}
+
 	if err := c.ovnClient.SetAzName(config["az-name"]); err != nil {
 		klog.Errorf("failed to set az name. %v", err)
 		return err
@@ -267,19 +271,23 @@ func (c *Controller) establishInterConnection(config map[string]string) error {
 func (c *Controller) acquireLrpAddress(ts string) (string, error) {
 	cidr, err := c.ovnLegacyClient.GetTsSubnet(ts)
 	if err != nil {
-		klog.Errorf("failed to get ts subnet, %v", err)
+		klog.Errorf("failed to get ts subnet: %v", err)
 		return "", err
 	}
-	existAddress, err := c.ovnLegacyClient.ListRemoteLogicalSwitchPortAddress()
+	existAddress, err := c.listRemoteLogicalSwitchPortAddress()
 	if err != nil {
-		klog.Errorf("failed to list remote port address, %v", err)
+		klog.Errorf("list remote port address: %v", err)
 		return "", err
 	}
+
 	for {
 		random := util.GenerateRandomV4IP(cidr)
-		if !util.ContainsString(existAddress, random) {
+
+		// find a free address
+		if _, ok := existAddress[random]; !ok {
 			return random, nil
 		}
+
 		klog.Infof("random ip %s already exists", random)
 		time.Sleep(1 * time.Second)
 	}

@@ -5,6 +5,7 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
+	"k8s.io/client-go/util/workqueue"
 
 	mockovs "github.com/kubeovn/kube-ovn/mocks/pkg/ovs"
 	"github.com/kubeovn/kube-ovn/pkg/client/clientset/versioned/fake"
@@ -13,7 +14,8 @@ import (
 )
 
 type fakeControllerInformers struct {
-	vpcInformer kubeovninformer.VpcInformer
+	vpcInformer    kubeovninformer.VpcInformer
+	sbunetInformer kubeovninformer.SubnetInformer
 }
 
 type fakeController struct {
@@ -22,23 +24,30 @@ type fakeController struct {
 	mockOvnClient  *mockovs.MockOvnClient
 }
 
+func alwaysReady() bool { return true }
+
 func newFakeController(t *testing.T) *fakeController {
 	/* kube ovn fake client */
 	kubeovnClient := fake.NewSimpleClientset()
 	kubeovnInformerFactory := informerfactory.NewSharedInformerFactory(kubeovnClient, 0)
 	vpcInformer := kubeovnInformerFactory.Kubeovn().V1().Vpcs()
+	sbunetInformer := kubeovnInformerFactory.Kubeovn().V1().Subnets()
 
 	fakeInformers := &fakeControllerInformers{
-		vpcInformer: vpcInformer,
+		vpcInformer:    vpcInformer,
+		sbunetInformer: sbunetInformer,
 	}
 
 	/* ovn fake client */
 	mockOvnClient := mockovs.NewMockOvnClient(gomock.NewController(t))
 
 	ctrl := &Controller{
-		vpcsLister: vpcInformer.Lister(),
-		vpcSynced:  alwaysReady,
-		ovnClient:  mockOvnClient,
+		vpcsLister:            vpcInformer.Lister(),
+		vpcSynced:             alwaysReady,
+		subnetsLister:         sbunetInformer.Lister(),
+		subnetSynced:          alwaysReady,
+		ovnClient:             mockOvnClient,
+		syncVirtualPortsQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), ""),
 	}
 
 	return &fakeController{
@@ -66,8 +75,8 @@ func Test_allSubnetReady(t *testing.T) {
 	})
 
 	t.Run("some subnet are not ready", func(t *testing.T) {
-		mockOvnClient.EXPECT().LogicalSwitchExists(gomock.Eq(subnets[0])).Return(true, nil)
-		mockOvnClient.EXPECT().LogicalSwitchExists(gomock.Eq(subnets[1])).Return(false, nil)
+		mockOvnClient.EXPECT().LogicalSwitchExists(subnets[0]).Return(true, nil)
+		mockOvnClient.EXPECT().LogicalSwitchExists(subnets[1]).Return(false, nil)
 
 		ready, err := ctrl.allSubnetReady(subnets...)
 		require.NoError(t, err)

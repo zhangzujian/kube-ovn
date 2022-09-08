@@ -801,11 +801,6 @@ func (c *Controller) handleDeleteLogicalSwitch(key string) (err error) {
 		return err
 	}
 
-	if err = c.ovnLegacyClient.CleanLogicalSwitchAcl(key); err != nil {
-		klog.Errorf("failed to delete acl of logical switch %s %v", key, err)
-		return err
-	}
-
 	if err = c.ovnLegacyClient.DeleteDHCPOptions(key, kubeovnv1.ProtocolDual); err != nil {
 		klog.Errorf("failed to delete dhcp options of logical switch %s %v", key, err)
 		return err
@@ -864,6 +859,8 @@ func (c *Controller) handleDeleteSubnet(subnet *kubeovnv1.Subnet) error {
 		klog.Errorf("failed to delete logical switch %s %v", subnet.Name, err)
 		return err
 	}
+
+	var router string
 	vpc, err := c.vpcsLister.Get(subnet.Spec.Vpc)
 	if err == nil && vpc.Status.Router != "" {
 		klog.Infof("remove connection from router %s to switch %s", vpc.Status.Router, subnet.Name)
@@ -871,17 +868,16 @@ func (c *Controller) handleDeleteSubnet(subnet *kubeovnv1.Subnet) error {
 			klog.Errorf("failed to delete router port %s %v", subnet.Name, err)
 			return err
 		}
+		router = util.DefaultVpc
 	} else {
-		if k8serrors.IsNotFound(err) {
-			klog.Infof("remove connection from router %s to switch %s", util.DefaultVpc, subnet.Name)
-			if err = c.ovnLegacyClient.RemoveRouterPort(subnet.Name, util.DefaultVpc); err != nil {
-				klog.Errorf("failed to delete router port %s %v", subnet.Name, err)
-				return err
-			}
-		} else {
-			klog.Errorf("failed to get vpc, %v", err)
-			return err
-		}
+		router = vpc.Status.Router
+	}
+
+	lspName := fmt.Sprintf("%s-%s", subnet.Name, router)
+	lrpName := fmt.Sprintf("%s-%s", router, subnet.Name)
+	if err = c.ovnClient.RemoveRouterPort(lspName, lrpName); err != nil {
+		klog.Errorf("delete router port %s and %s:%v", lspName, lrpName, err)
+		return err
 	}
 
 	vlans, err := c.vlansLister.List(labels.Everything())
@@ -939,45 +935,54 @@ func (c *Controller) reconcileSubnet(subnet *kubeovnv1.Subnet) error {
 }
 
 func (c *Controller) reconcileVips(subnet *kubeovnv1.Subnet) error {
-	// 1. get all vip port
-	results, err := c.ovnLegacyClient.CustomFindEntity("logical_switch_port", []string{"name", "options"}, "type=virtual", fmt.Sprintf("external_ids:ls=%s", subnet.Name))
+	/* get all virtual port belongs to this logical switch */
+	lsps, err := c.ovnClient.ListVirtualTypeLogicalSwitchPorts(subnet.Name)
 	if err != nil {
-		klog.Errorf("failed to find virtual port, %v", err)
+		klog.Errorf("list logical switch %s virtual ports: %v", subnet.Name, err)
 		return err
 	}
 
-	// 2. remove no need port
-	var existVips []string
-	for _, ret := range results {
-		options := ret["options"]
-		for _, value := range options {
-			if !strings.HasPrefix(value, "virtual-ip=") {
-				continue
-			}
-			vip := strings.TrimPrefix(value, "virtual-ip=")
-			if vip == "" || net.ParseIP(vip) == nil {
-				continue
-			}
-			if !util.ContainsString(subnet.Spec.Vips, vip) {
-				klog.Infof("delete logical switch port %s", ret["name"][0])
-				if err = c.ovnLegacyClient.DeleteLogicalSwitchPort(ret["name"][0]); err != nil {
-					klog.Errorf("failed to delete virtual port, %v", err)
-					return err
-				}
-			} else {
-				existVips = append(existVips, vip)
-			}
+	/* filter all invaild virtual port */
+	existVips := make(map[string]string) // key is vip, value is port name
+	for _, lsp := range lsps {
+		vip, ok := lsp.Options["virtual-ip"]
+		if !ok {
+			continue // ingnore vip which is empty
+		}
+
+		if net.ParseIP(vip) == nil {
+			continue // ingnore invalid vip
+		}
+
+		existVips[vip] = lsp.Name
+	}
+
+	/* filter virtual port to be added and old virtual port to be deleted */
+	var newVips []string
+	for _, vip := range subnet.Spec.Vips {
+		if _, ok := existVips[vip]; !ok {
+			// new virtual port to be added
+			newVips = append(newVips, vip)
+		} else {
+			// delete old virtual port that do not need to be deleted
+			delete(existVips, vip)
 		}
 	}
 
-	// 3. create new port
-	newVips := util.DiffStringSlice(existVips, subnet.Spec.Vips)
-	for _, vip := range newVips {
-		if err = c.ovnLegacyClient.CreateVirtualPort(subnet.Name, vip); err != nil {
-			klog.Errorf("failed to create virtual port, %v", err)
+	// delete old virtual ports
+	for _, lspName := range existVips {
+		if err = c.ovnClient.DeleteLogicalSwitchPort(lspName); err != nil {
+			klog.Errorf("delete virtual port %s lspName from logical switch %s: %v", lspName, subnet.Name, err)
 			return err
 		}
 	}
+
+	// add new virtual port
+	if err = c.ovnClient.CreateVirtualLogicalSwitchPorts(subnet.Name, newVips...); err != nil {
+		klog.Errorf("create virtual port with vips %v from logical switch %s: %v", newVips, subnet.Name, err)
+		return err
+	}
+
 	c.syncVirtualPortsQueue.Add(subnet.Name)
 	return nil
 }
@@ -996,25 +1001,14 @@ func (c *Controller) syncVirtualPort(key string) error {
 		return nil
 	}
 
-	results, err := c.ovnLegacyClient.CustomFindEntity("logical_switch_port", []string{"name", "external_ids"},
-		fmt.Sprintf("external_ids:ls=%s", subnet.Name), "external_ids:attach-vips=true")
-	if err != nil {
-		klog.Errorf("failed to list logical_switch_port, %v", err)
-		return err
+	externalIDs := map[string]string{
+		logicalSwitchKey: subnet.Name,
+		"attach-vips":    "true",
 	}
-	vipVirtualParentsMap := map[string][]string{}
-	for _, ret := range results {
-		var associatedVips []string
-		for _, value := range ret["external_ids"] {
-			if strings.HasPrefix(value, "vips") {
-				vips := strings.Split(value, "=")[1]
-				associatedVips = strings.Split(strings.ReplaceAll(vips, " ", ""), "/")
-			}
-		}
-		klog.Infof("associatedVips %v", associatedVips)
-		for _, vip := range associatedVips {
-			vipVirtualParentsMap[vip] = append(vipVirtualParentsMap[vip], ret["name"][0])
-		}
+	lsps, err := c.ovnClient.ListLogicalSwitchPorts(true, externalIDs)
+	if err != nil {
+		klog.Errorf("list logical switch %s ports: %v", subnet.Name, err)
+		return err
 	}
 
 	for _, vip := range subnet.Spec.Vips {
@@ -1022,15 +1016,30 @@ func (c *Controller) syncVirtualPort(key string) error {
 			klog.Errorf("vip %s is out of range to subnet %s", vip, subnet.Name)
 			continue
 		}
+
 		var virtualParents []string
-		if value, exist := vipVirtualParentsMap[vip]; exist {
-			virtualParents = value
+		for _, lsp := range lsps {
+			vips, ok := lsp.ExternalIDs["vips"]
+			if !ok {
+				continue // ingnore vips which is empty
+			}
+
+			if strings.Contains(vips, vip) {
+				virtualParents = append(virtualParents, lsp.Name)
+			}
 		}
-		if err = c.ovnLegacyClient.SetVirtualParents(subnet.Name, vip, strings.Join(virtualParents, ",")); err != nil {
-			klog.Errorf("failed to set vip %s virtual parents, %v", vip, err)
+
+		// logical switch port has no vaild vip
+		if len(virtualParents) == 0 {
+			continue
+		}
+
+		if err = c.ovnClient.SetLogicalSwitchPortVirtualParents(subnet.Name, strings.Join(virtualParents, ","), vip); err != nil {
+			klog.Errorf("set vip %s virtual parents %v: %v", vip, virtualParents, err)
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -1480,8 +1489,8 @@ func (c *Controller) reconcileVlan(subnet *kubeovnv1.Subnet) error {
 	}
 
 	localnetPort := ovs.GetLocalnetName(subnet.Name)
-	if err := c.ovnLegacyClient.CreateLocalnetPort(subnet.Name, localnetPort, vlan.Spec.Provider, vlan.Spec.ID); err != nil {
-		klog.Errorf("failed to create localnet port for subnet %s: %v", subnet.Name, err)
+	if err := c.ovnClient.CreateLocalnetLogicalSwitchPort(subnet.Name, localnetPort, vlan.Spec.Provider, vlan.Spec.ID); err != nil {
+		klog.Errorf("create localnet port for subnet %s: %v", subnet.Name, err)
 		return err
 	}
 
@@ -1578,13 +1587,19 @@ func calcDualSubnetStatusIP(subnet *kubeovnv1.Subnet, c *Controller) error {
 	v6toSubIPs := util.ExpandExcludeIPs(v6ExcludeIps, cidrBlocks[1])
 	_, v4CIDR, _ := net.ParseCIDR(cidrBlocks[0])
 	_, v6CIDR, _ := net.ParseCIDR(cidrBlocks[1])
-	v4availableIPs := util.AddressCount(v4CIDR) - util.CountIpNums(v4toSubIPs)
-	v6availableIPs := util.AddressCount(v6CIDR) - util.CountIpNums(v6toSubIPs)
+	v4UsingIPs := make([]string, 0, len(podUsedIPs.Items))
+	v6UsingIPs := make([]string, 0, len(podUsedIPs.Items))
+	for _, podUsedIP := range podUsedIPs.Items {
+		// The format of podUsedIP.Spec.IPAddress is 10.244.0.0/16,fd00:10:244::/64 when protocol is dualstack
+		splitIPs := strings.Split(podUsedIP.Spec.IPAddress, ",")
+		v4toSubIPs = append(v4toSubIPs, splitIPs[0])
+		v4UsingIPs = append(v4UsingIPs, splitIPs[0])
+		if len(splitIPs) == 2 {
+			v6toSubIPs = append(v6toSubIPs, splitIPs[1])
+			v6UsingIPs = append(v6UsingIPs, splitIPs[1])
+		}
+	}
 
-	usingIPs := float64(len(podUsedIPs.Items))
-
-	vipSelectors := fields.AndSelectors(fields.OneTermEqualSelector(util.SubnetNameLabel, subnet.Name),
-		fields.OneTermEqualSelector(util.IpReservedLabel, "")).String()
 	vips, err := c.config.KubeOvnClient.KubeovnV1().Vips().List(context.Background(), metav1.ListOptions{
 		LabelSelector: vipSelectors,
 	})

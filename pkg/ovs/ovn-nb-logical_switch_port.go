@@ -13,26 +13,19 @@ import (
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
 
-func (c *ovnClient) CreateLogicalSwitchPort(lsName, lspName, ip, mac, podName, namespace string, portSecurity bool, securityGroups string, vips string, liveMigration bool, enableDHCP bool, dhcpOptions *DHCPOptionsUUIDs, vpc string) error {
-	lsp, err := c.GetLogicalSwitchPort(lspName, true)
+func (c *ovnClient) CreateLogicalSwitchPort(lsName, lspName, ip, mac, podName, namespace string, portSecurity bool, securityGroups string, vips string, enableDHCP bool, dhcpOptions *DHCPOptionsUUIDs, vpc string) error {
+	exist, err := c.LogicalSwitchPortExists(lspName)
 	if err != nil {
-		return fmt.Errorf("get logical switch port %s: %v", lspName, err)
+		return err
 	}
 
-	// when kubevirt vm live-migrate, just consider the this case for now(keep-vm-ip=true):
-	// lspName is 'vmName.namespace.providerName' when keep-vm-ip=true, there are two pod with the same lspName,
-	// so to determine vm is in live migration
-	if liveMigration && lsp != nil {
-		lsp.Addresses = []string{mac}
-		lsp.ExternalIDs["liveMigration"] = "1"
-		if err := c.UpdateLogicalSwitchPort(lsp, &lsp.Addresses, &lsp.ExternalIDs); err != nil {
-			return fmt.Errorf("set liveMigration=1 to logical switch port %s: %v", lspName, err)
-		}
+	// ignore
+	if exist {
 		return nil
 	}
 
 	/* normal lsp creation */
-	lsp = &ovnnb.LogicalSwitchPort{
+	lsp := &ovnnb.LogicalSwitchPort{
 		UUID:        ovsclient.NamedUUID(),
 		Name:        lspName,
 		ExternalIDs: make(map[string]string),
@@ -72,7 +65,7 @@ func (c *ovnClient) CreateLogicalSwitchPort(lsName, lspName, ip, mac, podName, n
 
 	// set vips info to external-ids
 	if len(vips) != 0 {
-		lsp.ExternalIDs["vips"] = strings.ReplaceAll(vips, ",", "/")
+		lsp.ExternalIDs["vips"] = vips
 		lsp.ExternalIDs["attach-vips"] = "true"
 	}
 
@@ -184,11 +177,27 @@ func (c *ovnClient) CreateVirtualLogicalSwitchPorts(lsName string, ips ...string
 }
 
 // CreateBareLogicalSwitchPort create logical switch port with basic configuration
-func (c *ovnClient) CreateBareLogicalSwitchPort(lsName, lspName string) error {
+func (c *ovnClient) CreateBareLogicalSwitchPort(lsName, lspName, ip, mac string) error {
+	exist, err := c.LogicalSwitchPortExists(lspName)
+	if err != nil {
+		return err
+	}
+
+	// ignore
+	if exist {
+		return nil
+	}
+
+	ipList := strings.Split(ip, ",")
+	addresses := make([]string, 0, len(ipList)+1) // +1 is the mac length
+	addresses = append(addresses, ipList...)
+	addresses = append(addresses, mac)
+
 	/* create logical switch port */
 	lsp := &ovnnb.LogicalSwitchPort{
-		UUID: ovsclient.NamedUUID(),
-		Name: lspName,
+		UUID:      ovsclient.NamedUUID(),
+		Name:      lspName,
+		Addresses: []string{strings.Join(addresses, " ")}, // addresses is the first element of addresses
 	}
 
 	ops, err := c.CreateLogicalSwitchPortOp(lsp, lsName)
@@ -209,7 +218,7 @@ func (c *ovnClient) SetLogicalSwitchPortVirtualParents(lsName, parents string, i
 	for _, ip := range ips {
 		lspName := fmt.Sprintf("%s-vip-%s", lsName, ip)
 
-		lsp, err := c.GetLogicalSwitchPort(lspName, false)
+		lsp, err := c.GetLogicalSwitchPort(lspName, true)
 		if err != nil {
 			return fmt.Errorf("get logical switch port %s: %v", lspName, err)
 		}
@@ -263,7 +272,7 @@ func (c *ovnClient) SetLogicalSwitchPortSecurity(portSecurity bool, lspName, mac
 		if lsp.ExternalIDs == nil {
 			lsp.ExternalIDs = make(map[string]string)
 		}
-		lsp.ExternalIDs["vips"] = strings.ReplaceAll(vips, ",", "/")
+		lsp.ExternalIDs["vips"] = vips
 		lsp.ExternalIDs["attach-vips"] = "true"
 	} else {
 		delete(lsp.ExternalIDs, "vips")
@@ -476,6 +485,17 @@ func (c *ovnClient) ListRemoteTypeLogicalSwitchPorts() ([]ovnnb.LogicalSwitchPor
 	lspList := make([]ovnnb.LogicalSwitchPort, 0, 1)
 	if err := c.WhereCache(func(lsp *ovnnb.LogicalSwitchPort) bool {
 		return lsp.Type == "remote"
+	}).List(context.TODO(), &lspList); err != nil {
+		return nil, fmt.Errorf("list logical switch port which type is remote: %v", err)
+	}
+
+	return lspList, nil
+}
+
+func (c *ovnClient) ListVirtualTypeLogicalSwitchPorts(lsName string) ([]ovnnb.LogicalSwitchPort, error) {
+	lspList := make([]ovnnb.LogicalSwitchPort, 0, 1)
+	if err := c.WhereCache(func(lsp *ovnnb.LogicalSwitchPort) bool {
+		return lsp.Type == "virtual" && len(lsp.ExternalIDs) != 0 && lsp.ExternalIDs[logicalSwitchKey] == lsName
 	}).List(context.TODO(), &lspList); err != nil {
 		return nil, fmt.Errorf("list logical switch port which type is remote: %v", err)
 	}

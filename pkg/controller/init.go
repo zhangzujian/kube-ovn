@@ -819,8 +819,8 @@ func (c *Controller) initAppendLspExternalIds(portName string, pod *v1.Pod) erro
 		externalIDs["pod"] = fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)
 	}
 
-	if err := c.ovnLegacyClient.SetLspExternalIds(portName, externalIDs); err != nil {
-		klog.Errorf("failed to set lsp external_ids for port %s: %v", portName, err)
+	if err := c.ovnClient.SetLogicalSwitchPortExternalIds(portName, externalIDs); err != nil {
+		klog.Errorf("set lsp external_ids for logical switch port %s: %v", portName, err)
 		return err
 	}
 

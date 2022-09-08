@@ -186,6 +186,10 @@ func (suite *OvnClientTestSuite) Test_ListRemoteTypeLogicalSwitchPorts() {
 	suite.testListRemoteTypeLogicalSwitchPorts()
 }
 
+func (suite *OvnClientTestSuite) Test_ListVirtualTypeLogicalSwitchPorts() {
+	suite.testListVirtualTypeLogicalSwitchPorts()
+}
+
 func (suite *OvnClientTestSuite) Test_CreateLogicalSwitchPortOp() {
 	suite.testCreateLogicalSwitchPortOp()
 }
@@ -266,6 +270,10 @@ func (suite *OvnClientTestSuite) Test_CreateLogicalRouterPortOp() {
 
 func (suite *OvnClientTestSuite) Test_DeleteLogicalRouterPortOp() {
 	suite.testDeleteLogicalRouterPortOp()
+}
+
+func (suite *OvnClientTestSuite) Test_LogicalRouterPortOp() {
+	suite.testLogicalRouterPortOp()
 }
 
 func (suite *OvnClientTestSuite) Test_logicalRouterPortFilter() {
@@ -562,12 +570,8 @@ func (suite *OvnClientTestSuite) Test_CreateRouterPort() {
 	suite.testCreateRouterPort()
 }
 
-func (suite *OvnClientTestSuite) Test_CreateRouterTypePort() {
-	suite.testCreateRouterTypePort()
-}
-
-func (suite *OvnClientTestSuite) Test_RemoveRouterTypePort() {
-	suite.testRemoveRouterTypePort()
+func (suite *OvnClientTestSuite) Test_RemoveRouterPort() {
+	suite.testRemoveRouterPort()
 }
 
 func (suite *OvnClientTestSuite) Test_DeleteLogicalGatewaySwitch() {

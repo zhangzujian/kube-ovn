@@ -44,7 +44,7 @@ func (c *ovnClient) CreateLogicalSwitch(lsName, lrName, cidrBlock, gateway strin
 			return fmt.Errorf("create router type port %s and %s: %v", lspName, lrpName, err)
 		}
 	} else {
-		if err := c.RemoveRouterTypePort(lspName, lrpName); err != nil {
+		if err := c.RemoveRouterPort(lspName, lrpName); err != nil {
 			return fmt.Errorf("remove router type port %s and %s: %v", lspName, lrpName, err)
 		}
 	}
@@ -54,6 +54,16 @@ func (c *ovnClient) CreateLogicalSwitch(lsName, lrName, cidrBlock, gateway strin
 
 // CreateBareLogicalSwitch create logical switch with basic configuration
 func (c *ovnClient) CreateBareLogicalSwitch(lsName string) error {
+	exist, err := c.LogicalSwitchExists(lsName)
+	if err != nil {
+		return err
+	}
+
+	// ingnore
+	if exist {
+		return nil
+	}
+
 	ls := &ovnnb.LogicalSwitch{
 		Name:        lsName,
 		ExternalIDs: map[string]string{"vendor": util.CniTypeName},
@@ -182,8 +192,8 @@ func (c *ovnClient) GetLogicalSwitch(lsName string, ignoreNotFound bool) (*ovnnb
 }
 
 func (c *ovnClient) LogicalSwitchExists(lsName string) (bool, error) {
-	lrp, err := c.GetLogicalSwitch(lsName, true)
-	return lrp != nil, err
+	ls, err := c.GetLogicalSwitch(lsName, true)
+	return ls != nil, err
 }
 
 // ListLogicalSwitch list logical switch

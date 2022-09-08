@@ -49,7 +49,7 @@ func (c *ovnClient) CreatePeerRouterPort(localRouter, remoteRouter, localRouterP
 	}
 
 	if err = c.Transact("lrp-add", ops); err != nil {
-		return fmt.Errorf("create vpc external gateway logical router port %s: %v", localRouterPort, err)
+		return fmt.Errorf("create peer router port %s for logical router%s: %v", localRouterPort, localRouter, err)
 	}
 
 	return nil
@@ -97,7 +97,14 @@ func (c *ovnClient) UpdateLogicalRouterPort(lrp *ovnnb.LogicalRouterPort, fields
 }
 
 // CreateLogicalRouterPort create logical router port with basic configuration
-func (c *ovnClient) CreateLogicalRouterPort(lrName string, lrp *ovnnb.LogicalRouterPort) error {
+func (c *ovnClient) CreateLogicalRouterPort(lrName string, lrpName, mac string, networks []string) error {
+	lrp := &ovnnb.LogicalRouterPort{
+		UUID:     ovsclient.NamedUUID(),
+		Name:     lrpName,
+		MAC:      mac,
+		Networks: networks,
+	}
+
 	op, err := c.CreateLogicalRouterPortOp(lrp, lrName)
 	if err != nil {
 		return fmt.Errorf("generate operations for creating logical router port %s: %v", lrp.Name, err)
@@ -177,52 +184,23 @@ func (c *ovnClient) LogicalRouterPortExists(lrpName string) (bool, error) {
 	return lrp != nil, err
 }
 
-func (c *ovnClient) AddLogicalRouterPort(lr, name, mac, networks string) error {
-	router, err := c.GetLogicalRouter(lr, false)
-	if err != nil {
-		return err
+// LogicalRouterPortUpdateGatewayChassisOp create operations add to or delete gateway chassis from logical router port
+func (c *ovnClient) LogicalRouterPortUpdateGatewayChassisOp(lrpName string, uuids []string, op ovsdb.Mutator) ([]ovsdb.Operation, error) {
+	if len(uuids) == 0 {
+		return nil, nil
 	}
 
-	if mac == "" {
-		mac = util.GenerateMac()
+	mutation := func(lrp *ovnnb.LogicalRouterPort) *model.Mutation {
+		mutation := &model.Mutation{
+			Field:   &lrp.GatewayChassis,
+			Value:   uuids,
+			Mutator: op,
+		}
+
+		return mutation
 	}
 
-	lrp := &ovnnb.LogicalRouterPort{
-		UUID:        ovsclient.NamedUUID(),
-		Name:        name,
-		MAC:         mac,
-		Networks:    strings.Split(networks, ","),
-		ExternalIDs: map[string]string{"vendor": util.CniTypeName},
-	}
-
-	// ensure there is no port in the same name, before we create it in the transaction
-	waitOp := ConstructWaitForNameNotExistsOperation(name, "Logical_Router_Port")
-	ops := []ovsdb.Operation{waitOp}
-
-	createOps, err := c.ovnNbClient.Create(lrp)
-	if err != nil {
-		return err
-	}
-	ops = append(ops, createOps...)
-
-	mutationOps, err := c.ovnNbClient.
-		Where(router).
-		Mutate(router,
-			model.Mutation{
-				Field:   &router.Ports,
-				Mutator: ovsdb.MutateOperationInsert,
-				Value:   []string{lrp.UUID},
-			},
-		)
-	if err != nil {
-		return err
-	}
-	ops = append(ops, mutationOps...)
-	klog.Infof("add vpc lrp %s, networks %s", name, networks)
-	if err := Transact(c.ovnNbClient, "lrp-add", ops, c.ovnNbClient.Timeout); err != nil {
-		return fmt.Errorf("failed to create logical router port %s: %v", name, err)
-	}
-	return nil
+	return c.LogicalRouterPortOp(lrpName, mutation)
 }
 
 // CreateLogicalRouterPortOp create operation which create logical router port
@@ -237,6 +215,7 @@ func (c *ovnClient) CreateLogicalRouterPortOp(lrp *ovnnb.LogicalRouterPort, lrNa
 
 	// attach necessary info
 	lrp.ExternalIDs[logicalRouterKey] = lrName
+	lrp.ExternalIDs["vendor"] = util.CniTypeName
 
 	/* create logical router port */
 	lrpCreateOp, err := c.Create(lrp)
@@ -289,6 +268,35 @@ func (c *ovnClient) DeleteLogicalRouterPortOp(lrpName string) ([]ovsdb.Operation
 	ops := make([]ovsdb.Operation, 0, len(lrpRemoveOp)+len(lrpDelOp))
 	ops = append(ops, lrpRemoveOp...)
 	ops = append(ops, lrpDelOp...)
+
+	return ops, nil
+}
+
+// LogicalRouterPortOp create operations about logical router port
+func (c *ovnClient) LogicalRouterPortOp(lrpName string, mutationsFunc ...func(lrp *ovnnb.LogicalRouterPort) *model.Mutation) ([]ovsdb.Operation, error) {
+	lrp, err := c.GetLogicalRouterPort(lrpName, false)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(mutationsFunc) == 0 {
+		return nil, nil
+	}
+
+	mutations := make([]model.Mutation, 0, len(mutationsFunc))
+
+	for _, f := range mutationsFunc {
+		mutation := f(lrp)
+
+		if mutation != nil {
+			mutations = append(mutations, *mutation)
+		}
+	}
+
+	ops, err := c.ovnNbClient.Where(lrp).Mutate(lrp, mutations...)
+	if err != nil {
+		return nil, fmt.Errorf("generate operations for mutating logical router port %s: %v", lrpName, err)
+	}
 
 	return ops, nil
 }

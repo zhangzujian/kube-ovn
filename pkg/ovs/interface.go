@@ -23,8 +23,10 @@ type LogicalRouter interface {
 }
 
 type LogicalRouterPort interface {
+	CreatePeerRouterPort(localRouter, remoteRouter, localRouterPortIP string) error
 	DeleteLogicalRouterPort(lrpName string) error
 	DeleteLogicalRouterPorts(externalIDs map[string]string, filter func(lrp *ovnnb.LogicalRouterPort) bool) error
+	GetLogicalRouterPort(lrpName string, ignoreNotFound bool) (*ovnnb.LogicalRouterPort, error)
 	ListLogicalRouterPorts(externalIDs map[string]string, filter func(lrp *ovnnb.LogicalRouterPort) bool) ([]ovnnb.LogicalRouterPort, error)
 	LogicalRouterPortExists(lrpName string) (bool, error)
 }
@@ -39,8 +41,21 @@ type LogicalSwitch interface {
 }
 
 type LogicalSwitchPort interface {
+	CreateLogicalSwitchPort(lsName, lspName, ip, mac, podName, namespace string, portSecurity bool, securityGroups string, vips string, enableDHCP bool, dhcpOptions *DHCPOptionsUUIDs, vpc string) error
+	CreateBareLogicalSwitchPort(lsName, lspName, ip, mac string) error
+	CreateLocalnetLogicalSwitchPort(lsName, lspName, provider string, vlanID int) error
+	CreateVirtualLogicalSwitchPorts(lsName string, ips ...string) error
+	SetLogicalSwitchPortSecurity(portSecurity bool, lspName, mac, ips, vips string) error
+	SetLogicalSwitchPortVirtualParents(lsName, parents string, ips ...string) error
+	SetLogicalSwitchPortExternalIds(lspName string, externalIds map[string]string) error
+	SetLogicalSwitchPortVlanTag(lspName string, vlanID int) error
+	EnablePortLayer2forward(lspName string) error
+	DeleteLogicalSwitchPort(lspName string) error
 	ListLogicalSwitchPorts(needVendorFilter bool, externalIDs map[string]string) ([]ovnnb.LogicalSwitchPort, error)
+	ListVirtualTypeLogicalSwitchPorts(lsName string) ([]ovnnb.LogicalSwitchPort, error)
+	ListRemoteTypeLogicalSwitchPorts() ([]ovnnb.LogicalSwitchPort, error)
 	GetLogicalSwitchPort(lspName string, ignoreNotFound bool) (*ovnnb.LogicalSwitchPort, error)
+	LogicalSwitchPortExists(name string) (bool, error)
 }
 
 type LoadBalancer interface {
@@ -64,6 +79,12 @@ type LogicalRouterPolicy interface {
 	ListLogicalRouterPolicies(externalIDs map[string]string) ([]ovnnb.LogicalRouterPolicy, error)
 }
 
+type NAT interface {
+	UpdateSnat(lrName, externalIP, logicalIP string) error
+	UpdateDnatAndSnat(lrName, externalIP, logicalIP, lspName, externalMac, gatewayType string) error
+	DeleteNats(lrName, natType, logicalIP string) error
+}
+
 type OvnClient interface {
 	NbGlobal
 	LogicalRouter
@@ -74,5 +95,9 @@ type OvnClient interface {
 	PortGroup
 	LogicalRouterStaticRoute
 	LogicalRouterPolicy
+	NAT
+	CreateGatewayLogicalSwitch(lsName, lrName, provider, ip, mac string, vlanID int, chassises ...string) error
 	CreateRouterPort(lsName, lrName, lspName, lrpName, ip, mac string, chassises ...string) error
+	RemoveRouterPort(lspName, lrpName string) error
+	DeleteLogicalGatewaySwitch(lsName, lrName string) error
 }

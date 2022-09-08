@@ -57,7 +57,7 @@ func (suite *OvnClientTestSuite) testPortGroupUpdatePorts() {
 	for i := 1; i <= 3; i++ {
 		lspName := fmt.Sprintf("%s-%d", prefix, i)
 		lspNames = append(lspNames, lspName)
-		err := ovnClient.CreateBareLogicalSwitchPort(lsName, lspName)
+		err := ovnClient.CreateBareLogicalSwitchPort(lsName, lspName, "", "")
 		require.NoError(t, err)
 	}
 

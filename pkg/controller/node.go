@@ -248,7 +248,7 @@ func (c *Controller) handleAddNode(key string) error {
 	}
 
 	ipStr := util.GetStringIP(v4IP, v6IP)
-	if err := c.ovnLegacyClient.CreatePort(c.config.NodeSwitch, portName, ipStr, mac, "", "", false, "", "", false, false, nil, false); err != nil {
+	if err := c.ovnClient.CreateBareLogicalSwitchPort(c.config.NodeSwitch, portName, ipStr, mac); err != nil {
 		return err
 	}
 
@@ -441,7 +441,7 @@ func (c *Controller) handleNodeAnnotationsForProviderNetworks(node *v1.Node) err
 func (c *Controller) handleDeleteNode(key string) error {
 	portName := fmt.Sprintf("node-%s", key)
 	klog.Infof("delete logical switch port %s", portName)
-	if err := c.ovnLegacyClient.DeleteLogicalSwitchPort(portName); err != nil {
+	if err := c.ovnClient.DeleteLogicalSwitchPort(portName); err != nil {
 		klog.Errorf("failed to delete node switch port node-%s: %v", key, err)
 		return err
 	}

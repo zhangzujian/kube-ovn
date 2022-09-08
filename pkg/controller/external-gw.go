@@ -124,9 +124,8 @@ func (c *Controller) removeExternalGateway() error {
 		}
 	}
 
-	klog.Infof("delete external gateway switch %s", c.config.ExternalGatewaySwitch)
-	if err := c.ovnLegacyClient.DeleteGatewaySwitch(c.config.ExternalGatewaySwitch); err != nil {
-		klog.Errorf("failed to delete external gateway switch, %v", err)
+	if err := c.ovnClient.DeleteLogicalGatewaySwitch(util.ExternalGatewaySwitch, c.config.ClusterRouter); err != nil {
+		klog.Errorf("delete external gateway switch %s: %v", util.ExternalGatewaySwitch, err)
 		return err
 	}
 	return nil

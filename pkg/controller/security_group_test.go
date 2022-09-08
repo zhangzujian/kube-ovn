@@ -6,7 +6,6 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 
-	mockovs "github.com/kubeovn/kube-ovn/mocks/pkg/ovs"
 	"github.com/kubeovn/kube-ovn/pkg/ovs"
 	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
 )
@@ -43,17 +42,15 @@ func Test_getPortSg(t *testing.T) {
 func Test_securityGroupALLNotExist(t *testing.T) {
 	t.Parallel()
 
-	mockCtrl := gomock.NewController(t)
-	mockOvnClient := mockovs.NewMockOvnClient(mockCtrl)
-	ctrl := &Controller{
-		ovnClient: mockOvnClient,
-	}
+	fakeController := newFakeController(t)
+	ctrl := fakeController.fakeController
+	mockOvnClient := fakeController.mockOvnClient
 
 	sgName := "sg"
 	pgName := ovs.GetSgPortGroupName(sgName)
 
 	t.Run("should return false when some port group exist", func(t *testing.T) {
-		mockOvnClient.EXPECT().PortGroupExists(gomock.Eq(pgName)).Return(true, nil)
+		mockOvnClient.EXPECT().PortGroupExists(pgName).Return(true, nil)
 
 		allNotExist, err := ctrl.securityGroupALLNotExist([]string{sgName, "sg1", "sg2", "sg3"})
 		require.NoError(t, err)

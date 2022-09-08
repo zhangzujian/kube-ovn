@@ -4,16 +4,12 @@ import (
 	"fmt"
 	"testing"
 
-	ovsclient "github.com/kubeovn/kube-ovn/pkg/ovsdb/client"
 	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
 	"github.com/stretchr/testify/require"
 )
 
-func alwaysReady() bool { return true }
-
 func newLogicalRouterPort(lrName, lrpName, mac string, networks []string) *ovnnb.LogicalRouterPort {
 	return &ovnnb.LogicalRouterPort{
-		UUID:     ovsclient.NamedUUID(),
 		Name:     lrpName,
 		MAC:      mac,
 		Networks: networks,

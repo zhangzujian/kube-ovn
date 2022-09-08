@@ -370,18 +370,17 @@ func (c *Controller) handleAddOrUpdateVpc(key string) error {
 			klog.Errorf("invalid cidr %s", peering.LocalConnectIP)
 			return err
 		}
+
 		newPeers = append(newPeers, peering.RemoteVpc)
-		if err := c.ovnLegacyClient.CreatePeerRouterPort(vpc.Name, peering.RemoteVpc, peering.LocalConnectIP); err != nil {
-			klog.Errorf("failed to create peer router port for vpc %s, %v", vpc.Name, err)
+		if err := c.ovnClient.CreatePeerRouterPort(vpc.Name, peering.RemoteVpc, peering.LocalConnectIP); err != nil {
+			klog.Errorf("create peer router port for vpc %s, %v", vpc.Name, err)
 			return err
 		}
 	}
 	for _, oldPeer := range vpc.Status.VpcPeerings {
 		if !util.ContainsString(newPeers, oldPeer) {
-			lrpName := fmt.Sprintf("%s-%s", vpc.Name, oldPeer)
-			klog.Infof("delete logical router port %s", lrpName)
-			if err = c.ovnLegacyClient.DeleteLogicalRouterPort(lrpName); err != nil {
-				klog.Errorf("failed to delete peer router port for vpc %s, %v", vpc.Name, err)
+			if err = c.ovnClient.DeleteLogicalRouterPort(fmt.Sprintf("%s-%s", vpc.Name, oldPeer)); err != nil {
+				klog.Errorf("delete peer router port for vpc %s, %v", vpc.Name, err)
 				return err
 			}
 		}
@@ -814,16 +813,6 @@ func (c *Controller) getVpcSubnets(vpc *kubeovnv1.Vpc) (subnets []string, defaul
 
 // createVpcRouter create router to connect logical switches in vpc
 func (c *Controller) createVpcRouter(lr string) error {
-	exists, err := c.ovnClient.LogicalRouterExists(lr)
-	if err != nil {
-		return err
-	}
-
-	// found, ingnore
-	if exists {
-		return nil
-	}
-
 	return c.ovnClient.CreateLogicalRouter(lr)
 }
 

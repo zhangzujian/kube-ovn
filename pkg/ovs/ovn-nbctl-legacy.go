@@ -2423,33 +2423,6 @@ func (c LegacyClient) UpdateSgACL(sg *kubeovnv1.SecurityGroup, direction AclDire
 	}
 	return nil
 }
-func (c LegacyClient) OvnGet(table, record, column, key string) (string, error) {
-	var columnVal string
-	if key == "" {
-		columnVal = column
-	} else {
-		columnVal = column + ":" + key
-	}
-	args := []string{"get", table, record, columnVal}
-	return c.ovnNbCommand(args...)
-}
-
-func (c LegacyClient) SetLspExternalIds(name string, externalIDs map[string]string) error {
-	if len(externalIDs) == 0 {
-		return nil
-	}
-
-	cmd := make([]string, len(externalIDs)+3)
-	cmd = append(cmd, "set", "logical_switch_port", name)
-	for k, v := range externalIDs {
-		cmd = append(cmd, fmt.Sprintf(`external-ids:%s="%s"`, k, v))
-	}
-
-	if _, err := c.ovnNbCommand(cmd...); err != nil {
-		return fmt.Errorf("failed to set external-ids for logical switch port %s: %v", name, err)
-	}
-	return nil
-}
 
 func (c *LegacyClient) AclExists(priority, direction string) (bool, error) {
 	priorityVal, _ := strconv.Atoi(priority)

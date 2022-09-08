@@ -77,7 +77,7 @@ func (suite *OvnClientTestSuite) testLogicalSwitchAddPort() {
 	err := ovnClient.CreateBareLogicalSwitch(lsName)
 	require.NoError(t, err)
 
-	err = ovnClient.CreateBareLogicalSwitchPort(lsName, lspName)
+	err = ovnClient.CreateBareLogicalSwitchPort(lsName, lspName, "", "")
 	require.NoError(t, err)
 
 	lsp, err := ovnClient.GetLogicalSwitchPort(lspName, false)
@@ -113,7 +113,7 @@ func (suite *OvnClientTestSuite) testLogicalSwitchDelPort() {
 	err := ovnClient.CreateBareLogicalSwitch(lsName)
 	require.NoError(t, err)
 
-	err = ovnClient.CreateBareLogicalSwitchPort(lsName, lspName)
+	err = ovnClient.CreateBareLogicalSwitchPort(lsName, lspName, "", "")
 	require.NoError(t, err)
 
 	lsp, err := ovnClient.GetLogicalSwitchPort(lspName, false)

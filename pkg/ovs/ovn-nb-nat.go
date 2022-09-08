@@ -186,7 +186,7 @@ func (c *ovnClient) DeleteNats(lrName, natType, logicalIP string) error {
 	ops = append(ops, removeNatOp...)
 	ops = append(ops, delNatsOp...)
 
-	if err = c.Transact("acls-del", ops); err != nil {
+	if err = c.Transact("nats-del", ops); err != nil {
 		return fmt.Errorf("del nats from logical router %s: %v", lrName, err)
 	}
 

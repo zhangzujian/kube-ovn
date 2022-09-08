@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -31,6 +32,10 @@ import (
 )
 
 const controllerAgentName = "kube-ovn-controller"
+
+const (
+	logicalSwitchKey = "ls"
+)
 
 // Controller is kube-ovn main controller that watch ns/pod/node/svc/ep and operate ovn
 type Controller struct {
@@ -862,15 +867,15 @@ func (c *Controller) startWorkers(ctx context.Context) {
 	go wait.Until(c.runUpdateVpcSubnetWorker, time.Second, ctx.Done())
 
 	// add default/join subnet and wait them ready
-	go wait.Until(c.runAddSubnetWorker, time.Second, stopCh)
-	go wait.Until(c.runAddVlanWorker, time.Second, stopCh)
-	go wait.Until(c.runAddNamespaceWorker, time.Second, stopCh)
+	go wait.Until(c.runAddSubnetWorker, time.Second, ctx.Done())
+	go wait.Until(c.runAddVlanWorker, time.Second, ctx.Done())
+	go wait.Until(c.runAddNamespaceWorker, time.Second, ctx.Done())
 	err := wait.PollUntil(3*time.Second, func() (done bool, err error) {
 		subnets := []string{c.config.DefaultLogicalSwitch, c.config.NodeSwitch}
 		klog.Infof("wait for subnets %v ready", subnets)
 
 		return c.allSubnetReady(subnets...)
-	}, stopCh)
+	}, ctx.Done())
 	if err != nil {
 		klog.Fatalf("wait default/join subnet ready error: %v", err)
 	}
@@ -1004,8 +1009,6 @@ func (c *Controller) startWorkers(ctx context.Context) {
 	if c.config.EnableNP {
 		go wait.Until(c.CheckNodePortGroup, time.Duration(c.config.NodePgProbeTime)*time.Minute, ctx.Done())
 	}
-
-	go wait.Until(c.syncVmLiveMigrationPort, 15*time.Second, ctx.Done())
 
 	go wait.Until(c.runAddVirtualIpWorker, time.Second, ctx.Done())
 	go wait.Until(c.runUpdateVirtualIpWorker, time.Second, ctx.Done())
