@@ -59,6 +59,13 @@ type LogicalSwitchPort interface {
 }
 
 type LoadBalancer interface {
+	CreateLoadBalancer(lbName, protocol, selectFields string) error
+	LoadBalancerUpdateVips(lbName string, vips map[string]string, op ovsdb.Mutator) error
+	DeleteLoadBalancers(filter func(lb *ovnnb.LoadBalancer) bool) error
+	LoadBalancerDeleteVips(lbName string, vips map[string]struct{}) error
+	GetLoadBalancer(lbName string, ignoreNotFound bool) (*ovnnb.LoadBalancer, error)
+	ListLoadBalancers(filter func(lb *ovnnb.LoadBalancer) bool) ([]ovnnb.LoadBalancer, error)
+	LoadBalancerExists(lbName string) (bool, error)
 }
 
 type PortGroup interface {
@@ -97,7 +104,7 @@ type OvnClient interface {
 	LogicalRouterPolicy
 	NAT
 	CreateGatewayLogicalSwitch(lsName, lrName, provider, ip, mac string, vlanID int, chassises ...string) error
-	CreateRouterPort(lsName, lrName, lspName, lrpName, ip, mac string, chassises ...string) error
-	RemoveRouterPort(lspName, lrpName string) error
+	CreateLogicalPatchPort(lsName, lrName, lspName, lrpName, ip, mac string, chassises ...string) error
+	RemoveLogicalPatchPort(lspName, lrpName string) error
 	DeleteLogicalGatewaySwitch(lsName, lrName string) error
 }

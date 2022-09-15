@@ -302,6 +302,14 @@ func (suite *OvnClientTestSuite) Test_DeleteLoadBalancers() {
 	suite.testDeleteLoadBalancers()
 }
 
+func (suite *OvnClientTestSuite) Test_DeleteLoadBalancer() {
+	suite.testDeleteLoadBalancer()
+}
+
+func (suite *OvnClientTestSuite) Test_LoadBalancerDeleteVips() {
+	suite.testLoadBalancerDeleteVips()
+}
+
 func (suite *OvnClientTestSuite) Test_GetLoadBalancer() {
 	suite.testGetLoadBalancer()
 }
@@ -566,8 +574,8 @@ func (suite *OvnClientTestSuite) Test_CreateGatewayLogicalSwitch() {
 	suite.testCreateGatewayLogicalSwitch()
 }
 
-func (suite *OvnClientTestSuite) Test_CreateRouterPort() {
-	suite.testCreateRouterPort()
+func (suite *OvnClientTestSuite) Test_CreateLogicalPatchPort() {
+	suite.testCreateLogicalPatchPort()
 }
 
 func (suite *OvnClientTestSuite) Test_RemoveRouterPort() {

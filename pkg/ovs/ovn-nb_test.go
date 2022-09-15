@@ -47,7 +47,7 @@ func (suite *OvnClientTestSuite) testCreateGatewayLogicalSwitch() {
 	require.Contains(t, ls.Ports, lsp.UUID)
 }
 
-func (suite *OvnClientTestSuite) testCreateRouterPort() {
+func (suite *OvnClientTestSuite) testCreateLogicalPatchPort() {
 	t := suite.T()
 	t.Parallel()
 
@@ -66,7 +66,7 @@ func (suite *OvnClientTestSuite) testCreateRouterPort() {
 
 	t.Run("create router port with chassises", func(t *testing.T) {
 		t.Parallel()
-		err := ovnClient.CreateRouterPort(lsName, lrName, lspName, lrpName, "192.168.230.1/24,fc00::0af4:01/112", util.GenerateMac(), chassises...)
+		err := ovnClient.CreateLogicalPatchPort(lsName, lrName, lspName, lrpName, "192.168.230.1/24,fc00::0af4:01/112", util.GenerateMac(), chassises...)
 		require.NoError(t, err)
 
 		lrp, err := ovnClient.GetLogicalRouterPort(lrpName, false)
@@ -94,7 +94,7 @@ func (suite *OvnClientTestSuite) testCreateRouterPort() {
 		err = ovnClient.CreateBareLogicalSwitch(lsName)
 		require.NoError(t, err)
 
-		err = ovnClient.CreateRouterPort(lsName, lrName, lspName, lrpName, "192.168.230.1/24,fc00::0af4:01/112", util.GenerateMac())
+		err = ovnClient.CreateLogicalPatchPort(lsName, lrName, lspName, lrpName, "192.168.230.1/24,fc00::0af4:01/112", util.GenerateMac())
 		require.NoError(t, err)
 
 		lrp, err := ovnClient.GetLogicalRouterPort(lrpName, false)
@@ -120,10 +120,10 @@ func (suite *OvnClientTestSuite) testRemoveRouterPort() {
 	require.NoError(t, err)
 
 	t.Run("normal del router type port", func(t *testing.T) {
-		err = ovnClient.CreateRouterPort(lsName, lrName, lspName, lrpName, "192.168.230.1/24,fc00::0af4:01/112", util.GenerateMac())
+		err = ovnClient.CreateLogicalPatchPort(lsName, lrName, lspName, lrpName, "192.168.230.1/24,fc00::0af4:01/112", util.GenerateMac())
 		require.NoError(t, err)
 
-		err = ovnClient.RemoveRouterPort(lspName, lrpName)
+		err = ovnClient.RemoveLogicalPatchPort(lspName, lrpName)
 		require.NoError(t, err)
 
 		/* validate logical switch port*/
@@ -136,7 +136,7 @@ func (suite *OvnClientTestSuite) testRemoveRouterPort() {
 	})
 
 	t.Run("should no err normal del router type port repeatedly", func(t *testing.T) {
-		err = ovnClient.RemoveRouterPort(lspName, lrpName)
+		err = ovnClient.RemoveLogicalPatchPort(lspName, lrpName)
 		require.NoError(t, err)
 	})
 }

@@ -35,15 +35,15 @@ func (c *ovnClient) CreateGatewayLogicalSwitch(lsName, lrName, provider, ip, mac
 		return fmt.Errorf("create localnet logical switch port %s: %v", localnetLspName, err)
 	}
 
-	if err := c.CreateRouterPort(lsName, lrName, lspName, lrpName, ip, mac, chassises...); err != nil {
-		return fmt.Errorf("create router port %s and %s: %v", lspName, lrpName, err)
+	if err := c.CreateLogicalPatchPort(lsName, lrName, lspName, lrpName, ip, mac, chassises...); err != nil {
+		return err
 	}
 
 	return nil
 }
 
-// createRouterPort create logical router port and associated logical switch port which type is router
-func (c *ovnClient) CreateRouterPort(lsName, lrName, lspName, lrpName, ip, mac string, chassises ...string) error {
+// CreateLogicalPatchPort create logical router port and associated logical switch port which type is router
+func (c *ovnClient) CreateLogicalPatchPort(lsName, lrName, lspName, lrpName, ip, mac string, chassises ...string) error {
 	if len(ip) != 0 {
 		// check ip format: 192.168.231.1/24,fc00::0af4:01/112
 		if err := util.CheckCidrs(ip); err != nil {
@@ -58,7 +58,7 @@ func (c *ovnClient) CreateRouterPort(lsName, lrName, lspName, lrpName, ip, mac s
 	}
 
 	if err = c.Transact("lrp-lsp-add", ops); err != nil {
-		return fmt.Errorf("create router type port %s and %s: %v", lspName, lrpName, err)
+		return fmt.Errorf("create logical patch port %s and %s: %v", lspName, lrpName, err)
 	}
 
 	/* create gateway chassises for logical router port */
@@ -170,8 +170,8 @@ func (c *ovnClient) CreateRouterPortOp(lsName, lrName, lspName, lrpName, ip, mac
 	return ops, nil
 }
 
-// RemoveRouterPort delete logical router port from logical router and delete logical switch port from logical switch
-func (c *ovnClient) RemoveRouterPort(lspName, lrpName string) error {
+// RemoveLogicalPatchPort delete logical router port and associated logical switch port which type is router
+func (c *ovnClient) RemoveLogicalPatchPort(lspName, lrpName string) error {
 	/* delete logical switch port*/
 	lspDelOp, err := c.DeleteLogicalSwitchPortOp(lspName)
 	if err != nil {

@@ -40,11 +40,11 @@ func (c *ovnClient) CreateLogicalSwitch(lsName, lrName, cidrBlock, gateway strin
 	}
 
 	if needRouter {
-		if err := c.CreateRouterPort(lsName, lrName, lspName, lrpName, networks, util.GenerateMac()); err != nil {
-			return fmt.Errorf("create router type port %s and %s: %v", lspName, lrpName, err)
+		if err := c.CreateLogicalPatchPort(lsName, lrName, lspName, lrpName, networks, util.GenerateMac()); err != nil {
+			return err
 		}
 	} else {
-		if err := c.RemoveRouterPort(lspName, lrpName); err != nil {
+		if err := c.RemoveLogicalPatchPort(lspName, lrpName); err != nil {
 			return fmt.Errorf("remove router type port %s and %s: %v", lspName, lrpName, err)
 		}
 	}

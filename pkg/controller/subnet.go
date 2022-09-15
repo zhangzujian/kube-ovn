@@ -875,7 +875,7 @@ func (c *Controller) handleDeleteSubnet(subnet *kubeovnv1.Subnet) error {
 
 	lspName := fmt.Sprintf("%s-%s", subnet.Name, router)
 	lrpName := fmt.Sprintf("%s-%s", router, subnet.Name)
-	if err = c.ovnClient.RemoveRouterPort(lspName, lrpName); err != nil {
+	if err = c.ovnClient.RemoveLogicalPatchPort(lspName, lrpName); err != nil {
 		klog.Errorf("delete router port %s and %s:%v", lspName, lrpName, err)
 		return err
 	}

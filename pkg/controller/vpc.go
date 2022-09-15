@@ -264,80 +264,40 @@ func (c *Controller) GenVpcLoadBalancer(vpcKey string) *VpcLoadBalancer {
 	}
 }
 
-func (c *Controller) addLoadBalancer(vpc string) (*VpcLoadBalancer, error) {
-	vpcLbConfig := c.GenVpcLoadBalancer(vpc)
+func (c *Controller) addLoadBalancer(vpcName string) (*VpcLoadBalancer, error) {
+	vpcLb := c.GenVpcLoadBalancer(vpcName)
 
-	tcpLb, err := c.ovnLegacyClient.FindLoadbalancer(vpcLbConfig.TcpLoadBalancer)
-	if err != nil {
-		return nil, fmt.Errorf("failed to find tcp lb %v", err)
-	}
-	if tcpLb == "" {
-		klog.Infof("init cluster tcp load balancer %s", vpcLbConfig.TcpLoadBalancer)
-		err := c.ovnLegacyClient.CreateLoadBalancer(vpcLbConfig.TcpLoadBalancer, util.ProtocolTCP, "")
-		if err != nil {
-			klog.Errorf("failed to create cluster tcp load balancer %v", err)
-			return nil, err
-		}
-	} else {
-		klog.Infof("tcp load balancer %s exists", tcpLb)
+	if err := c.ovnClient.CreateLoadBalancer(vpcLb.TcpLoadBalancer, util.ProtocolTCP, ""); err != nil {
+		klog.Errorf("create vpc %s tcp load balancer: %v", vpcName, err)
+		return nil, err
 	}
 
-	tcpSessionLb, err := c.ovnLegacyClient.FindLoadbalancer(vpcLbConfig.TcpSessLoadBalancer)
-	if err != nil {
-		return nil, fmt.Errorf("failed to find tcp session lb %v", err)
-	}
-	if tcpSessionLb == "" {
-		klog.Infof("init cluster tcp session load balancer %s", vpcLbConfig.TcpSessLoadBalancer)
-		err := c.ovnLegacyClient.CreateLoadBalancer(vpcLbConfig.TcpSessLoadBalancer, util.ProtocolTCP, "ip_src")
-		if err != nil {
-			klog.Errorf("failed to create cluster tcp session load balancer %v", err)
-			return nil, err
-		}
-	} else {
-		klog.Infof("tcp session load balancer %s exists", tcpSessionLb)
+	if err := c.ovnClient.CreateLoadBalancer(vpcLb.UdpLoadBalancer, util.ProtocolUDP, ""); err != nil {
+		klog.Errorf("create vpc %s udp load balancer: %v", vpcName, err)
+		return nil, err
 	}
 
-	if err = c.ovnLegacyClient.SetLoadBalancerAffinityTimeout(vpcLbConfig.TcpSessLoadBalancer, util.DefaultServiceSessionStickinessTimeout); err != nil {
+	if err := c.ovnClient.CreateLoadBalancer(vpcLb.TcpSessLoadBalancer, util.ProtocolTCP, "ip_src"); err != nil {
+		klog.Errorf("create vpc %s tcp session load balancer: %v", vpcName, err)
+		return nil, err
+	}
+
+	if err := c.ovnClient.CreateLoadBalancer(vpcLb.UdpSessLoadBalancer, util.ProtocolUDP, "ip_src"); err != nil {
+		klog.Errorf("create vpc %s udp session load balancer: %v", vpcName, err)
+		return nil, err
+	}
+
+	if err := c.ovnLegacyClient.SetLoadBalancerAffinityTimeout(vpcLb.TcpSessLoadBalancer, util.DefaultServiceSessionStickinessTimeout); err != nil {
 		klog.Errorf("failed to set service session stickiness timeout of cluster tcp session load balancer: %v", err)
 		return nil, err
 	}
 
-	udpLb, err := c.ovnLegacyClient.FindLoadbalancer(vpcLbConfig.UdpLoadBalancer)
-	if err != nil {
-		return nil, fmt.Errorf("failed to find udp lb %v", err)
-	}
-	if udpLb == "" {
-		klog.Infof("init cluster udp load balancer %s", vpcLbConfig.UdpLoadBalancer)
-		err := c.ovnLegacyClient.CreateLoadBalancer(vpcLbConfig.UdpLoadBalancer, util.ProtocolUDP, "")
-		if err != nil {
-			klog.Errorf("failed to create cluster udp load balancer %v", err)
-			return nil, err
-		}
-	} else {
-		klog.Infof("udp load balancer %s exists", udpLb)
-	}
-
-	udpSessionLb, err := c.ovnLegacyClient.FindLoadbalancer(vpcLbConfig.UdpSessLoadBalancer)
-	if err != nil {
-		return nil, fmt.Errorf("failed to find udp session lb %v", err)
-	}
-	if udpSessionLb == "" {
-		klog.Infof("init cluster udp session load balancer %s", vpcLbConfig.UdpSessLoadBalancer)
-		err := c.ovnLegacyClient.CreateLoadBalancer(vpcLbConfig.UdpSessLoadBalancer, util.ProtocolUDP, "ip_src")
-		if err != nil {
-			klog.Errorf("failed to create cluster udp session load balancer %v", err)
-			return nil, err
-		}
-	} else {
-		klog.Infof("udp session load balancer %s exists", udpSessionLb)
-	}
-
-	if err = c.ovnLegacyClient.SetLoadBalancerAffinityTimeout(vpcLbConfig.UdpSessLoadBalancer, util.DefaultServiceSessionStickinessTimeout); err != nil {
+	if err := c.ovnLegacyClient.SetLoadBalancerAffinityTimeout(vpcLb.UdpSessLoadBalancer, util.DefaultServiceSessionStickinessTimeout); err != nil {
 		klog.Errorf("failed to set service session stickiness timeout of cluster udp session load balancer: %v", err)
 		return nil, err
 	}
 
-	return vpcLbConfig, nil
+	return vpcLb, nil
 }
 
 func (c *Controller) handleAddOrUpdateVpc(key string) error {

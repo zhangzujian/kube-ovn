@@ -169,7 +169,7 @@ func (c *Controller) removeInterConnection(azName string) error {
 	if azName != "" {
 		lspName := fmt.Sprintf("ts-%s", azName)
 		lrpName := fmt.Sprintf("%s-ts", azName)
-		if err := c.ovnClient.RemoveRouterPort(lspName, lrpName); err != nil {
+		if err := c.ovnClient.RemoveLogicalPatchPort(lspName, lrpName); err != nil {
 			klog.Errorf("delete ovn-ic logical port %s and %s: %v", lspName, lrpName, err)
 			return err
 		}
@@ -260,7 +260,7 @@ func (c *Controller) establishInterConnection(config map[string]string) error {
 	}
 
 	lrpName := fmt.Sprintf("%s-ts", config["az-name"])
-	if err := c.ovnClient.CreateRouterPort(util.InterconnectionSwitch, c.config.ClusterRouter, tsPort, lrpName, subnet, util.GenerateMac(), chassises...); err != nil {
+	if err := c.ovnClient.CreateLogicalPatchPort(util.InterconnectionSwitch, c.config.ClusterRouter, tsPort, lrpName, subnet, util.GenerateMac(), chassises...); err != nil {
 		klog.Errorf("failed to create ovn-ic lrp %v", err)
 		return err
 	}

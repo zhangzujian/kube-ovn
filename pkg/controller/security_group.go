@@ -204,7 +204,7 @@ func (c *Controller) updateDenyAllSgPorts() error {
 		}
 
 		if allNotExist {
-			klog.Infof("all sgs of lsp: %s does't exist", port.Name)
+			klog.Infof("all sgs of logical switch port %s does't exist", port.Name)
 			continue
 		}
 

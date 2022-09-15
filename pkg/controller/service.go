@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -14,16 +15,8 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
-	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
-
-type vpcService struct {
-	Vip      string
-	Vpc      string
-	Protocol v1.Protocol
-	Svc      *v1.Service
-}
 
 func (c *Controller) enqueueAddService(obj interface{}) {
 
@@ -56,12 +49,11 @@ func (c *Controller) enqueueAddService(obj interface{}) {
 
 func (c *Controller) enqueueDeleteService(obj interface{}) {
 	svc := obj.(*v1.Service)
-	//klog.V(3).Infof("enqueue delete service %s/%s", svc.Namespace, svc.Name)
+
 	klog.Infof("enqueue delete service %s/%s", svc.Namespace, svc.Name)
 
-	vip, ok := svc.Annotations[util.SwitchLBRuleVipsAnnotation]
+	_, ok := svc.Annotations[util.SwitchLBRuleVipsAnnotation]
 	if ok || svc.Spec.ClusterIP != v1.ClusterIPNone && svc.Spec.ClusterIP != "" {
-
 		if c.config.EnableNP {
 			var netpols []string
 			var err error
@@ -75,21 +67,7 @@ func (c *Controller) enqueueDeleteService(obj interface{}) {
 			}
 		}
 
-		ip := svc.Spec.ClusterIP
-		if ok {
-			ip = vip
-		}
-
-		for _, port := range svc.Spec.Ports {
-			vpcSvc := &vpcService{
-				Vip:      fmt.Sprintf("%s:%d", ip, port.Port),
-				Protocol: port.Protocol,
-				Vpc:      svc.Annotations[util.VpcAnnotation],
-				Svc:      svc,
-			}
-			klog.Infof("delete vpc service %v", vpcSvc)
-			c.deleteServiceQueue.Add(vpcSvc)
-		}
+		c.deleteServiceQueue.Add(obj)
 	}
 }
 
@@ -163,18 +141,20 @@ func (c *Controller) processNextDeleteServiceWorkItem() bool {
 
 	err := func(obj interface{}) error {
 		defer c.deleteServiceQueue.Done(obj)
-		var vpcSvc *vpcService
+
+		var service *corev1.Service
 		var ok bool
-		if vpcSvc, ok = obj.(*vpcService); !ok {
-			c.deleteServiceQueue.Forget(obj)
-			utilruntime.HandleError(fmt.Errorf("expected vpcService in workqueue but got %#v", obj))
+		if service, ok = obj.(*corev1.Service); !ok {
+			c.deletePodQueue.Forget(obj)
+			utilruntime.HandleError(fmt.Errorf("expected service in workqueue but got %#v", obj))
 			return nil
 		}
 
-		if err := c.handleDeleteService(vpcSvc); err != nil {
+		if err := c.handleDeleteService(service); err != nil {
 			c.deleteServiceQueue.AddRateLimited(obj)
-			return fmt.Errorf("error syncing '%s': %s, requeuing", vpcSvc.Vip, err.Error())
+			return fmt.Errorf("error syncing '%s/%s': %s, requeuing", service.Namespace, service.Name, err.Error())
 		}
+
 		c.deleteServiceQueue.Forget(obj)
 		return nil
 	}(obj)
@@ -197,15 +177,18 @@ func (c *Controller) processNextUpdateServiceWorkItem() bool {
 		defer c.updateServiceQueue.Done(obj)
 		var key string
 		var ok bool
+
 		if key, ok = obj.(string); !ok {
 			c.updateServiceQueue.Forget(obj)
 			utilruntime.HandleError(fmt.Errorf("expected string in workqueue but got %#v", obj))
 			return nil
 		}
+
 		if err := c.handleUpdateService(key); err != nil {
 			c.updateServiceQueue.AddRateLimited(key)
 			return fmt.Errorf("error syncing '%s': %s, requeuing", key, err.Error())
 		}
+
 		c.updateServiceQueue.Forget(obj)
 		return nil
 	}(obj)
@@ -217,43 +200,35 @@ func (c *Controller) processNextUpdateServiceWorkItem() bool {
 	return true
 }
 
-func (c *Controller) handleDeleteService(service *vpcService) error {
-	svcs, err := c.servicesLister.Services(v1.NamespaceAll).List(labels.Everything())
-	if err != nil {
-		klog.Errorf("failed to list svc, %v", err)
+func (c *Controller) handleDeleteService(service *corev1.Service) error {
+	klog.Infof("delete svc %s/%s", service.Namespace, service.Name)
+
+	serviceVips := getServiceVips(service)
+	serviceTcpVips, serviceUdpVips := serviceVips[tcpVipsKey], serviceVips[udpVipsKey]
+
+	vpcLbs := c.GenVpcLoadBalancer(service.Annotations[util.VpcAnnotation])
+	tcpLbName, udpLbName := vpcLbs.TcpLoadBalancer, vpcLbs.UdpLoadBalancer
+	if service.Spec.SessionAffinity == v1.ServiceAffinityClientIP {
+		tcpLbName, udpLbName = vpcLbs.TcpSessLoadBalancer, vpcLbs.UdpSessLoadBalancer
+	}
+
+	// delete vips from tcp lb
+	klog.Infof("remove vip %v from tcp lb %s", serviceTcpVips, tcpLbName)
+	if err := c.ovnClient.LoadBalancerDeleteVips(tcpLbName, serviceTcpVips); err != nil {
+		klog.Errorf("delete vips from tcp lb %s: %v", tcpLbName, err)
 		return err
 	}
-	for _, svc := range svcs {
-		if svc.Spec.ClusterIP == parseVipAddr(service.Vip) {
-			return nil
-		}
+
+	// delete vips from udp lb
+	klog.Infof("remove vip %v from udp lb %s", serviceUdpVips, udpLbName)
+	if err := c.ovnClient.LoadBalancerDeleteVips(udpLbName, serviceUdpVips); err != nil {
+		klog.Errorf("delete vips from udp lb %s: %v", udpLbName, err)
+		return err
 	}
 
-	vpcLbConfig := c.GenVpcLoadBalancer(service.Vpc)
-	vip := service.Vip
-	if service.Protocol == v1.ProtocolTCP {
-		if err := c.ovnLegacyClient.DeleteLoadBalancerVip(vip, vpcLbConfig.TcpLoadBalancer); err != nil {
-			klog.Errorf("failed to delete vip %s from tcp lb, %v", vip, err)
-			return err
-		}
-		if err := c.ovnLegacyClient.DeleteLoadBalancerVip(vip, vpcLbConfig.TcpSessLoadBalancer); err != nil {
-			klog.Errorf("failed to delete vip %s from tcp session lb, %v", vip, err)
-			return err
-		}
-	} else {
-		if err := c.ovnLegacyClient.DeleteLoadBalancerVip(vip, vpcLbConfig.UdpLoadBalancer); err != nil {
-			klog.Errorf("failed to delete vip %s from udp lb, %v", vip, err)
-			return err
-		}
-		if err := c.ovnLegacyClient.DeleteLoadBalancerVip(vip, vpcLbConfig.UdpSessLoadBalancer); err != nil {
-			klog.Errorf("failed to delete vip %s from udp session lb, %v", vip, err)
-			return err
-		}
-	}
-
-	if service.Svc.Spec.Type == v1.ServiceTypeLoadBalancer && c.config.EnableLbSvc {
-		if err := c.deleteLbSvc(service.Svc); err != nil {
-			klog.Errorf("failed to delete service %s, %v", service.Svc.Name, err)
+	if service.Spec.Type == v1.ServiceTypeLoadBalancer && c.config.EnableLbSvc {
+		if err := c.deleteLbSvc(service); err != nil {
+			klog.Errorf("delete service %s, %v", service.Name, err)
 			return err
 		}
 	}
@@ -267,7 +242,9 @@ func (c *Controller) handleUpdateService(key string) error {
 		utilruntime.HandleError(fmt.Errorf("invalid resource key: %s", key))
 		return nil
 	}
+
 	klog.Infof("update svc %s/%s", namespace, name)
+
 	svc, err := c.servicesLister.Services(namespace).Get(name)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
@@ -276,119 +253,156 @@ func (c *Controller) handleUpdateService(key string) error {
 		return err
 	}
 
-	ip := ""
-	if vip, ok := svc.Annotations[util.SwitchLBRuleVipsAnnotation]; ok {
-		ip = vip
-	} else {
-		ip = svc.Spec.ClusterIP
-		if ip == "" || ip == v1.ClusterIPNone {
-			return nil
-		}
-	}
+	serviceVips := getServiceVips(svc)
+	serviceTcpVips, serviceUdpVips := serviceVips[tcpVipsKey], serviceVips[udpVipsKey]
 
-	tcpVips := []string{}
-	udpVips := []string{}
-	vpcName := svc.Annotations[util.VpcAnnotation]
-	if vpcName == "" {
-		vpcName = util.DefaultVpc
-	}
-	vpc, err := c.vpcsLister.Get(vpcName)
-	if err != nil {
-		klog.Errorf("failed to get vpc %s of lb, %v", vpcName, err)
-		return err
-	}
-
-	tcpLb, udpLb := vpc.Status.TcpLoadBalancer, vpc.Status.UdpLoadBalancer
-	oTcpLb, oUdpLb := vpc.Status.TcpSessionLoadBalancer, vpc.Status.UdpSessionLoadBalancer
+	// get lbs name
+	vpcLbs := c.GenVpcLoadBalancer(svc.Annotations[util.VpcAnnotation])
+	tcpLbName, udpLbName := vpcLbs.TcpLoadBalancer, vpcLbs.UdpLoadBalancer
+	oldTcpLbName, oldUdpLbName := vpcLbs.TcpSessLoadBalancer, vpcLbs.UdpSessLoadBalancer
 	if svc.Spec.SessionAffinity == v1.ServiceAffinityClientIP {
-		tcpLb, udpLb = vpc.Status.TcpSessionLoadBalancer, vpc.Status.UdpSessionLoadBalancer
-		oTcpLb, oUdpLb = vpc.Status.TcpLoadBalancer, vpc.Status.UdpLoadBalancer
+		tcpLbName, udpLbName = vpcLbs.TcpSessLoadBalancer, vpcLbs.UdpSessLoadBalancer
+		oldTcpLbName, oldUdpLbName = vpcLbs.TcpLoadBalancer, vpcLbs.UdpLoadBalancer
 	}
 
-	for _, port := range svc.Spec.Ports {
-		if port.Protocol == v1.ProtocolTCP {
-			if util.CheckProtocol(ip) == kubeovnv1.ProtocolIPv6 {
-				tcpVips = append(tcpVips, fmt.Sprintf("[%s]:%d", ip, port.Port))
-			} else {
-				tcpVips = append(tcpVips, fmt.Sprintf("%s:%d", ip, port.Port))
-			}
-		} else if port.Protocol == v1.ProtocolUDP {
-			if util.CheckProtocol(ip) == kubeovnv1.ProtocolIPv6 {
-				udpVips = append(udpVips, fmt.Sprintf("[%s]:%d", ip, port.Port))
-			} else {
-				udpVips = append(udpVips, fmt.Sprintf("%s:%d", ip, port.Port))
-			}
-		}
-	}
-	// for service update
-	lbUuid, err := c.ovnLegacyClient.FindLoadbalancer(tcpLb)
-	if err != nil {
-		klog.Errorf("failed to get lb %v", err)
+	/* handle event which servie.spec.sessionAffinity change */
+	// delete vips from old tcp lb
+	klog.V(6).Infof("remove vip %v from old tcp lb %s", serviceTcpVips, oldTcpLbName)
+	if err := c.ovnClient.LoadBalancerDeleteVips(oldTcpLbName, serviceTcpVips); err != nil {
+		klog.Errorf("delete vips from old tcp lb %s: %v", oldTcpLbName, err)
 		return err
 	}
-	vips, err := c.ovnLegacyClient.GetLoadBalancerVips(lbUuid)
-	if err != nil {
-		klog.Errorf("failed to get tcp lb vips %v", err)
+
+	// delete vips from old udp lb
+	klog.V(6).Infof("remove vip %v from old udp lb %s", serviceUdpVips, oldUdpLbName)
+	if err := c.ovnClient.LoadBalancerDeleteVips(oldUdpLbName, serviceUdpVips); err != nil {
+		klog.Errorf("delete vips from old udp lb %s: %v", oldUdpLbName, err)
 		return err
 	}
-	klog.V(3).Infof("exist tcp vips are %v", vips)
-	for _, vip := range tcpVips {
-		if err := c.ovnLegacyClient.DeleteLoadBalancerVip(vip, oTcpLb); err != nil {
-			klog.Errorf("failed to delete lb %s form %s, %v", vip, oTcpLb, err)
-			return err
-		}
-		if _, ok := vips[vip]; !ok {
-			klog.Infof("add vip %s to tcp lb %s", vip, oTcpLb)
-			c.updateEndpointQueue.Add(key)
-			break
+
+	/* handle event which servie.spec.ports[x].port change */
+	if err := c.handleServicePorts(tcpLbName, serviceTcpVips); err != nil {
+		klog.Errorf("handle service port change: %v", oldTcpLbName, err)
+		return err
+	}
+
+	if err := c.handleServicePorts(udpLbName, serviceUdpVips); err != nil {
+		klog.Errorf("handle service port change: %v", oldTcpLbName, err)
+		return err
+	}
+
+	c.updateEndpointQueue.Add(key)
+
+	return nil
+}
+
+// The type of vips is map, which format is like [fd00:10:96::11c9]:10665:[fc00:f853:ccd:e793::2]:10665,[fc00:f853:ccd:e793::3]:10665
+// Parse key of map, [fd00:10:96::11c9]:10665 for example
+func parseVipAddr(vipStr string) string {
+	vip := strings.Split(vipStr, ":")[0]
+	if strings.ContainsAny(vipStr, "[]") {
+		vip = strings.Trim(strings.Split(vipStr, "]")[0], "[]")
+	}
+	return vip
+}
+
+// handleServicePorts handle event which servie.spec.ports[x].port change
+func (c *Controller) handleServicePorts(lbName string, serviceVips map[string]struct{}) error {
+	/*
+		the format of vip in lb is: ip:port, delete vip with same ip but different port from present tcp lb,
+		e.g. update servie.spec.ports[x].port
+	*/
+	lb, err := c.ovnClient.GetLoadBalancer(lbName, false)
+	if err != nil {
+		klog.Errorf("get lb %s: %v", lbName, err)
+		return err
+	}
+
+	klog.V(3).Infof("exist tcp lb vips are %v", lb.Vips)
+
+	deleteVips := make(map[string]struct{}, 0)
+
+	for lbVip := range lb.Vips {
+		for serviceVip := range serviceVips {
+			if lbVip == serviceVip {
+				continue // no need to delete when lbVip and serviceVip is selfsame
+			}
+
+			if parseVipAddr(lbVip) != parseVipAddr(serviceVip) {
+				continue // skip lbVip and serviceVip has different ip
+			}
+
+			// lbVip and serviceVip has the same ip but different port
+			deleteVips[lbVip] = struct{}{}
 		}
 	}
 
-	for vip := range vips {
-		if parseVipAddr(vip) == ip && !util.IsStringIn(vip, tcpVips) {
-			klog.Infof("remove stall vip %s", vip)
-			err := c.ovnLegacyClient.DeleteLoadBalancerVip(vip, tcpLb)
-			if err != nil {
-				klog.Errorf("failed to delete vip %s from tcp lb %v", vip, err)
-				return err
-			}
-		}
+	if len(deleteVips) == 0 {
+		return nil
 	}
 
-	lbUuid, err = c.ovnLegacyClient.FindLoadbalancer(udpLb)
-	if err != nil {
-		klog.Errorf("failed to get lb %v", err)
-		return err
-	}
-	vips, err = c.ovnLegacyClient.GetLoadBalancerVips(lbUuid)
-	if err != nil {
-		klog.Errorf("failed to get udp lb vips %v", err)
-		return err
-	}
-	klog.Infof("exist udp vips are %v", vips)
-	for _, vip := range udpVips {
-		if err := c.ovnLegacyClient.DeleteLoadBalancerVip(vip, oUdpLb); err != nil {
-			klog.Errorf("failed to delete lb %s form %s, %v", vip, oUdpLb, err)
-			return err
-		}
-		if _, ok := vips[vip]; !ok {
-			klog.Infof("add vip %s to udp lb %s", vip, oUdpLb)
-			c.updateEndpointQueue.Add(key)
-			break
-		}
-	}
+	klog.Infof("remove stall vip %v from lb %s", deleteVips, lbName)
 
-	for vip := range vips {
-		if parseVipAddr(vip) == ip && !util.IsStringIn(vip, udpVips) {
-			klog.Infof("remove stall vip %s", vip)
-			if err := c.ovnLegacyClient.DeleteLoadBalancerVip(vip, udpLb); err != nil {
-				klog.Errorf("failed to delete vip %s from udp lb %v", vip, err)
-				return err
-			}
-		}
+	if err := c.ovnClient.LoadBalancerDeleteVips(lbName, deleteVips); err != nil {
+		klog.Errorf("remove stall vip %v from lb %s: %v", deleteVips, lbName, err)
+		return err
 	}
 
 	return nil
+}
+
+// getServicesVips get services vips,
+// return a map with key is tcpVipsKey,udpVipsKey,tcpSessionVipsKey,udpSessionVipsKey and
+// value is map which key is vip
+func (c *Controller) getServicesVips() (map[string]map[string]struct{}, error) {
+	svcs, err := c.servicesLister.List(labels.Everything())
+	if err != nil {
+		return nil, fmt.Errorf("list services: %v", err)
+	}
+
+	vips := make(map[string]map[string]struct{})
+	vips[tcpVipsKey] = make(map[string]struct{})
+	vips[udpVipsKey] = make(map[string]struct{})
+	vips[tcpSessionVipsKey] = make(map[string]struct{})
+	vips[udpSessionVipsKey] = make(map[string]struct{})
+
+	getServiceVips := func(svc *corev1.Service) {
+		clusterIPs := svc.Spec.ClusterIPs
+
+		if len(clusterIPs) == 0 && len(svc.Spec.ClusterIP) != 0 && svc.Spec.ClusterIP != v1.ClusterIPNone {
+			clusterIPs = []string{svc.Spec.ClusterIP}
+		}
+
+		if len(clusterIPs) == 0 || clusterIPs[0] == v1.ClusterIPNone {
+			return
+		}
+
+		for _, clusterIP := range clusterIPs {
+			for _, port := range svc.Spec.Ports {
+				vip := util.JoinHostPort(clusterIP, port.Port)
+
+				if port.Protocol == corev1.ProtocolTCP {
+					if svc.Spec.SessionAffinity == corev1.ServiceAffinityClientIP {
+						vips[tcpSessionVipsKey][vip] = struct{}{}
+					} else {
+						vips[tcpVipsKey][vip] = struct{}{}
+					}
+				} else {
+					if svc.Spec.SessionAffinity == corev1.ServiceAffinityClientIP {
+						vips[udpSessionVipsKey][vip] = struct{}{}
+					} else {
+						vips[udpVipsKey][vip] = struct{}{}
+					}
+				}
+			}
+		}
+	}
+
+	for _, svc := range svcs {
+		getServiceVips(svc)
+	}
+
+	return vips, nil
 }
 
 // Parse key of map, [fd00:10:96::11c9]:10665 for example
@@ -398,6 +412,44 @@ func parseVipAddr(vipStr string) string {
 		vip = strings.Trim(strings.Split(vipStr, "]")[0], "[]")
 	}
 	return vip
+}
+
+// getServiceVips get service vips,
+// return a map with key is tcpVipsKey,udpVipsKey and
+// value is map which key is vip
+func getServiceVips(svc *corev1.Service) map[string]map[string]struct{} {
+	vips := make(map[string]map[string]struct{})
+	vips[tcpVipsKey] = make(map[string]struct{})
+	vips[udpVipsKey] = make(map[string]struct{})
+
+	var clusterIPs []string
+	if vip, ok := svc.Annotations[util.SwitchLBRuleVipsAnnotation]; ok {
+		clusterIPs = append(clusterIPs, vip)
+	} else {
+		clusterIPs = svc.Spec.ClusterIPs
+	}
+
+	if len(clusterIPs) == 0 && len(svc.Spec.ClusterIP) != 0 && svc.Spec.ClusterIP != v1.ClusterIPNone {
+		clusterIPs = []string{svc.Spec.ClusterIP}
+	}
+
+	if len(clusterIPs) == 0 || clusterIPs[0] == v1.ClusterIPNone {
+		return nil
+	}
+
+	for _, clusterIP := range clusterIPs {
+		for _, port := range svc.Spec.Ports {
+			vip := util.JoinHostPort(clusterIP, port.Port)
+
+			if port.Protocol == corev1.ProtocolTCP {
+				vips[tcpVipsKey][vip] = struct{}{}
+			} else {
+				vips[udpVipsKey][vip] = struct{}{}
+			}
+		}
+	}
+
+	return vips
 }
 
 func (c *Controller) handleAddService(key string) error {

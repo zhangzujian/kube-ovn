@@ -49,7 +49,7 @@ func (suite *OvnClientTestSuite) testDeleteGatewayChassises() {
 	t.Parallel()
 
 	ovnClient := suite.ovnClient
-	lrpName := "test-gateway-chassis-del-op-lrp"
+	lrpName := "test-gateway-chassis-del-lrp"
 	chassises := []string{"ea8368a0-28cd-4549-9da5-a7ea67262619", "b25ffb94-8b32-4c7e-b5b0-0f343bf6bdd8", "62265268-8af7-4b36-a550-ab5ad38375e3"}
 
 	lrp := &ovnnb.LogicalRouterPort{
@@ -85,7 +85,18 @@ func (suite *OvnClientTestSuite) testDeleteGatewayChassisOp() {
 	chassis := "6c322ce8-02b7-42b3-925b-ae24020272a9"
 	gwChassisName := lrpName + "-" + chassis
 
-	err := ovnClient.CreateGatewayChassises(lrpName, chassis)
+	lrp := &ovnnb.LogicalRouterPort{
+		UUID: ovsclient.NamedUUID(),
+		Name: lrpName,
+		ExternalIDs: map[string]string{
+			"vendor": util.CniTypeName,
+		},
+	}
+
+	err := createLogicalRouterPort(ovnClient, lrp)
+	require.NoError(t, err)
+
+	err = ovnClient.CreateGatewayChassises(lrpName, chassis)
 	require.NoError(t, err)
 
 	gwChassis, err := ovnClient.GetGatewayChassis(gwChassisName, false)

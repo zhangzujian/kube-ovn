@@ -717,6 +717,107 @@ func (m *MockLoadBalancer) EXPECT() *MockLoadBalancerMockRecorder {
 	return m.recorder
 }
 
+// CreateLoadBalancer mocks base method.
+func (m *MockLoadBalancer) CreateLoadBalancer(lbName, protocol, selectFields string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateLoadBalancer", lbName, protocol, selectFields)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateLoadBalancer indicates an expected call of CreateLoadBalancer.
+func (mr *MockLoadBalancerMockRecorder) CreateLoadBalancer(lbName, protocol, selectFields interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateLoadBalancer", reflect.TypeOf((*MockLoadBalancer)(nil).CreateLoadBalancer), lbName, protocol, selectFields)
+}
+
+// DeleteLoadBalancers mocks base method.
+func (m *MockLoadBalancer) DeleteLoadBalancers(filter func(*ovnnb.LoadBalancer) bool) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteLoadBalancers", filter)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteLoadBalancers indicates an expected call of DeleteLoadBalancers.
+func (mr *MockLoadBalancerMockRecorder) DeleteLoadBalancers(filter interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteLoadBalancers", reflect.TypeOf((*MockLoadBalancer)(nil).DeleteLoadBalancers), filter)
+}
+
+// GetLoadBalancer mocks base method.
+func (m *MockLoadBalancer) GetLoadBalancer(lbName string, ignoreNotFound bool) (*ovnnb.LoadBalancer, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetLoadBalancer", lbName, ignoreNotFound)
+	ret0, _ := ret[0].(*ovnnb.LoadBalancer)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetLoadBalancer indicates an expected call of GetLoadBalancer.
+func (mr *MockLoadBalancerMockRecorder) GetLoadBalancer(lbName, ignoreNotFound interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLoadBalancer", reflect.TypeOf((*MockLoadBalancer)(nil).GetLoadBalancer), lbName, ignoreNotFound)
+}
+
+// ListLoadBalancers mocks base method.
+func (m *MockLoadBalancer) ListLoadBalancers(filter func(*ovnnb.LoadBalancer) bool) ([]ovnnb.LoadBalancer, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListLoadBalancers", filter)
+	ret0, _ := ret[0].([]ovnnb.LoadBalancer)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListLoadBalancers indicates an expected call of ListLoadBalancers.
+func (mr *MockLoadBalancerMockRecorder) ListLoadBalancers(filter interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListLoadBalancers", reflect.TypeOf((*MockLoadBalancer)(nil).ListLoadBalancers), filter)
+}
+
+// LoadBalancerDeleteVips mocks base method.
+func (m *MockLoadBalancer) LoadBalancerDeleteVips(lbName string, vips map[string]struct{}) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LoadBalancerDeleteVips", lbName, vips)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// LoadBalancerDeleteVips indicates an expected call of LoadBalancerDeleteVips.
+func (mr *MockLoadBalancerMockRecorder) LoadBalancerDeleteVips(lbName, vips interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LoadBalancerDeleteVips", reflect.TypeOf((*MockLoadBalancer)(nil).LoadBalancerDeleteVips), lbName, vips)
+}
+
+// LoadBalancerExists mocks base method.
+func (m *MockLoadBalancer) LoadBalancerExists(lbName string) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LoadBalancerExists", lbName)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LoadBalancerExists indicates an expected call of LoadBalancerExists.
+func (mr *MockLoadBalancerMockRecorder) LoadBalancerExists(lbName interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LoadBalancerExists", reflect.TypeOf((*MockLoadBalancer)(nil).LoadBalancerExists), lbName)
+}
+
+// LoadBalancerUpdateVips mocks base method.
+func (m *MockLoadBalancer) LoadBalancerUpdateVips(lbName string, vips map[string]string, op ovsdb.Mutator) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LoadBalancerUpdateVips", lbName, vips, op)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// LoadBalancerUpdateVips indicates an expected call of LoadBalancerUpdateVips.
+func (mr *MockLoadBalancerMockRecorder) LoadBalancerUpdateVips(lbName, vips, op interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LoadBalancerUpdateVips", reflect.TypeOf((*MockLoadBalancer)(nil).LoadBalancerUpdateVips), lbName, vips, op)
+}
+
 // MockPortGroup is a mock of PortGroup interface.
 type MockPortGroup struct {
 	ctrl     *gomock.Controller
@@ -1075,6 +1176,20 @@ func (mr *MockOvnClientMockRecorder) CreateGatewayLogicalSwitch(lsName, lrName, 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateGatewayLogicalSwitch", reflect.TypeOf((*MockOvnClient)(nil).CreateGatewayLogicalSwitch), varargs...)
 }
 
+// CreateLoadBalancer mocks base method.
+func (m *MockOvnClient) CreateLoadBalancer(lbName, protocol, selectFields string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateLoadBalancer", lbName, protocol, selectFields)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateLoadBalancer indicates an expected call of CreateLoadBalancer.
+func (mr *MockOvnClientMockRecorder) CreateLoadBalancer(lbName, protocol, selectFields interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateLoadBalancer", reflect.TypeOf((*MockOvnClient)(nil).CreateLoadBalancer), lbName, protocol, selectFields)
+}
+
 // CreateLocalnetLogicalSwitchPort mocks base method.
 func (m *MockOvnClient) CreateLocalnetLogicalSwitchPort(lsName, lspName, provider string, vlanID int) error {
 	m.ctrl.T.Helper()
@@ -1087,6 +1202,25 @@ func (m *MockOvnClient) CreateLocalnetLogicalSwitchPort(lsName, lspName, provide
 func (mr *MockOvnClientMockRecorder) CreateLocalnetLogicalSwitchPort(lsName, lspName, provider, vlanID interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateLocalnetLogicalSwitchPort", reflect.TypeOf((*MockOvnClient)(nil).CreateLocalnetLogicalSwitchPort), lsName, lspName, provider, vlanID)
+}
+
+// CreateLogicalPatchPort mocks base method.
+func (m *MockOvnClient) CreateLogicalPatchPort(lsName, lrName, lspName, lrpName, ip, mac string, chassises ...string) error {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{lsName, lrName, lspName, lrpName, ip, mac}
+	for _, a := range chassises {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "CreateLogicalPatchPort", varargs...)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateLogicalPatchPort indicates an expected call of CreateLogicalPatchPort.
+func (mr *MockOvnClientMockRecorder) CreateLogicalPatchPort(lsName, lrName, lspName, lrpName, ip, mac interface{}, chassises ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{lsName, lrName, lspName, lrpName, ip, mac}, chassises...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateLogicalPatchPort", reflect.TypeOf((*MockOvnClient)(nil).CreateLogicalPatchPort), varargs...)
 }
 
 // CreateLogicalRouter mocks base method.
@@ -1145,25 +1279,6 @@ func (mr *MockOvnClientMockRecorder) CreatePeerRouterPort(localRouter, remoteRou
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreatePeerRouterPort", reflect.TypeOf((*MockOvnClient)(nil).CreatePeerRouterPort), localRouter, remoteRouter, localRouterPortIP)
 }
 
-// CreateRouterPort mocks base method.
-func (m *MockOvnClient) CreateRouterPort(lsName, lrName, lspName, lrpName, ip, mac string, chassises ...string) error {
-	m.ctrl.T.Helper()
-	varargs := []interface{}{lsName, lrName, lspName, lrpName, ip, mac}
-	for _, a := range chassises {
-		varargs = append(varargs, a)
-	}
-	ret := m.ctrl.Call(m, "CreateRouterPort", varargs...)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// CreateRouterPort indicates an expected call of CreateRouterPort.
-func (mr *MockOvnClientMockRecorder) CreateRouterPort(lsName, lrName, lspName, lrpName, ip, mac interface{}, chassises ...interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	varargs := append([]interface{}{lsName, lrName, lspName, lrpName, ip, mac}, chassises...)
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRouterPort", reflect.TypeOf((*MockOvnClient)(nil).CreateRouterPort), varargs...)
-}
-
 // CreateVirtualLogicalSwitchPorts mocks base method.
 func (m *MockOvnClient) CreateVirtualLogicalSwitchPorts(lsName string, ips ...string) error {
 	m.ctrl.T.Helper()
@@ -1181,6 +1296,20 @@ func (mr *MockOvnClientMockRecorder) CreateVirtualLogicalSwitchPorts(lsName inte
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]interface{}{lsName}, ips...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateVirtualLogicalSwitchPorts", reflect.TypeOf((*MockOvnClient)(nil).CreateVirtualLogicalSwitchPorts), varargs...)
+}
+
+// DeleteLoadBalancers mocks base method.
+func (m *MockOvnClient) DeleteLoadBalancers(filter func(*ovnnb.LoadBalancer) bool) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteLoadBalancers", filter)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteLoadBalancers indicates an expected call of DeleteLoadBalancers.
+func (mr *MockOvnClientMockRecorder) DeleteLoadBalancers(filter interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteLoadBalancers", reflect.TypeOf((*MockOvnClient)(nil).DeleteLoadBalancers), filter)
 }
 
 // DeleteLogicalGatewaySwitch mocks base method.
@@ -1309,6 +1438,21 @@ func (mr *MockOvnClientMockRecorder) EnablePortLayer2forward(lspName interface{}
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnablePortLayer2forward", reflect.TypeOf((*MockOvnClient)(nil).EnablePortLayer2forward), lspName)
 }
 
+// GetLoadBalancer mocks base method.
+func (m *MockOvnClient) GetLoadBalancer(lbName string, ignoreNotFound bool) (*ovnnb.LoadBalancer, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetLoadBalancer", lbName, ignoreNotFound)
+	ret0, _ := ret[0].(*ovnnb.LoadBalancer)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetLoadBalancer indicates an expected call of GetLoadBalancer.
+func (mr *MockOvnClientMockRecorder) GetLoadBalancer(lbName, ignoreNotFound interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLoadBalancer", reflect.TypeOf((*MockOvnClient)(nil).GetLoadBalancer), lbName, ignoreNotFound)
+}
+
 // GetLogicalRouter mocks base method.
 func (m *MockOvnClient) GetLogicalRouter(lrName string, ignoreNotFound bool) (*ovnnb.LogicalRouter, error) {
 	m.ctrl.T.Helper()
@@ -1382,6 +1526,21 @@ func (m *MockOvnClient) GetNbGlobal() (*ovnnb.NBGlobal, error) {
 func (mr *MockOvnClientMockRecorder) GetNbGlobal() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNbGlobal", reflect.TypeOf((*MockOvnClient)(nil).GetNbGlobal))
+}
+
+// ListLoadBalancers mocks base method.
+func (m *MockOvnClient) ListLoadBalancers(filter func(*ovnnb.LoadBalancer) bool) ([]ovnnb.LoadBalancer, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListLoadBalancers", filter)
+	ret0, _ := ret[0].([]ovnnb.LoadBalancer)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListLoadBalancers indicates an expected call of ListLoadBalancers.
+func (mr *MockOvnClientMockRecorder) ListLoadBalancers(filter interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListLoadBalancers", reflect.TypeOf((*MockOvnClient)(nil).ListLoadBalancers), filter)
 }
 
 // ListLogicalRouter mocks base method.
@@ -1502,6 +1661,49 @@ func (m *MockOvnClient) ListVirtualTypeLogicalSwitchPorts(lsName string) ([]ovnn
 func (mr *MockOvnClientMockRecorder) ListVirtualTypeLogicalSwitchPorts(lsName interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListVirtualTypeLogicalSwitchPorts", reflect.TypeOf((*MockOvnClient)(nil).ListVirtualTypeLogicalSwitchPorts), lsName)
+}
+
+// LoadBalancerDeleteVips mocks base method.
+func (m *MockOvnClient) LoadBalancerDeleteVips(lbName string, vips map[string]struct{}) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LoadBalancerDeleteVips", lbName, vips)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// LoadBalancerDeleteVips indicates an expected call of LoadBalancerDeleteVips.
+func (mr *MockOvnClientMockRecorder) LoadBalancerDeleteVips(lbName, vips interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LoadBalancerDeleteVips", reflect.TypeOf((*MockOvnClient)(nil).LoadBalancerDeleteVips), lbName, vips)
+}
+
+// LoadBalancerExists mocks base method.
+func (m *MockOvnClient) LoadBalancerExists(lbName string) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LoadBalancerExists", lbName)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LoadBalancerExists indicates an expected call of LoadBalancerExists.
+func (mr *MockOvnClientMockRecorder) LoadBalancerExists(lbName interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LoadBalancerExists", reflect.TypeOf((*MockOvnClient)(nil).LoadBalancerExists), lbName)
+}
+
+// LoadBalancerUpdateVips mocks base method.
+func (m *MockOvnClient) LoadBalancerUpdateVips(lbName string, vips map[string]string, op ovsdb.Mutator) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LoadBalancerUpdateVips", lbName, vips, op)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// LoadBalancerUpdateVips indicates an expected call of LoadBalancerUpdateVips.
+func (mr *MockOvnClientMockRecorder) LoadBalancerUpdateVips(lbName, vips, op interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LoadBalancerUpdateVips", reflect.TypeOf((*MockOvnClient)(nil).LoadBalancerUpdateVips), lbName, vips, op)
 }
 
 // LogicalRouterExists mocks base method.
@@ -1636,18 +1838,18 @@ func (mr *MockOvnClientMockRecorder) PortGroupUpdatePorts(pgName, op interface{}
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PortGroupUpdatePorts", reflect.TypeOf((*MockOvnClient)(nil).PortGroupUpdatePorts), varargs...)
 }
 
-// RemoveRouterPort mocks base method.
-func (m *MockOvnClient) RemoveRouterPort(lspName, lrpName string) error {
+// RemoveLogicalPatchPort mocks base method.
+func (m *MockOvnClient) RemoveLogicalPatchPort(lspName, lrpName string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RemoveRouterPort", lspName, lrpName)
+	ret := m.ctrl.Call(m, "RemoveLogicalPatchPort", lspName, lrpName)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
-// RemoveRouterPort indicates an expected call of RemoveRouterPort.
-func (mr *MockOvnClientMockRecorder) RemoveRouterPort(lspName, lrpName interface{}) *gomock.Call {
+// RemoveLogicalPatchPort indicates an expected call of RemoveLogicalPatchPort.
+func (mr *MockOvnClientMockRecorder) RemoveLogicalPatchPort(lspName, lrpName interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveRouterPort", reflect.TypeOf((*MockOvnClient)(nil).RemoveRouterPort), lspName, lrpName)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveLogicalPatchPort", reflect.TypeOf((*MockOvnClient)(nil).RemoveLogicalPatchPort), lspName, lrpName)
 }
 
 // SetAzName mocks base method.
