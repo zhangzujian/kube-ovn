@@ -35,6 +35,9 @@ const controllerAgentName = "kube-ovn-controller"
 
 const (
 	logicalSwitchKey = "ls"
+	networkPolicyKey = "np"
+	sgKey            = "sg"
+	sgsKey           = "security_groups"
 )
 
 // Controller is kube-ovn main controller that watch ns/pod/node/svc/ep and operate ovn

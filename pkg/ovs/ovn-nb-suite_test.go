@@ -331,6 +331,10 @@ func (suite *OvnClientTestSuite) Test_CreatePortGroup() {
 	suite.testCreatePortGroup()
 }
 
+func (suite *OvnClientTestSuite) Test_PortGroupResetPorts() {
+	suite.testPortGroupResetPorts()
+}
+
 func (suite *OvnClientTestSuite) Test_PortGroupUpdatePorts() {
 	suite.testPortGroupUpdatePorts()
 }

@@ -969,10 +969,13 @@ func (c *Controller) handleUpdatePod(key string) error {
 
 							portName := ovs.PodNameToPortName(podName, pod.Namespace, podNet.ProviderName)
 							c.ovnPgKeyMutex.Lock(pgName)
-							if err = c.ovnClient.PortGroupUpdatePorts(pgName, ovsdb.MutateOperationInsert, portName); err != nil {
+
+							if err := c.ovnClient.PortGroupAddPorts(pgName, portName); err != nil {
 								c.ovnPgKeyMutex.Unlock(pgName)
+								klog.Errorf("add port to port group %s: %v", pgName, err)
 								return err
 							}
+
 							c.ovnPgKeyMutex.Unlock(pgName)
 
 							added = true

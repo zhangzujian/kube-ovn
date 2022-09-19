@@ -69,7 +69,13 @@ type LoadBalancer interface {
 }
 
 type PortGroup interface {
-	PortGroupUpdatePorts(pgName string, op ovsdb.Mutator, lspNames ...string) error
+	CreatePortGroup(pgName string, externalIDs map[string]string) error
+	PortGroupAddPorts(pgName string, lspNames ...string) error
+	PortGroupRemovePorts(pgName string, lspNames ...string) error
+	PortGroupResetPorts(pgName string) error
+	DeletePortGroup(pgName string) error
+	ListPortGroups(externalIDs map[string]string) ([]ovnnb.PortGroup, error)
+	GetPortGroup(pgName string, ignoreNotFound bool) (*ovnnb.PortGroup, error)
 	PortGroupExists(pgName string) (bool, error)
 	PortGroupRemovePorts(pgName string, lspNames ...string) error
 }
@@ -107,4 +113,5 @@ type OvnClient interface {
 	CreateLogicalPatchPort(lsName, lrName, lspName, lrpName, ip, mac string, chassises ...string) error
 	RemoveLogicalPatchPort(lspName, lrpName string) error
 	DeleteLogicalGatewaySwitch(lsName, lrName string) error
+	DeleteSecurityGroup(sgName string) error
 }

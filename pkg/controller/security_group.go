@@ -167,51 +167,75 @@ func (c *Controller) processNextDeleteSgWorkItem() bool {
 }
 
 func (c *Controller) initDenyAllSecurityGroup() error {
-	if err := c.ovnLegacyClient.CreateSgPortGroup(util.DenyAllSecurityGroup); err != nil {
+	pgName := ovs.GetSgPortGroupName(util.DenyAllSecurityGroup)
+	if err := c.ovnClient.CreatePortGroup(pgName, map[string]string{
+		"type": "security_group",
+		sgKey:  util.DenyAllSecurityGroup,
+	}); err != nil {
+		klog.Errorf("create port group for sg %s: %v", util.DenyAllSecurityGroup, err)
 		return err
 	}
+
 	if err := c.ovnLegacyClient.CreateSgDenyAllACL(); err != nil {
 		return err
 	}
+
 	c.addOrUpdateSgQueue.Add(util.DenyAllSecurityGroup)
 	return nil
 }
 
 // updateDenyAllSgPorts set lsp to deny which security_groups is not empty
 func (c *Controller) updateDenyAllSgPorts() error {
-	sgKey := "security_groups"
 	// list all lsp which security_groups is not empty
-	ports, err := c.ovnClient.ListLogicalSwitchPorts(true, map[string]string{sgKey: ""})
+	lsps, err := c.ovnClient.ListLogicalSwitchPorts(true, map[string]string{sgsKey: ""})
 	if err != nil {
-		klog.Errorf("failed to find logical port, %v", err)
+		klog.Errorf("list logical switch ports with security_groups is not empty: %v", err)
 		return err
 	}
 
-	matchPorts := make([]string, 0, len(ports))
-	for _, port := range ports {
+	addPorts := make([]string, 0, len(lsps))
+	for _, lsp := range lsps {
 		// skip lsp which only have mac addresses,
 		// data store in port.PortSecurity[0], em...
-		if len(strings.Split(port.PortSecurity[0], " ")) < 2 {
+		if len(strings.Split(lsp.PortSecurity[0], " ")) < 2 {
 			continue
 		}
 
-		/*  skip lsp which security_group does not exist */
+		/* skip lsp which security_group does not exist */
 		// sgs format: sg1/sg2/sg3
-		sgs := strings.Split(port.ExternalIDs[sgKey], "/")
+		sgs := strings.Split(lsp.ExternalIDs[sgsKey], "/")
 		allNotExist, err := c.securityGroupALLNotExist(sgs)
 		if err != nil {
 			return err
 		}
 
 		if allNotExist {
-			klog.Infof("all sgs of logical switch port %s does't exist", port.Name)
 			continue
 		}
 
-		matchPorts = append(matchPorts, port.Name)
+		addPorts = append(addPorts, lsp.Name)
 	}
 
-	return c.ovnLegacyClient.SetPortsToPortGroup(ovs.GetSgPortGroupName(util.DenyAllSecurityGroup), matchPorts)
+	pgName := ovs.GetSgPortGroupName(util.DenyAllSecurityGroup)
+
+	// reset pg ports
+	if err := c.ovnClient.PortGroupResetPorts(pgName); err != nil {
+		klog.Error(err)
+		return err
+	}
+
+	// add port
+	if len(addPorts) == 0 {
+		return nil
+	}
+
+	klog.Infof("add ports %v to port group %s", addPorts, pgName)
+	if err := c.ovnClient.PortGroupAddPorts(pgName, addPorts...); err != nil {
+		klog.Errorf("add ports to port group %s: %v", pgName, err)
+		return err
+	}
+
+	return nil
 }
 
 func (c *Controller) handleAddOrUpdateSg(key string) error {
@@ -239,9 +263,15 @@ func (c *Controller) handleAddOrUpdateSg(key string) error {
 		return err
 	}
 
-	if err = c.ovnLegacyClient.CreateSgPortGroup(sg.Name); err != nil {
-		return fmt.Errorf("failed to create sg port_group %s, %v", key, err.Error())
+	pgName := ovs.GetSgPortGroupName(sg.Name)
+	if err := c.ovnClient.CreatePortGroup(pgName, map[string]string{
+		"type": "security_group",
+		sgKey:  sg.Name,
+	}); err != nil {
+		klog.Errorf("create port group for sg %s: %v", sg.Name, err)
+		return err
 	}
+
 	if err = c.ovnLegacyClient.CreateSgAssociatedAddressSet(sg.Name); err != nil {
 		return fmt.Errorf("failed to create sg associated address_set %s, %v", key, err.Error())
 	}
@@ -357,7 +387,13 @@ func (c *Controller) patchSgStatus(sg *kubeovnv1.SecurityGroup) {
 func (c *Controller) handleDeleteSg(key string) error {
 	c.sgKeyMutex.Lock(key)
 	defer c.sgKeyMutex.Unlock(key)
-	return c.ovnLegacyClient.DeleteSgPortGroup(key)
+
+	if err := c.ovnClient.DeleteSecurityGroup(key); err != nil {
+		klog.Errorf("delete sg %s: %v", key, err)
+		return err
+	}
+
+	return nil
 }
 
 func (c *Controller) syncSgLogicalPort(key string) error {
@@ -396,14 +432,16 @@ func (c *Controller) syncSgLogicalPort(key string) error {
 		}
 	}
 
-	if err = c.ovnLegacyClient.SetPortsToPortGroup(sg.Status.PortGroup, ports); err != nil {
-		klog.Errorf("failed to set port to sg, %v", err)
+	if err := c.ovnClient.PortGroupAddPorts(sg.Status.PortGroup, ports...); err != nil {
+		klog.Errorf("add ports to port group %s: %v", sg.Status.PortGroup, err)
 		return err
 	}
+
 	if err = c.ovnLegacyClient.SetAddressesToAddressSet(v4s, ovs.GetSgV4AssociatedName(key)); err != nil {
 		klog.Errorf("failed to set address_set, %v", err)
 		return err
 	}
+
 	if err = c.ovnLegacyClient.SetAddressesToAddressSet(v6s, ovs.GetSgV6AssociatedName(key)); err != nil {
 		klog.Errorf("failed to set address_set, %v", err)
 		return err

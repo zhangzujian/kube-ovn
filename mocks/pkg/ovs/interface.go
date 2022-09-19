@@ -841,6 +841,83 @@ func (m *MockPortGroup) EXPECT() *MockPortGroupMockRecorder {
 	return m.recorder
 }
 
+// CreatePortGroup mocks base method.
+func (m *MockPortGroup) CreatePortGroup(pgName string, externalIDs map[string]string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreatePortGroup", pgName, externalIDs)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreatePortGroup indicates an expected call of CreatePortGroup.
+func (mr *MockPortGroupMockRecorder) CreatePortGroup(pgName, externalIDs interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreatePortGroup", reflect.TypeOf((*MockPortGroup)(nil).CreatePortGroup), pgName, externalIDs)
+}
+
+// DeletePortGroup mocks base method.
+func (m *MockPortGroup) DeletePortGroup(pgName string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeletePortGroup", pgName)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeletePortGroup indicates an expected call of DeletePortGroup.
+func (mr *MockPortGroupMockRecorder) DeletePortGroup(pgName interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeletePortGroup", reflect.TypeOf((*MockPortGroup)(nil).DeletePortGroup), pgName)
+}
+
+// GetPortGroup mocks base method.
+func (m *MockPortGroup) GetPortGroup(pgName string, ignoreNotFound bool) (*ovnnb.PortGroup, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetPortGroup", pgName, ignoreNotFound)
+	ret0, _ := ret[0].(*ovnnb.PortGroup)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetPortGroup indicates an expected call of GetPortGroup.
+func (mr *MockPortGroupMockRecorder) GetPortGroup(pgName, ignoreNotFound interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPortGroup", reflect.TypeOf((*MockPortGroup)(nil).GetPortGroup), pgName, ignoreNotFound)
+}
+
+// ListPortGroups mocks base method.
+func (m *MockPortGroup) ListPortGroups(externalIDs map[string]string) ([]ovnnb.PortGroup, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListPortGroups", externalIDs)
+	ret0, _ := ret[0].([]ovnnb.PortGroup)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListPortGroups indicates an expected call of ListPortGroups.
+func (mr *MockPortGroupMockRecorder) ListPortGroups(externalIDs interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListPortGroups", reflect.TypeOf((*MockPortGroup)(nil).ListPortGroups), externalIDs)
+}
+
+// PortGroupAddPorts mocks base method.
+func (m *MockPortGroup) PortGroupAddPorts(pgName string, lspNames ...string) error {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{pgName}
+	for _, a := range lspNames {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "PortGroupAddPorts", varargs...)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// PortGroupAddPorts indicates an expected call of PortGroupAddPorts.
+func (mr *MockPortGroupMockRecorder) PortGroupAddPorts(pgName interface{}, lspNames ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{pgName}, lspNames...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PortGroupAddPorts", reflect.TypeOf((*MockPortGroup)(nil).PortGroupAddPorts), varargs...)
+}
+
 // PortGroupExists mocks base method.
 func (m *MockPortGroup) PortGroupExists(pgName string) (bool, error) {
 	m.ctrl.T.Helper()
@@ -878,20 +955,34 @@ func (mr *MockPortGroupMockRecorder) PortGroupRemovePorts(pgName interface{}, ls
 // PortGroupUpdatePorts mocks base method.
 func (m *MockPortGroup) PortGroupUpdatePorts(pgName string, op ovsdb.Mutator, lspNames ...string) error {
 	m.ctrl.T.Helper()
-	varargs := []interface{}{pgName, op}
+	varargs := []interface{}{pgName}
 	for _, a := range lspNames {
 		varargs = append(varargs, a)
 	}
-	ret := m.ctrl.Call(m, "PortGroupUpdatePorts", varargs...)
+	ret := m.ctrl.Call(m, "PortGroupRemovePorts", varargs...)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
-// PortGroupUpdatePorts indicates an expected call of PortGroupUpdatePorts.
-func (mr *MockPortGroupMockRecorder) PortGroupUpdatePorts(pgName, op interface{}, lspNames ...interface{}) *gomock.Call {
+// PortGroupRemovePorts indicates an expected call of PortGroupRemovePorts.
+func (mr *MockPortGroupMockRecorder) PortGroupRemovePorts(pgName interface{}, lspNames ...interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	varargs := append([]interface{}{pgName, op}, lspNames...)
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PortGroupUpdatePorts", reflect.TypeOf((*MockPortGroup)(nil).PortGroupUpdatePorts), varargs...)
+	varargs := append([]interface{}{pgName}, lspNames...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PortGroupRemovePorts", reflect.TypeOf((*MockPortGroup)(nil).PortGroupRemovePorts), varargs...)
+}
+
+// PortGroupResetPorts mocks base method.
+func (m *MockPortGroup) PortGroupResetPorts(pgName string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PortGroupResetPorts", pgName)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// PortGroupResetPorts indicates an expected call of PortGroupResetPorts.
+func (mr *MockPortGroupMockRecorder) PortGroupResetPorts(pgName interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PortGroupResetPorts", reflect.TypeOf((*MockPortGroup)(nil).PortGroupResetPorts), pgName)
 }
 
 // MockLogicalRouterStaticRoute is a mock of LogicalRouterStaticRoute interface.
@@ -1279,6 +1370,20 @@ func (mr *MockOvnClientMockRecorder) CreatePeerRouterPort(localRouter, remoteRou
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreatePeerRouterPort", reflect.TypeOf((*MockOvnClient)(nil).CreatePeerRouterPort), localRouter, remoteRouter, localRouterPortIP)
 }
 
+// CreatePortGroup mocks base method.
+func (m *MockOvnClient) CreatePortGroup(pgName string, externalIDs map[string]string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreatePortGroup", pgName, externalIDs)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreatePortGroup indicates an expected call of CreatePortGroup.
+func (mr *MockOvnClientMockRecorder) CreatePortGroup(pgName, externalIDs interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreatePortGroup", reflect.TypeOf((*MockOvnClient)(nil).CreatePortGroup), pgName, externalIDs)
+}
+
 // CreateVirtualLogicalSwitchPorts mocks base method.
 func (m *MockOvnClient) CreateVirtualLogicalSwitchPorts(lsName string, ips ...string) error {
 	m.ctrl.T.Helper()
@@ -1424,6 +1529,34 @@ func (mr *MockOvnClientMockRecorder) DeleteNats(lrName, natType, logicalIP inter
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteNats", reflect.TypeOf((*MockOvnClient)(nil).DeleteNats), lrName, natType, logicalIP)
 }
 
+// DeletePortGroup mocks base method.
+func (m *MockOvnClient) DeletePortGroup(pgName string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeletePortGroup", pgName)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeletePortGroup indicates an expected call of DeletePortGroup.
+func (mr *MockOvnClientMockRecorder) DeletePortGroup(pgName interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeletePortGroup", reflect.TypeOf((*MockOvnClient)(nil).DeletePortGroup), pgName)
+}
+
+// DeleteSecurityGroup mocks base method.
+func (m *MockOvnClient) DeleteSecurityGroup(sgName string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteSecurityGroup", sgName)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteSecurityGroup indicates an expected call of DeleteSecurityGroup.
+func (mr *MockOvnClientMockRecorder) DeleteSecurityGroup(sgName interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteSecurityGroup", reflect.TypeOf((*MockOvnClient)(nil).DeleteSecurityGroup), sgName)
+}
+
 // EnablePortLayer2forward mocks base method.
 func (m *MockOvnClient) EnablePortLayer2forward(lspName string) error {
 	m.ctrl.T.Helper()
@@ -1526,6 +1659,21 @@ func (m *MockOvnClient) GetNbGlobal() (*ovnnb.NBGlobal, error) {
 func (mr *MockOvnClientMockRecorder) GetNbGlobal() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNbGlobal", reflect.TypeOf((*MockOvnClient)(nil).GetNbGlobal))
+}
+
+// GetPortGroup mocks base method.
+func (m *MockOvnClient) GetPortGroup(pgName string, ignoreNotFound bool) (*ovnnb.PortGroup, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetPortGroup", pgName, ignoreNotFound)
+	ret0, _ := ret[0].(*ovnnb.PortGroup)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetPortGroup indicates an expected call of GetPortGroup.
+func (mr *MockOvnClientMockRecorder) GetPortGroup(pgName, ignoreNotFound interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPortGroup", reflect.TypeOf((*MockOvnClient)(nil).GetPortGroup), pgName, ignoreNotFound)
 }
 
 // ListLoadBalancers mocks base method.
@@ -1631,6 +1779,21 @@ func (m *MockOvnClient) ListLogicalSwitchPorts(needVendorFilter bool, externalID
 func (mr *MockOvnClientMockRecorder) ListLogicalSwitchPorts(needVendorFilter, externalIDs interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListLogicalSwitchPorts", reflect.TypeOf((*MockOvnClient)(nil).ListLogicalSwitchPorts), needVendorFilter, externalIDs)
+}
+
+// ListPortGroups mocks base method.
+func (m *MockOvnClient) ListPortGroups(externalIDs map[string]string) ([]ovnnb.PortGroup, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListPortGroups", externalIDs)
+	ret0, _ := ret[0].([]ovnnb.PortGroup)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListPortGroups indicates an expected call of ListPortGroups.
+func (mr *MockOvnClientMockRecorder) ListPortGroups(externalIDs interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListPortGroups", reflect.TypeOf((*MockOvnClient)(nil).ListPortGroups), externalIDs)
 }
 
 // ListRemoteTypeLogicalSwitchPorts mocks base method.
@@ -1785,6 +1948,25 @@ func (mr *MockOvnClientMockRecorder) LogicalSwitchUpdateLoadBalancers(lsName, op
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LogicalSwitchUpdateLoadBalancers", reflect.TypeOf((*MockOvnClient)(nil).LogicalSwitchUpdateLoadBalancers), varargs...)
 }
 
+// PortGroupAddPorts mocks base method.
+func (m *MockOvnClient) PortGroupAddPorts(pgName string, lspNames ...string) error {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{pgName}
+	for _, a := range lspNames {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "PortGroupAddPorts", varargs...)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// PortGroupAddPorts indicates an expected call of PortGroupAddPorts.
+func (mr *MockOvnClientMockRecorder) PortGroupAddPorts(pgName interface{}, lspNames ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{pgName}, lspNames...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PortGroupAddPorts", reflect.TypeOf((*MockOvnClient)(nil).PortGroupAddPorts), varargs...)
+}
+
 // PortGroupExists mocks base method.
 func (m *MockOvnClient) PortGroupExists(pgName string) (bool, error) {
 	m.ctrl.T.Helper()
@@ -1822,20 +2004,34 @@ func (mr *MockOvnClientMockRecorder) PortGroupRemovePorts(pgName interface{}, ls
 // PortGroupUpdatePorts mocks base method.
 func (m *MockOvnClient) PortGroupUpdatePorts(pgName string, op ovsdb.Mutator, lspNames ...string) error {
 	m.ctrl.T.Helper()
-	varargs := []interface{}{pgName, op}
+	varargs := []interface{}{pgName}
 	for _, a := range lspNames {
 		varargs = append(varargs, a)
 	}
-	ret := m.ctrl.Call(m, "PortGroupUpdatePorts", varargs...)
+	ret := m.ctrl.Call(m, "PortGroupRemovePorts", varargs...)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
-// PortGroupUpdatePorts indicates an expected call of PortGroupUpdatePorts.
-func (mr *MockOvnClientMockRecorder) PortGroupUpdatePorts(pgName, op interface{}, lspNames ...interface{}) *gomock.Call {
+// PortGroupRemovePorts indicates an expected call of PortGroupRemovePorts.
+func (mr *MockOvnClientMockRecorder) PortGroupRemovePorts(pgName interface{}, lspNames ...interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	varargs := append([]interface{}{pgName, op}, lspNames...)
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PortGroupUpdatePorts", reflect.TypeOf((*MockOvnClient)(nil).PortGroupUpdatePorts), varargs...)
+	varargs := append([]interface{}{pgName}, lspNames...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PortGroupRemovePorts", reflect.TypeOf((*MockOvnClient)(nil).PortGroupRemovePorts), varargs...)
+}
+
+// PortGroupResetPorts mocks base method.
+func (m *MockOvnClient) PortGroupResetPorts(pgName string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PortGroupResetPorts", pgName)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// PortGroupResetPorts indicates an expected call of PortGroupResetPorts.
+func (mr *MockOvnClientMockRecorder) PortGroupResetPorts(pgName interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PortGroupResetPorts", reflect.TypeOf((*MockOvnClient)(nil).PortGroupResetPorts), pgName)
 }
 
 // RemoveLogicalPatchPort mocks base method.
