@@ -35,6 +35,7 @@ const controllerAgentName = "kube-ovn-controller"
 
 const (
 	logicalSwitchKey = "ls"
+	portGroupKey     = "pg"
 	networkPolicyKey = "np"
 	sgKey            = "sg"
 	sgsKey           = "security_groups"

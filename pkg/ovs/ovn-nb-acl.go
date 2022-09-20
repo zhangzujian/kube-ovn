@@ -187,11 +187,6 @@ func (c *ovnClient) UpdateSgAcl(sg *kubeovnv1.SecurityGroup, direction string) e
 		return fmt.Errorf("delete direction '%s' acls from port group %s: %v", direction, pgName, err)
 	}
 
-	// clear address_set
-	if err := c.DeleteAddressSets(map[string]string{sgKey: sg.Name}); err != nil {
-		return err
-	}
-
 	acls := make([]*ovnnb.ACL, 0, 2)
 
 	// ingress rule

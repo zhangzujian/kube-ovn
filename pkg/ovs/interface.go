@@ -1,8 +1,12 @@
 package ovs
 
 import (
-	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
+	netv1 "k8s.io/api/networking/v1"
+
 	"github.com/ovn-org/libovsdb/ovsdb"
+
+	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
+	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
 )
 
 type NbGlobal interface {
@@ -49,6 +53,8 @@ type LogicalSwitchPort interface {
 	SetLogicalSwitchPortVirtualParents(lsName, parents string, ips ...string) error
 	SetLogicalSwitchPortExternalIds(lspName string, externalIds map[string]string) error
 	SetLogicalSwitchPortVlanTag(lspName string, vlanID int) error
+	SetLogicalSwitchPortsSecurityGroup(sgName string, op string) error
+	UpdateLogicalSwitchAcl(lsName string, subnetAcls []kubeovnv1.Acl) error
 	EnablePortLayer2forward(lspName string) error
 	DeleteLogicalSwitchPort(lspName string) error
 	ListLogicalSwitchPorts(needVendorFilter bool, externalIDs map[string]string) ([]ovnnb.LogicalSwitchPort, error)
@@ -80,6 +86,21 @@ type PortGroup interface {
 	PortGroupRemovePorts(pgName string, lspNames ...string) error
 }
 
+type ACL interface {
+	CreateIngressAcl(pgName, asIngressName, asExceptName, protocol string, npp []netv1.NetworkPolicyPort) error
+	CreateEgressAcl(pgName, asEgressName, asExceptName, protocol string, npp []netv1.NetworkPolicyPort) error
+	CreateGatewayAcl(pgName, gateway string) error
+	CreateNodeAcl(pgName, nodeIp string) error
+	CreateSgDenyAllAcl(sgName string) error
+	UpdateSgAcl(sg *kubeovnv1.SecurityGroup, direction string) error
+	SetLogicalSwitchPrivate(lsName, cidrBlock string, allowSubnets []string) error
+	DeleteAcls(parentName, parentType string, direction string) error
+}
+
+type AddressSet interface {
+	DeleteAcls(parentName, parentType string, direction string) error
+}
+
 type LogicalRouterStaticRoute interface {
 	GetLogicalRouterRouteByOpts(key, value string) ([]ovnnb.LogicalRouterStaticRoute, error)
 	ListLogicalRouterStaticRoutes(externalIDs map[string]string) ([]ovnnb.LogicalRouterStaticRoute, error)
@@ -106,6 +127,8 @@ type OvnClient interface {
 	LogicalSwitchPort
 	LoadBalancer
 	PortGroup
+	ACL
+	AddressSet
 	LogicalRouterStaticRoute
 	LogicalRouterPolicy
 	NAT

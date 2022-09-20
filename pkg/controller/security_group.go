@@ -176,7 +176,8 @@ func (c *Controller) initDenyAllSecurityGroup() error {
 		return err
 	}
 
-	if err := c.ovnLegacyClient.CreateSgDenyAllACL(); err != nil {
+	if err := c.ovnClient.CreateSgDenyAllAcl(util.DenyAllSecurityGroup); err != nil {
+		klog.Errorf("create deny all acl for sg %s: %v", util.DenyAllSecurityGroup, err)
 		return err
 	}
 
@@ -293,28 +294,30 @@ func (c *Controller) handleAddOrUpdateSg(key string) error {
 
 	// check allowSameGroupTraffic switch
 	if sg.Status.AllowSameGroupTraffic != sg.Spec.AllowSameGroupTraffic {
-		klog.Infof("both ingress && egress need update, sg:%s", sg.Name)
+		klog.Infof("both ingress and egress need update, sg:%s", sg.Name)
 		ingressNeedUpdate = true
 		egressNeedUpdate = true
 	}
 
 	// update sg rule
 	if ingressNeedUpdate {
-		if err = c.ovnLegacyClient.UpdateSgACL(sg, ovs.SgAclIngressDirection); err != nil {
+		if err = c.ovnClient.UpdateSgAcl(sg, ovnnb.ACLDirectionToLport); err != nil {
 			sg.Status.IngressLastSyncSuccess = false
 			c.patchSgStatus(sg)
 			return err
 		}
+
 		sg.Status.IngressMd5 = newIngressMd5
 		sg.Status.IngressLastSyncSuccess = true
 		c.patchSgStatus(sg)
 	}
 	if egressNeedUpdate {
-		if err = c.ovnLegacyClient.UpdateSgACL(sg, ovs.SgAclEgressDirection); err != nil {
-			sg.Status.EgressLastSyncSuccess = false
+		if err = c.ovnClient.UpdateSgAcl(sg, ovnnb.ACLDirectionFromLport); err != nil {
+			sg.Status.IngressLastSyncSuccess = false
 			c.patchSgStatus(sg)
 			return err
 		}
+
 		sg.Status.EgressMd5 = newEgressMd5
 		sg.Status.EgressLastSyncSuccess = true
 		c.patchSgStatus(sg)

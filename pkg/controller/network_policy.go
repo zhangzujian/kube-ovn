@@ -18,6 +18,7 @@ import (
 
 	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
 	"github.com/kubeovn/kube-ovn/pkg/ovs"
+	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
 
@@ -312,6 +313,7 @@ func (c *Controller) handleUpdateNp(key string) error {
 					ingressAclCmd = c.ovnLegacyClient.CombineIngressACLCmd(pgName, ingressAllowAsName, ingressExceptAsName, protocol, []netv1.NetworkPolicyPort{}, logEnable, ingressAclCmd, idx, namedPortMap)
 				}
 			}
+
 			if len(np.Spec.Ingress) == 0 {
 				ingressAllowAsName := fmt.Sprintf("%s.%s.all", ingressAllowAsNamePrefix, protocol)
 				ingressExceptAsName := fmt.Sprintf("%s.%s.all", ingressExceptAsNamePrefix, protocol)
@@ -324,6 +326,7 @@ func (c *Controller) handleUpdateNp(key string) error {
 					klog.Errorf("failed to create address_set %s, %v", ingressExceptAsName, err)
 					return err
 				}
+
 				ingressPorts := []netv1.NetworkPolicyPort{}
 				ingressAclCmd = c.ovnLegacyClient.CombineIngressACLCmd(pgName, ingressAllowAsName, ingressExceptAsName, protocol, ingressPorts, logEnable, ingressAclCmd, 0, namedPortMap)
 			}
@@ -364,8 +367,8 @@ func (c *Controller) handleUpdateNp(key string) error {
 			}
 		}
 	} else {
-		if err = c.ovnLegacyClient.DeleteACL(pgName, "to-lport"); err != nil {
-			klog.Errorf("failed to delete np %s ingress acls, %v", key, err)
+		if err = c.ovnClient.DeleteAcls(key, portGroupKey, ovnnb.ACLDirectionToLport); err != nil {
+			klog.Errorf("delete np %s ingress acls: %v", key, err)
 			return err
 		}
 
@@ -453,6 +456,7 @@ func (c *Controller) handleUpdateNp(key string) error {
 					egressAclCmd = c.ovnLegacyClient.CombineEgressACLCmd(pgName, egressAllowAsName, egressExceptAsName, protocol, npr.Ports, logEnable, egressAclCmd, idx, namedPortMap)
 				}
 			}
+
 			if len(np.Spec.Egress) == 0 {
 				egressAllowAsName := fmt.Sprintf("%s.%s.all", egressAllowAsNamePrefix, protocol)
 				egressExceptAsName := fmt.Sprintf("%s.%s.all", egressExceptAsNamePrefix, protocol)
@@ -465,6 +469,7 @@ func (c *Controller) handleUpdateNp(key string) error {
 					klog.Errorf("failed to create address_set %s, %v", egressExceptAsName, err)
 					return err
 				}
+
 				egressPorts := []netv1.NetworkPolicyPort{}
 				egressAclCmd = c.ovnLegacyClient.CombineEgressACLCmd(pgName, egressAllowAsName, egressExceptAsName, protocol, egressPorts, logEnable, egressAclCmd, 0, namedPortMap)
 			}
@@ -524,8 +529,8 @@ func (c *Controller) handleUpdateNp(key string) error {
 		}
 	}
 
-	if err = c.ovnLegacyClient.CreateGatewayACL(pgName, subnet.Spec.Gateway, subnet.Spec.CIDRBlock); err != nil {
-		klog.Errorf("failed to create gateway acl, %v", err)
+	if err = c.ovnClient.CreateGatewayAcl(pgName, subnet.Spec.Gateway); err != nil {
+		klog.Errorf("create gateway acl: %v", err)
 		return err
 	}
 	return nil

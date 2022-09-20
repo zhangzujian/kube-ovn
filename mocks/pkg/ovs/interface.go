@@ -8,9 +8,11 @@ import (
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
+	v1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
 	ovs "github.com/kubeovn/kube-ovn/pkg/ovs"
 	ovnnb "github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
 	ovsdb "github.com/ovn-org/libovsdb/ovsdb"
+	v10 "k8s.io/api/networking/v1"
 )
 
 // MockNbGlobal is a mock of NbGlobal interface.
@@ -694,6 +696,34 @@ func (mr *MockLogicalSwitchPortMockRecorder) SetLogicalSwitchPortVlanTag(lspName
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetLogicalSwitchPortVlanTag", reflect.TypeOf((*MockLogicalSwitchPort)(nil).SetLogicalSwitchPortVlanTag), lspName, vlanID)
 }
 
+// SetLogicalSwitchPortsSecurityGroup mocks base method.
+func (m *MockLogicalSwitchPort) SetLogicalSwitchPortsSecurityGroup(sgName, op string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetLogicalSwitchPortsSecurityGroup", sgName, op)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetLogicalSwitchPortsSecurityGroup indicates an expected call of SetLogicalSwitchPortsSecurityGroup.
+func (mr *MockLogicalSwitchPortMockRecorder) SetLogicalSwitchPortsSecurityGroup(sgName, op interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetLogicalSwitchPortsSecurityGroup", reflect.TypeOf((*MockLogicalSwitchPort)(nil).SetLogicalSwitchPortsSecurityGroup), sgName, op)
+}
+
+// UpdateLogicalSwitchAcl mocks base method.
+func (m *MockLogicalSwitchPort) UpdateLogicalSwitchAcl(lsName string, subnetAcls []v1.Acl) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateLogicalSwitchAcl", lsName, subnetAcls)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateLogicalSwitchAcl indicates an expected call of UpdateLogicalSwitchAcl.
+func (mr *MockLogicalSwitchPortMockRecorder) UpdateLogicalSwitchAcl(lsName, subnetAcls interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateLogicalSwitchAcl", reflect.TypeOf((*MockLogicalSwitchPort)(nil).UpdateLogicalSwitchAcl), lsName, subnetAcls)
+}
+
 // MockLoadBalancer is a mock of LoadBalancer interface.
 type MockLoadBalancer struct {
 	ctrl     *gomock.Controller
@@ -985,6 +1015,178 @@ func (mr *MockPortGroupMockRecorder) PortGroupResetPorts(pgName interface{}) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PortGroupResetPorts", reflect.TypeOf((*MockPortGroup)(nil).PortGroupResetPorts), pgName)
 }
 
+// MockACL is a mock of ACL interface.
+type MockACL struct {
+	ctrl     *gomock.Controller
+	recorder *MockACLMockRecorder
+}
+
+// MockACLMockRecorder is the mock recorder for MockACL.
+type MockACLMockRecorder struct {
+	mock *MockACL
+}
+
+// NewMockACL creates a new mock instance.
+func NewMockACL(ctrl *gomock.Controller) *MockACL {
+	mock := &MockACL{ctrl: ctrl}
+	mock.recorder = &MockACLMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockACL) EXPECT() *MockACLMockRecorder {
+	return m.recorder
+}
+
+// CreateEgressAcl mocks base method.
+func (m *MockACL) CreateEgressAcl(pgName, asEgressName, asExceptName, protocol string, npp []v10.NetworkPolicyPort) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateEgressAcl", pgName, asEgressName, asExceptName, protocol, npp)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateEgressAcl indicates an expected call of CreateEgressAcl.
+func (mr *MockACLMockRecorder) CreateEgressAcl(pgName, asEgressName, asExceptName, protocol, npp interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateEgressAcl", reflect.TypeOf((*MockACL)(nil).CreateEgressAcl), pgName, asEgressName, asExceptName, protocol, npp)
+}
+
+// CreateGatewayAcl mocks base method.
+func (m *MockACL) CreateGatewayAcl(pgName, gateway string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateGatewayAcl", pgName, gateway)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateGatewayAcl indicates an expected call of CreateGatewayAcl.
+func (mr *MockACLMockRecorder) CreateGatewayAcl(pgName, gateway interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateGatewayAcl", reflect.TypeOf((*MockACL)(nil).CreateGatewayAcl), pgName, gateway)
+}
+
+// CreateIngressAcl mocks base method.
+func (m *MockACL) CreateIngressAcl(pgName, asIngressName, asExceptName, protocol string, npp []v10.NetworkPolicyPort) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateIngressAcl", pgName, asIngressName, asExceptName, protocol, npp)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateIngressAcl indicates an expected call of CreateIngressAcl.
+func (mr *MockACLMockRecorder) CreateIngressAcl(pgName, asIngressName, asExceptName, protocol, npp interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateIngressAcl", reflect.TypeOf((*MockACL)(nil).CreateIngressAcl), pgName, asIngressName, asExceptName, protocol, npp)
+}
+
+// CreateNodeAcl mocks base method.
+func (m *MockACL) CreateNodeAcl(pgName, nodeIp string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateNodeAcl", pgName, nodeIp)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateNodeAcl indicates an expected call of CreateNodeAcl.
+func (mr *MockACLMockRecorder) CreateNodeAcl(pgName, nodeIp interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateNodeAcl", reflect.TypeOf((*MockACL)(nil).CreateNodeAcl), pgName, nodeIp)
+}
+
+// CreateSgDenyAllAcl mocks base method.
+func (m *MockACL) CreateSgDenyAllAcl(sgName string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateSgDenyAllAcl", sgName)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateSgDenyAllAcl indicates an expected call of CreateSgDenyAllAcl.
+func (mr *MockACLMockRecorder) CreateSgDenyAllAcl(sgName interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateSgDenyAllAcl", reflect.TypeOf((*MockACL)(nil).CreateSgDenyAllAcl), sgName)
+}
+
+// DeleteAcls mocks base method.
+func (m *MockACL) DeleteAcls(parentName, parentType, direction string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteAcls", parentName, parentType, direction)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteAcls indicates an expected call of DeleteAcls.
+func (mr *MockACLMockRecorder) DeleteAcls(parentName, parentType, direction interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteAcls", reflect.TypeOf((*MockACL)(nil).DeleteAcls), parentName, parentType, direction)
+}
+
+// SetLogicalSwitchPrivate mocks base method.
+func (m *MockACL) SetLogicalSwitchPrivate(lsName, cidrBlock string, allowSubnets []string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetLogicalSwitchPrivate", lsName, cidrBlock, allowSubnets)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetLogicalSwitchPrivate indicates an expected call of SetLogicalSwitchPrivate.
+func (mr *MockACLMockRecorder) SetLogicalSwitchPrivate(lsName, cidrBlock, allowSubnets interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetLogicalSwitchPrivate", reflect.TypeOf((*MockACL)(nil).SetLogicalSwitchPrivate), lsName, cidrBlock, allowSubnets)
+}
+
+// UpdateSgAcl mocks base method.
+func (m *MockACL) UpdateSgAcl(sg *v1.SecurityGroup, direction string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateSgAcl", sg, direction)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateSgAcl indicates an expected call of UpdateSgAcl.
+func (mr *MockACLMockRecorder) UpdateSgAcl(sg, direction interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateSgAcl", reflect.TypeOf((*MockACL)(nil).UpdateSgAcl), sg, direction)
+}
+
+// MockAddressSet is a mock of AddressSet interface.
+type MockAddressSet struct {
+	ctrl     *gomock.Controller
+	recorder *MockAddressSetMockRecorder
+}
+
+// MockAddressSetMockRecorder is the mock recorder for MockAddressSet.
+type MockAddressSetMockRecorder struct {
+	mock *MockAddressSet
+}
+
+// NewMockAddressSet creates a new mock instance.
+func NewMockAddressSet(ctrl *gomock.Controller) *MockAddressSet {
+	mock := &MockAddressSet{ctrl: ctrl}
+	mock.recorder = &MockAddressSetMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockAddressSet) EXPECT() *MockAddressSetMockRecorder {
+	return m.recorder
+}
+
+// DeleteAcls mocks base method.
+func (m *MockAddressSet) DeleteAcls(parentName, parentType, direction string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteAcls", parentName, parentType, direction)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteAcls indicates an expected call of DeleteAcls.
+func (mr *MockAddressSetMockRecorder) DeleteAcls(parentName, parentType, direction interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteAcls", reflect.TypeOf((*MockAddressSet)(nil).DeleteAcls), parentName, parentType, direction)
+}
+
 // MockLogicalRouterStaticRoute is a mock of LogicalRouterStaticRoute interface.
 type MockLogicalRouterStaticRoute struct {
 	ctrl     *gomock.Controller
@@ -1248,6 +1450,34 @@ func (mr *MockOvnClientMockRecorder) CreateBareLogicalSwitchPort(lsName, lspName
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateBareLogicalSwitchPort", reflect.TypeOf((*MockOvnClient)(nil).CreateBareLogicalSwitchPort), lsName, lspName, ip, mac)
 }
 
+// CreateEgressAcl mocks base method.
+func (m *MockOvnClient) CreateEgressAcl(pgName, asEgressName, asExceptName, protocol string, npp []v10.NetworkPolicyPort) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateEgressAcl", pgName, asEgressName, asExceptName, protocol, npp)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateEgressAcl indicates an expected call of CreateEgressAcl.
+func (mr *MockOvnClientMockRecorder) CreateEgressAcl(pgName, asEgressName, asExceptName, protocol, npp interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateEgressAcl", reflect.TypeOf((*MockOvnClient)(nil).CreateEgressAcl), pgName, asEgressName, asExceptName, protocol, npp)
+}
+
+// CreateGatewayAcl mocks base method.
+func (m *MockOvnClient) CreateGatewayAcl(pgName, gateway string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateGatewayAcl", pgName, gateway)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateGatewayAcl indicates an expected call of CreateGatewayAcl.
+func (mr *MockOvnClientMockRecorder) CreateGatewayAcl(pgName, gateway interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateGatewayAcl", reflect.TypeOf((*MockOvnClient)(nil).CreateGatewayAcl), pgName, gateway)
+}
+
 // CreateGatewayLogicalSwitch mocks base method.
 func (m *MockOvnClient) CreateGatewayLogicalSwitch(lsName, lrName, provider, ip, mac string, vlanID int, chassises ...string) error {
 	m.ctrl.T.Helper()
@@ -1265,6 +1495,20 @@ func (mr *MockOvnClientMockRecorder) CreateGatewayLogicalSwitch(lsName, lrName, 
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]interface{}{lsName, lrName, provider, ip, mac, vlanID}, chassises...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateGatewayLogicalSwitch", reflect.TypeOf((*MockOvnClient)(nil).CreateGatewayLogicalSwitch), varargs...)
+}
+
+// CreateIngressAcl mocks base method.
+func (m *MockOvnClient) CreateIngressAcl(pgName, asIngressName, asExceptName, protocol string, npp []v10.NetworkPolicyPort) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateIngressAcl", pgName, asIngressName, asExceptName, protocol, npp)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateIngressAcl indicates an expected call of CreateIngressAcl.
+func (mr *MockOvnClientMockRecorder) CreateIngressAcl(pgName, asIngressName, asExceptName, protocol, npp interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateIngressAcl", reflect.TypeOf((*MockOvnClient)(nil).CreateIngressAcl), pgName, asIngressName, asExceptName, protocol, npp)
 }
 
 // CreateLoadBalancer mocks base method.
@@ -1356,6 +1600,20 @@ func (mr *MockOvnClientMockRecorder) CreateLogicalSwitchPort(lsName, lspName, ip
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateLogicalSwitchPort", reflect.TypeOf((*MockOvnClient)(nil).CreateLogicalSwitchPort), lsName, lspName, ip, mac, podName, namespace, portSecurity, securityGroups, vips, enableDHCP, dhcpOptions, vpc)
 }
 
+// CreateNodeAcl mocks base method.
+func (m *MockOvnClient) CreateNodeAcl(pgName, nodeIp string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateNodeAcl", pgName, nodeIp)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateNodeAcl indicates an expected call of CreateNodeAcl.
+func (mr *MockOvnClientMockRecorder) CreateNodeAcl(pgName, nodeIp interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateNodeAcl", reflect.TypeOf((*MockOvnClient)(nil).CreateNodeAcl), pgName, nodeIp)
+}
+
 // CreatePeerRouterPort mocks base method.
 func (m *MockOvnClient) CreatePeerRouterPort(localRouter, remoteRouter, localRouterPortIP string) error {
 	m.ctrl.T.Helper()
@@ -1384,6 +1642,20 @@ func (mr *MockOvnClientMockRecorder) CreatePortGroup(pgName, externalIDs interfa
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreatePortGroup", reflect.TypeOf((*MockOvnClient)(nil).CreatePortGroup), pgName, externalIDs)
 }
 
+// CreateSgDenyAllAcl mocks base method.
+func (m *MockOvnClient) CreateSgDenyAllAcl(sgName string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateSgDenyAllAcl", sgName)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateSgDenyAllAcl indicates an expected call of CreateSgDenyAllAcl.
+func (mr *MockOvnClientMockRecorder) CreateSgDenyAllAcl(sgName interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateSgDenyAllAcl", reflect.TypeOf((*MockOvnClient)(nil).CreateSgDenyAllAcl), sgName)
+}
+
 // CreateVirtualLogicalSwitchPorts mocks base method.
 func (m *MockOvnClient) CreateVirtualLogicalSwitchPorts(lsName string, ips ...string) error {
 	m.ctrl.T.Helper()
@@ -1401,6 +1673,20 @@ func (mr *MockOvnClientMockRecorder) CreateVirtualLogicalSwitchPorts(lsName inte
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]interface{}{lsName}, ips...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateVirtualLogicalSwitchPorts", reflect.TypeOf((*MockOvnClient)(nil).CreateVirtualLogicalSwitchPorts), varargs...)
+}
+
+// DeleteAcls mocks base method.
+func (m *MockOvnClient) DeleteAcls(parentName, parentType, direction string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteAcls", parentName, parentType, direction)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteAcls indicates an expected call of DeleteAcls.
+func (mr *MockOvnClientMockRecorder) DeleteAcls(parentName, parentType, direction interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteAcls", reflect.TypeOf((*MockOvnClient)(nil).DeleteAcls), parentName, parentType, direction)
 }
 
 // DeleteLoadBalancers mocks base method.
@@ -2151,6 +2437,34 @@ func (mr *MockOvnClientMockRecorder) SetLogicalSwitchPortVlanTag(lspName, vlanID
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetLogicalSwitchPortVlanTag", reflect.TypeOf((*MockOvnClient)(nil).SetLogicalSwitchPortVlanTag), lspName, vlanID)
 }
 
+// SetLogicalSwitchPortsSecurityGroup mocks base method.
+func (m *MockOvnClient) SetLogicalSwitchPortsSecurityGroup(sgName, op string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetLogicalSwitchPortsSecurityGroup", sgName, op)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetLogicalSwitchPortsSecurityGroup indicates an expected call of SetLogicalSwitchPortsSecurityGroup.
+func (mr *MockOvnClientMockRecorder) SetLogicalSwitchPortsSecurityGroup(sgName, op interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetLogicalSwitchPortsSecurityGroup", reflect.TypeOf((*MockOvnClient)(nil).SetLogicalSwitchPortsSecurityGroup), sgName, op)
+}
+
+// SetLogicalSwitchPrivate mocks base method.
+func (m *MockOvnClient) SetLogicalSwitchPrivate(lsName, cidrBlock string, allowSubnets []string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetLogicalSwitchPrivate", lsName, cidrBlock, allowSubnets)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetLogicalSwitchPrivate indicates an expected call of SetLogicalSwitchPrivate.
+func (mr *MockOvnClientMockRecorder) SetLogicalSwitchPrivate(lsName, cidrBlock, allowSubnets interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetLogicalSwitchPrivate", reflect.TypeOf((*MockOvnClient)(nil).SetLogicalSwitchPrivate), lsName, cidrBlock, allowSubnets)
+}
+
 // SetUseCtInvMatch mocks base method.
 func (m *MockOvnClient) SetUseCtInvMatch() error {
 	m.ctrl.T.Helper()
@@ -2179,6 +2493,20 @@ func (mr *MockOvnClientMockRecorder) UpdateDnatAndSnat(lrName, externalIP, logic
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateDnatAndSnat", reflect.TypeOf((*MockOvnClient)(nil).UpdateDnatAndSnat), lrName, externalIP, logicalIP, lspName, externalMac, gatewayType)
 }
 
+// UpdateLogicalSwitchAcl mocks base method.
+func (m *MockOvnClient) UpdateLogicalSwitchAcl(lsName string, subnetAcls []v1.Acl) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateLogicalSwitchAcl", lsName, subnetAcls)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateLogicalSwitchAcl indicates an expected call of UpdateLogicalSwitchAcl.
+func (mr *MockOvnClientMockRecorder) UpdateLogicalSwitchAcl(lsName, subnetAcls interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateLogicalSwitchAcl", reflect.TypeOf((*MockOvnClient)(nil).UpdateLogicalSwitchAcl), lsName, subnetAcls)
+}
+
 // UpdateNbGlobal mocks base method.
 func (m *MockOvnClient) UpdateNbGlobal(nbGlobal *ovnnb.NBGlobal, fields ...interface{}) error {
 	m.ctrl.T.Helper()
@@ -2196,6 +2524,20 @@ func (mr *MockOvnClientMockRecorder) UpdateNbGlobal(nbGlobal interface{}, fields
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]interface{}{nbGlobal}, fields...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateNbGlobal", reflect.TypeOf((*MockOvnClient)(nil).UpdateNbGlobal), varargs...)
+}
+
+// UpdateSgAcl mocks base method.
+func (m *MockOvnClient) UpdateSgAcl(sg *v1.SecurityGroup, direction string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateSgAcl", sg, direction)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateSgAcl indicates an expected call of UpdateSgAcl.
+func (mr *MockOvnClientMockRecorder) UpdateSgAcl(sg, direction interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateSgAcl", reflect.TypeOf((*MockOvnClient)(nil).UpdateSgAcl), sg, direction)
 }
 
 // UpdateSnat mocks base method.

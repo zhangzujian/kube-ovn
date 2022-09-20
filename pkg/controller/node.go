@@ -964,12 +964,13 @@ func (c *Controller) checkAndUpdateNodePortGroup() error {
 		}
 
 		if networkPolicyExists {
-			if err := c.ovnLegacyClient.CreateACLForNodePg(pgName, nodeIP, joinIP); err != nil {
-				klog.Errorf("failed to create node acl for node pg %v, %v", pgName, err)
+			if err := c.ovnClient.CreateNodeAcl(pgName, nodeIP); err != nil {
+				klog.Errorf("create node acl for node pg %s: %v", pgName, err)
 			}
 		} else {
-			if err := c.ovnLegacyClient.DeleteAclForNodePg(pgName); err != nil {
-				klog.Errorf("failed to delete node acl for node pg %v, %v", pgName, err)
+			// clear acl when direction is ""
+			if err = c.ovnClient.DeleteAcls(pgName, portGroupKey, ""); err != nil {
+				klog.Errorf("delete node acl for node pg %s: %v", pgName, err)
 			}
 		}
 	}

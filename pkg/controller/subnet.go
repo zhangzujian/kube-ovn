@@ -730,20 +730,22 @@ func (c *Controller) handleAddOrUpdateSubnet(key string) error {
 	}
 
 	if subnet.Spec.Private {
-		if err := c.ovnLegacyClient.SetPrivateLogicalSwitch(subnet.Name, subnet.Spec.CIDRBlock, subnet.Spec.AllowSubnets); err != nil {
+		if err := c.ovnClient.SetLogicalSwitchPrivate(subnet.Name, subnet.Spec.CIDRBlock, subnet.Spec.AllowSubnets); err != nil {
 			c.patchSubnetStatus(subnet, "SetPrivateLogicalSwitchFailed", err.Error())
 			return err
 		}
 		c.patchSubnetStatus(subnet, "SetPrivateLogicalSwitchSuccess", "")
 	} else {
-		if err := c.ovnLegacyClient.ResetLogicalSwitchAcl(subnet.Name); err != nil {
+		// clear acl when direction is ""
+		if err = c.ovnClient.DeleteAcls(key, logicalSwitchKey, ""); err != nil {
 			c.patchSubnetStatus(subnet, "ResetLogicalSwitchAclFailed", err.Error())
 			return err
 		}
+
 		c.patchSubnetStatus(subnet, "ResetLogicalSwitchAclSuccess", "")
 	}
 
-	if err := c.ovnLegacyClient.UpdateSubnetACL(subnet.Name, subnet.Spec.Acls); err != nil {
+	if err := c.ovnClient.UpdateLogicalSwitchAcl(subnet.Name, subnet.Spec.Acls); err != nil {
 		c.patchSubnetStatus(subnet, "SetLogicalSwitchAclsFailed", err.Error())
 		return err
 	}
@@ -787,7 +789,7 @@ func (c *Controller) handleDeleteLogicalSwitch(key string) (err error) {
 
 	exist, err := c.ovnClient.LogicalSwitchExists(key)
 	if err != nil {
-		klog.Errorf("check logical switch %s exist, %v", key, err)
+		klog.Errorf("check logical switch %s exist: %v", key, err)
 		return err
 	}
 
@@ -796,24 +798,25 @@ func (c *Controller) handleDeleteLogicalSwitch(key string) (err error) {
 		return nil
 	}
 
-	if err = c.ovnLegacyClient.CleanLogicalSwitchAcl(key); err != nil {
-		klog.Errorf("failed to delete acl of logical switch %s %v", key, err)
+	// clear acl when direction is ""
+	if err = c.ovnClient.DeleteAcls(key, logicalSwitchKey, ""); err != nil {
+		klog.Errorf("clear logical switch %s acls: %v", key, err)
 		return err
 	}
 
 	if err = c.ovnLegacyClient.DeleteDHCPOptions(key, kubeovnv1.ProtocolDual); err != nil {
-		klog.Errorf("failed to delete dhcp options of logical switch %s %v", key, err)
+		klog.Errorf("delete dhcp options of logical switch %s: %v", key, err)
 		return err
 	}
 
 	if err = c.ovnClient.DeleteLogicalSwitch(key); err != nil {
-		klog.Errorf("failed to delete logical switch %s %v", key, err)
+		klog.Errorf("delete logical switch %s: %v", key, err)
 		return err
 	}
 
 	nss, err := c.namespacesLister.List(labels.Everything())
 	if err != nil {
-		klog.Errorf("failed to list namespaces, %v", err)
+		klog.Errorf("list all namespaces: %v", err)
 		return err
 	}
 
