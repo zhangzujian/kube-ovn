@@ -230,7 +230,7 @@ func (c *Controller) updateDenyAllSgPorts() error {
 		return nil
 	}
 
-	klog.Infof("add ports %v to port group %s", addPorts, pgName)
+	klog.V(6).Infof("add ports %v to port group %s", addPorts, pgName)
 	if err := c.ovnClient.PortGroupAddPorts(pgName, addPorts...); err != nil {
 		klog.Errorf("add ports to port group %s: %v", pgName, err)
 		return err
@@ -273,8 +273,20 @@ func (c *Controller) handleAddOrUpdateSg(key string) error {
 		return err
 	}
 
-	if err = c.ovnLegacyClient.CreateSgAssociatedAddressSet(sg.Name); err != nil {
-		return fmt.Errorf("failed to create sg associated address_set %s, %v", key, err.Error())
+	v4AsName := ovs.GetSgV4AssociatedName(sg.Name)
+	v6AsName := ovs.GetSgV6AssociatedName(sg.Name)
+	externalIDs := map[string]string{
+		sgKey: sg.Name,
+	}
+
+	if err = c.ovnClient.CreateAddressSet(v4AsName, externalIDs); err != nil {
+		klog.Errorf("create address set %s for sg %s: %v", v4AsName, key, err)
+		return err
+	}
+
+	if err = c.ovnClient.CreateAddressSet(v6AsName, externalIDs); err != nil {
+		klog.Errorf("create address set %s for sg %s: %v", v6AsName, key, err)
+		return err
 	}
 
 	ingressNeedUpdate := false
@@ -286,6 +298,7 @@ func (c *Controller) handleAddOrUpdateSg(key string) error {
 		klog.Infof("ingress need update, sg:%s", sg.Name)
 		ingressNeedUpdate = true
 	}
+
 	newEgressMd5 := fmt.Sprintf("%x", structhash.Md5(sg.Spec.EgressRules, 1))
 	if !sg.Status.EgressLastSyncSuccess || newEgressMd5 != sg.Status.EgressMd5 {
 		klog.Infof("egress need update, sg:%s", sg.Name)
@@ -406,10 +419,10 @@ func (c *Controller) syncSgLogicalPort(key string) error {
 	sg, err := c.sgsLister.Get(key)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
-			klog.Errorf("sg '%s' not found.", key)
+			klog.Infof("sg %s not found", key)
 			return nil
 		}
-		klog.Errorf("failed to get sg '%s'. %v", key, err)
+		klog.Errorf("get sg %s: %v", key, err)
 		return err
 	}
 
@@ -440,13 +453,17 @@ func (c *Controller) syncSgLogicalPort(key string) error {
 		return err
 	}
 
-	if err = c.ovnLegacyClient.SetAddressesToAddressSet(v4s, ovs.GetSgV4AssociatedName(key)); err != nil {
-		klog.Errorf("failed to set address_set, %v", err)
+	v4AsName := ovs.GetSgV4AssociatedName(key)
+	klog.V(6).Infof("set ips %v to address set %s", v4s, v4AsName)
+	if err := c.ovnClient.AddressSetUpdateAddress(v4AsName, v4s...); err != nil {
+		klog.Errorf("set ips to address set %s: %v", v4AsName, err)
 		return err
 	}
 
-	if err = c.ovnLegacyClient.SetAddressesToAddressSet(v6s, ovs.GetSgV6AssociatedName(key)); err != nil {
-		klog.Errorf("failed to set address_set, %v", err)
+	v6AsName := ovs.GetSgV6AssociatedName(key)
+	klog.V(6).Infof("set ips %v to address set %s", v6s, v6AsName)
+	if err := c.ovnClient.AddressSetUpdateAddress(v6AsName, v6s...); err != nil {
+		klog.Errorf("set ips to address set %s: %v", v6AsName, err)
 		return err
 	}
 	c.addOrUpdateSgQueue.Add(util.DenyAllSecurityGroup)

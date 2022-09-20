@@ -476,12 +476,16 @@ func (c *Controller) handleDeleteNode(key string) error {
 			return err
 		}
 	}
-	if err := c.ovnLegacyClient.DeleteAddressSet(nodeUnderlayAddressSetName(key, 4)); err != nil {
-		klog.Errorf("failed to delete address set for node %s: %v", key, err)
+
+	v4AsName := nodeUnderlayAddressSetName(key, 4)
+	if err := c.ovnClient.DeleteAddressSet(v4AsName); err != nil {
+		klog.Errorf("delete address set %s for node %s: %v", v4AsName, key, err)
 		return err
 	}
-	if err := c.ovnLegacyClient.DeleteAddressSet(nodeUnderlayAddressSetName(key, 6)); err != nil {
-		klog.Errorf("failed to delete address set for node %s: %v", key, err)
+
+	v6AsName := nodeUnderlayAddressSetName(key, 6)
+	if err := c.ovnClient.DeleteAddressSet(v6AsName); err != nil {
+		klog.Errorf("delete address set %s for node %s: %v", v6AsName, key, err)
 		return err
 	}
 

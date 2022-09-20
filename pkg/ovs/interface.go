@@ -98,12 +98,20 @@ type ACL interface {
 }
 
 type AddressSet interface {
-	DeleteAcls(parentName, parentType string, direction string) error
+	CreateAddressSet(asName string, externalIDs map[string]string) error
+	AddressSetUpdateAddress(asName string, addresses ...string) error
+	DeleteAddressSet(asName string) error
+	DeleteAddressSets(externalIDs map[string]string) error
+	ListAddressSets(externalIDs map[string]string) ([]ovnnb.AddressSet, error)
 }
 
 type LogicalRouterStaticRoute interface {
+	AddLogicalRouterStaticRoute(lrName, policy, cidrBlock, nextHops, routeType string) error
+	ClearLogicalRouterStaticRoute(lrName string) error
+	DeleteLogicalRouterStaticRoute(lrName, policy, prefix, nextHop, routeType string) error
 	GetLogicalRouterRouteByOpts(key, value string) ([]ovnnb.LogicalRouterStaticRoute, error)
 	ListLogicalRouterStaticRoutes(externalIDs map[string]string) ([]ovnnb.LogicalRouterStaticRoute, error)
+	LogicalRouterStaticRouteExists(lrName, policy, prefix, nextHop, routeType string) (bool, error)
 }
 
 type LogicalRouterPolicy interface {

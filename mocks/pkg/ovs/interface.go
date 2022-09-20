@@ -1173,18 +1173,80 @@ func (m *MockAddressSet) EXPECT() *MockAddressSetMockRecorder {
 	return m.recorder
 }
 
-// DeleteAcls mocks base method.
-func (m *MockAddressSet) DeleteAcls(parentName, parentType, direction string) error {
+// AddressSetUpdateAddress mocks base method.
+func (m *MockAddressSet) AddressSetUpdateAddress(asName string, addresses ...string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeleteAcls", parentName, parentType, direction)
+	varargs := []interface{}{asName}
+	for _, a := range addresses {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "AddressSetUpdateAddress", varargs...)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
-// DeleteAcls indicates an expected call of DeleteAcls.
-func (mr *MockAddressSetMockRecorder) DeleteAcls(parentName, parentType, direction interface{}) *gomock.Call {
+// AddressSetUpdateAddress indicates an expected call of AddressSetUpdateAddress.
+func (mr *MockAddressSetMockRecorder) AddressSetUpdateAddress(asName interface{}, addresses ...interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteAcls", reflect.TypeOf((*MockAddressSet)(nil).DeleteAcls), parentName, parentType, direction)
+	varargs := append([]interface{}{asName}, addresses...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddressSetUpdateAddress", reflect.TypeOf((*MockAddressSet)(nil).AddressSetUpdateAddress), varargs...)
+}
+
+// CreateAddressSet mocks base method.
+func (m *MockAddressSet) CreateAddressSet(asName string, externalIDs map[string]string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateAddressSet", asName, externalIDs)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateAddressSet indicates an expected call of CreateAddressSet.
+func (mr *MockAddressSetMockRecorder) CreateAddressSet(asName, externalIDs interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateAddressSet", reflect.TypeOf((*MockAddressSet)(nil).CreateAddressSet), asName, externalIDs)
+}
+
+// DeleteAddressSet mocks base method.
+func (m *MockAddressSet) DeleteAddressSet(asName string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteAddressSet", asName)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteAddressSet indicates an expected call of DeleteAddressSet.
+func (mr *MockAddressSetMockRecorder) DeleteAddressSet(asName interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteAddressSet", reflect.TypeOf((*MockAddressSet)(nil).DeleteAddressSet), asName)
+}
+
+// DeleteAddressSets mocks base method.
+func (m *MockAddressSet) DeleteAddressSets(externalIDs map[string]string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteAddressSets", externalIDs)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteAddressSets indicates an expected call of DeleteAddressSets.
+func (mr *MockAddressSetMockRecorder) DeleteAddressSets(externalIDs interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteAddressSets", reflect.TypeOf((*MockAddressSet)(nil).DeleteAddressSets), externalIDs)
+}
+
+// ListAddressSets mocks base method.
+func (m *MockAddressSet) ListAddressSets(externalIDs map[string]string) ([]ovnnb.AddressSet, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListAddressSets", externalIDs)
+	ret0, _ := ret[0].([]ovnnb.AddressSet)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListAddressSets indicates an expected call of ListAddressSets.
+func (mr *MockAddressSetMockRecorder) ListAddressSets(externalIDs interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListAddressSets", reflect.TypeOf((*MockAddressSet)(nil).ListAddressSets), externalIDs)
 }
 
 // MockLogicalRouterStaticRoute is a mock of LogicalRouterStaticRoute interface.
@@ -1208,6 +1270,48 @@ func NewMockLogicalRouterStaticRoute(ctrl *gomock.Controller) *MockLogicalRouter
 // EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockLogicalRouterStaticRoute) EXPECT() *MockLogicalRouterStaticRouteMockRecorder {
 	return m.recorder
+}
+
+// AddLogicalRouterStaticRoute mocks base method.
+func (m *MockLogicalRouterStaticRoute) AddLogicalRouterStaticRoute(lrName, policy, cidrBlock, nextHops, routeType string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddLogicalRouterStaticRoute", lrName, policy, cidrBlock, nextHops, routeType)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddLogicalRouterStaticRoute indicates an expected call of AddLogicalRouterStaticRoute.
+func (mr *MockLogicalRouterStaticRouteMockRecorder) AddLogicalRouterStaticRoute(lrName, policy, cidrBlock, nextHops, routeType interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddLogicalRouterStaticRoute", reflect.TypeOf((*MockLogicalRouterStaticRoute)(nil).AddLogicalRouterStaticRoute), lrName, policy, cidrBlock, nextHops, routeType)
+}
+
+// ClearLogicalRouterStaticRoute mocks base method.
+func (m *MockLogicalRouterStaticRoute) ClearLogicalRouterStaticRoute(lrName string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ClearLogicalRouterStaticRoute", lrName)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ClearLogicalRouterStaticRoute indicates an expected call of ClearLogicalRouterStaticRoute.
+func (mr *MockLogicalRouterStaticRouteMockRecorder) ClearLogicalRouterStaticRoute(lrName interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClearLogicalRouterStaticRoute", reflect.TypeOf((*MockLogicalRouterStaticRoute)(nil).ClearLogicalRouterStaticRoute), lrName)
+}
+
+// DeleteLogicalRouterStaticRoute mocks base method.
+func (m *MockLogicalRouterStaticRoute) DeleteLogicalRouterStaticRoute(lrName, policy, prefix, nextHop, routeType string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteLogicalRouterStaticRoute", lrName, policy, prefix, nextHop, routeType)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteLogicalRouterStaticRoute indicates an expected call of DeleteLogicalRouterStaticRoute.
+func (mr *MockLogicalRouterStaticRouteMockRecorder) DeleteLogicalRouterStaticRoute(lrName, policy, prefix, nextHop, routeType interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteLogicalRouterStaticRoute", reflect.TypeOf((*MockLogicalRouterStaticRoute)(nil).DeleteLogicalRouterStaticRoute), lrName, policy, prefix, nextHop, routeType)
 }
 
 // GetLogicalRouterRouteByOpts mocks base method.
@@ -1238,6 +1342,21 @@ func (m *MockLogicalRouterStaticRoute) ListLogicalRouterStaticRoutes(externalIDs
 func (mr *MockLogicalRouterStaticRouteMockRecorder) ListLogicalRouterStaticRoutes(externalIDs interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListLogicalRouterStaticRoutes", reflect.TypeOf((*MockLogicalRouterStaticRoute)(nil).ListLogicalRouterStaticRoutes), externalIDs)
+}
+
+// LogicalRouterStaticRouteExists mocks base method.
+func (m *MockLogicalRouterStaticRoute) LogicalRouterStaticRouteExists(lrName, policy, prefix, nextHop, routeType string) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LogicalRouterStaticRouteExists", lrName, policy, prefix, nextHop, routeType)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LogicalRouterStaticRouteExists indicates an expected call of LogicalRouterStaticRouteExists.
+func (mr *MockLogicalRouterStaticRouteMockRecorder) LogicalRouterStaticRouteExists(lrName, policy, prefix, nextHop, routeType interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LogicalRouterStaticRouteExists", reflect.TypeOf((*MockLogicalRouterStaticRoute)(nil).LogicalRouterStaticRouteExists), lrName, policy, prefix, nextHop, routeType)
 }
 
 // MockLogicalRouterPolicy is a mock of LogicalRouterPolicy interface.
@@ -1420,6 +1539,67 @@ func (m *MockOvnClient) AddLogicalRouterPolicy(lrName string, priority int, matc
 func (mr *MockOvnClientMockRecorder) AddLogicalRouterPolicy(lrName, priority, match, action, nextHops, externalIDs interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddLogicalRouterPolicy", reflect.TypeOf((*MockOvnClient)(nil).AddLogicalRouterPolicy), lrName, priority, match, action, nextHops, externalIDs)
+}
+
+// AddLogicalRouterStaticRoute mocks base method.
+func (m *MockOvnClient) AddLogicalRouterStaticRoute(lrName, policy, cidrBlock, nextHops, routeType string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddLogicalRouterStaticRoute", lrName, policy, cidrBlock, nextHops, routeType)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddLogicalRouterStaticRoute indicates an expected call of AddLogicalRouterStaticRoute.
+func (mr *MockOvnClientMockRecorder) AddLogicalRouterStaticRoute(lrName, policy, cidrBlock, nextHops, routeType interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddLogicalRouterStaticRoute", reflect.TypeOf((*MockOvnClient)(nil).AddLogicalRouterStaticRoute), lrName, policy, cidrBlock, nextHops, routeType)
+}
+
+// AddressSetUpdateAddress mocks base method.
+func (m *MockOvnClient) AddressSetUpdateAddress(asName string, addresses ...string) error {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{asName}
+	for _, a := range addresses {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "AddressSetUpdateAddress", varargs...)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddressSetUpdateAddress indicates an expected call of AddressSetUpdateAddress.
+func (mr *MockOvnClientMockRecorder) AddressSetUpdateAddress(asName interface{}, addresses ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{asName}, addresses...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddressSetUpdateAddress", reflect.TypeOf((*MockOvnClient)(nil).AddressSetUpdateAddress), varargs...)
+}
+
+// ClearLogicalRouterStaticRoute mocks base method.
+func (m *MockOvnClient) ClearLogicalRouterStaticRoute(lrName string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ClearLogicalRouterStaticRoute", lrName)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ClearLogicalRouterStaticRoute indicates an expected call of ClearLogicalRouterStaticRoute.
+func (mr *MockOvnClientMockRecorder) ClearLogicalRouterStaticRoute(lrName interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClearLogicalRouterStaticRoute", reflect.TypeOf((*MockOvnClient)(nil).ClearLogicalRouterStaticRoute), lrName)
+}
+
+// CreateAddressSet mocks base method.
+func (m *MockOvnClient) CreateAddressSet(asName string, externalIDs map[string]string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateAddressSet", asName, externalIDs)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateAddressSet indicates an expected call of CreateAddressSet.
+func (mr *MockOvnClientMockRecorder) CreateAddressSet(asName, externalIDs interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateAddressSet", reflect.TypeOf((*MockOvnClient)(nil).CreateAddressSet), asName, externalIDs)
 }
 
 // CreateBareLogicalSwitch mocks base method.
@@ -1689,6 +1869,34 @@ func (mr *MockOvnClientMockRecorder) DeleteAcls(parentName, parentType, directio
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteAcls", reflect.TypeOf((*MockOvnClient)(nil).DeleteAcls), parentName, parentType, direction)
 }
 
+// DeleteAddressSet mocks base method.
+func (m *MockOvnClient) DeleteAddressSet(asName string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteAddressSet", asName)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteAddressSet indicates an expected call of DeleteAddressSet.
+func (mr *MockOvnClientMockRecorder) DeleteAddressSet(asName interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteAddressSet", reflect.TypeOf((*MockOvnClient)(nil).DeleteAddressSet), asName)
+}
+
+// DeleteAddressSets mocks base method.
+func (m *MockOvnClient) DeleteAddressSets(externalIDs map[string]string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteAddressSets", externalIDs)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteAddressSets indicates an expected call of DeleteAddressSets.
+func (mr *MockOvnClientMockRecorder) DeleteAddressSets(externalIDs interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteAddressSets", reflect.TypeOf((*MockOvnClient)(nil).DeleteAddressSets), externalIDs)
+}
+
 // DeleteLoadBalancers mocks base method.
 func (m *MockOvnClient) DeleteLoadBalancers(filter func(*ovnnb.LoadBalancer) bool) error {
 	m.ctrl.T.Helper()
@@ -1771,6 +1979,20 @@ func (m *MockOvnClient) DeleteLogicalRouterPorts(externalIDs map[string]string, 
 func (mr *MockOvnClientMockRecorder) DeleteLogicalRouterPorts(externalIDs, filter interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteLogicalRouterPorts", reflect.TypeOf((*MockOvnClient)(nil).DeleteLogicalRouterPorts), externalIDs, filter)
+}
+
+// DeleteLogicalRouterStaticRoute mocks base method.
+func (m *MockOvnClient) DeleteLogicalRouterStaticRoute(lrName, policy, prefix, nextHop, routeType string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteLogicalRouterStaticRoute", lrName, policy, prefix, nextHop, routeType)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteLogicalRouterStaticRoute indicates an expected call of DeleteLogicalRouterStaticRoute.
+func (mr *MockOvnClientMockRecorder) DeleteLogicalRouterStaticRoute(lrName, policy, prefix, nextHop, routeType interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteLogicalRouterStaticRoute", reflect.TypeOf((*MockOvnClient)(nil).DeleteLogicalRouterStaticRoute), lrName, policy, prefix, nextHop, routeType)
 }
 
 // DeleteLogicalSwitch mocks base method.
@@ -1960,6 +2182,21 @@ func (m *MockOvnClient) GetPortGroup(pgName string, ignoreNotFound bool) (*ovnnb
 func (mr *MockOvnClientMockRecorder) GetPortGroup(pgName, ignoreNotFound interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPortGroup", reflect.TypeOf((*MockOvnClient)(nil).GetPortGroup), pgName, ignoreNotFound)
+}
+
+// ListAddressSets mocks base method.
+func (m *MockOvnClient) ListAddressSets(externalIDs map[string]string) ([]ovnnb.AddressSet, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListAddressSets", externalIDs)
+	ret0, _ := ret[0].([]ovnnb.AddressSet)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListAddressSets indicates an expected call of ListAddressSets.
+func (mr *MockOvnClientMockRecorder) ListAddressSets(externalIDs interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListAddressSets", reflect.TypeOf((*MockOvnClient)(nil).ListAddressSets), externalIDs)
 }
 
 // ListLoadBalancers mocks base method.
@@ -2183,6 +2420,21 @@ func (m *MockOvnClient) LogicalRouterPortExists(lrpName string) (bool, error) {
 func (mr *MockOvnClientMockRecorder) LogicalRouterPortExists(lrpName interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LogicalRouterPortExists", reflect.TypeOf((*MockOvnClient)(nil).LogicalRouterPortExists), lrpName)
+}
+
+// LogicalRouterStaticRouteExists mocks base method.
+func (m *MockOvnClient) LogicalRouterStaticRouteExists(lrName, policy, prefix, nextHop, routeType string) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LogicalRouterStaticRouteExists", lrName, policy, prefix, nextHop, routeType)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LogicalRouterStaticRouteExists indicates an expected call of LogicalRouterStaticRouteExists.
+func (mr *MockOvnClientMockRecorder) LogicalRouterStaticRouteExists(lrName, policy, prefix, nextHop, routeType interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LogicalRouterStaticRouteExists", reflect.TypeOf((*MockOvnClient)(nil).LogicalRouterStaticRouteExists), lrName, policy, prefix, nextHop, routeType)
 }
 
 // LogicalSwitchExists mocks base method.
