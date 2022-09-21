@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -50,7 +51,8 @@ var (
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
-	ExchangeLinkName = rand.Intn(2) != 0
+	// ExchangeLinkName = rand.Intn(2) != 0
+	ExchangeLinkName = true
 }
 
 func SetCIDR(s string) {
@@ -197,7 +199,10 @@ var _ = Describe("[Underlay]", func() {
 				Expect(err).NotTo(HaveOccurred())
 			}
 
+			By("wait provider network to be ready")
 			time.Sleep(3 * time.Second)
+			err = f.WaitProviderNetworkReady(ProviderNetwork)
+			Expect(err).NotTo(HaveOccurred())
 
 			By("validate provider network")
 			pn, err := f.OvnClientSet.KubeovnV1().ProviderNetworks().Get(context.Background(), ProviderNetwork, metav1.GetOptions{})
@@ -222,6 +227,72 @@ var _ = Describe("[Underlay]", func() {
 			newPn.Spec.ExcludeNodes = nil
 			_, err = f.OvnClientSet.KubeovnV1().ProviderNetworks().Update(context.Background(), newPn, metav1.UpdateOptions{})
 			Expect(err).NotTo(HaveOccurred())
+
+			By("wait provider network to be ready")
+			time.Sleep(3 * time.Second)
+			err = f.WaitProviderNetworkReady(ProviderNetwork)
+			if err == nil {
+				return
+			}
+
+			err1 := err
+
+			pn, err = f.OvnClientSet.KubeovnV1().ProviderNetworks().Get(context.Background(), ProviderNetwork, metav1.GetOptions{})
+			Expect(err).NotTo(HaveOccurred())
+			// GinkgoWriter.Println(stdout)
+			// 		GinkgoWriter.Println(pod.Spec.NodeName, netns)
+			b, _ := yaml.Marshal(pn)
+			GinkgoWriter.Println(string(b))
+			// for _, node := range nodes.Items {
+			// 	Expect(util.ContainsString(pn.Spec.ExcludeNodes, node.Name)).To(BeTrue())
+			// }
+
+			cniPods, err := f.KubeClientSet.CoreV1().Pods("kube-system").List(context.Background(), metav1.ListOptions{LabelSelector: "app=kube-ovn-cni"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cniPods).NotTo(BeNil())
+
+			for _, pod := range cniPods.Items {
+				GinkgoWriter.Println(pod.Spec.NodeName)
+				output, err := exec.Command("kubectl", "-n", "kube-system", "logs", pod.Name).CombinedOutput()
+				Expect(err).NotTo(HaveOccurred())
+				GinkgoWriter.Println(string(output))
+				// stdout, _, err := f.ExecToPodThroughAPI("ip addr show", "openvswitch", ovsPod.Name, ovsPod.Namespace, nil)
+				// Expect(err).NotTo(HaveOccurred())
+				// if err != nil {
+				// 	GinkgoWriter.Println(err)
+				// 	continue
+				// }
+
+				// GinkgoWriter.Println(stdout)
+			}
+
+			// ovsPods, err := f.KubeClientSet.CoreV1().Pods("kube-system").List(context.Background(), metav1.ListOptions{LabelSelector: "app=ovs"})
+			// Expect(err).NotTo(HaveOccurred())
+			// Expect(ovsPods).NotTo(BeNil())
+
+			// for _, ovsPod := range ovsPods.Items {
+			// 	GinkgoWriter.Println(ovsPod.Spec.NodeName)
+			// 	stdout, _, err := f.ExecToPodThroughAPI("ip addr show", "openvswitch", ovsPod.Name, ovsPod.Namespace, nil)
+			// 	Expect(err).NotTo(HaveOccurred())
+			// 	if err != nil {
+			// 		GinkgoWriter.Println(err)
+			// 		continue
+			// 	}
+
+			// 	GinkgoWriter.Println(stdout)
+			// }
+
+			// output, err := exec.Command("docker", "network", "inspect", "bridge").CombinedOutput()
+			// Expect(err).NotTo(HaveOccurred())
+			// GinkgoWriter.Println(string(output))
+
+			// for _, node := range nodes.Items {
+			// 	output, err := exec.Command("docker", "inspect", node.Name).CombinedOutput()
+			// 	Expect(err).NotTo(HaveOccurred())
+			// 	GinkgoWriter.Println(string(output))
+			// }
+
+			Expect(err1).NotTo(HaveOccurred())
 		})
 	})
 
@@ -423,6 +494,16 @@ var _ = Describe("[Underlay]", func() {
 				cmd = fmt.Sprintf("nsenter --net=%s ip link show eth0", netns)
 				stdout, _, err = f.ExecToPodThroughAPI(cmd, "cni-server", cniPod.Name, cniPod.Namespace, nil)
 				Expect(err).NotTo(HaveOccurred())
+				if !strings.Contains(stdout, fmt.Sprintf(" mtu %d ", nodeMTU[pod.Spec.NodeName])) {
+					GinkgoWriter.Println(stdout)
+					GinkgoWriter.Println(pod.Spec.NodeName, netns)
+					b, _ := yaml.Marshal(pod)
+					GinkgoWriter.Println(string(b))
+
+					node, _ := f.KubeClientSet.CoreV1().Nodes().Get(context.Background(), pod.Spec.NodeName, metav1.GetOptions{})
+					b, _ = yaml.Marshal(node)
+					GinkgoWriter.Println(string(b))
+				}
 				Expect(stdout).To(ContainSubstring(" mtu %d ", nodeMTU[pod.Spec.NodeName]))
 			})
 		})

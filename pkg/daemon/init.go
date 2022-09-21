@@ -228,6 +228,7 @@ func ovsCleanProviderNetwork(provider string) error {
 	}
 
 	if br := util.ExternalBridgeName(provider); br != brName {
+		klog.Infof("bridge %s is not %s, change nic name back", brName, br)
 		if _, err = changeProvideNicName(br, brName); err != nil {
 			klog.Errorf("failed to change provider nic name from %s to %s: %v", br, brName, err)
 			return err

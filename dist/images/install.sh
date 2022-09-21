@@ -2956,6 +2956,7 @@ spec:
           - --alsologtostderr=true
           - --log_file=/var/log/kube-ovn/kube-ovn-cni.log
           - --log_file_max_size=0
+          - --v=5
         securityContext:
           runAsUser: 0
           privileged: true
