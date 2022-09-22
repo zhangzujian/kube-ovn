@@ -11,6 +11,18 @@ import (
 
 var addressSetNameRegex = regexp.MustCompile(`^[a-zA-Z_.][a-zA-Z_.0-9]*$`)
 
+func GetSgPortGroupName(sgName string) string {
+	return strings.Replace(fmt.Sprintf("ovn.sg.%s", sgName), "-", ".", -1)
+}
+
+func GetSgV4AssociatedName(sgName string) string {
+	return strings.Replace(fmt.Sprintf("ovn.sg.%s.associated.v4", sgName), "-", ".", -1)
+}
+
+func GetSgV6AssociatedName(sgName string) string {
+	return strings.Replace(fmt.Sprintf("ovn.sg.%s.associated.v6", sgName), "-", ".", -1)
+}
+
 // PodNameToPortName return the ovn port name for a given pod
 func PodNameToPortName(pod, namespace, provider string) string {
 	if provider == util.OvnProvider {
