@@ -190,8 +190,8 @@ func (c *ovnClient) CreateBareLogicalSwitchPort(lsName, lspName, ip, mac string)
 
 	ipList := strings.Split(ip, ",")
 	addresses := make([]string, 0, len(ipList)+1) // +1 is the mac length
-	addresses = append(addresses, ipList...)
 	addresses = append(addresses, mac)
+	addresses = append(addresses, ipList...)
 
 	/* create logical switch port */
 	lsp := &ovnnb.LogicalSwitchPort{

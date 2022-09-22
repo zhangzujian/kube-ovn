@@ -392,6 +392,8 @@ func configureNodeNic(portName, ip, gw string, macAddr net.HardwareAddr, mtu int
 		return fmt.Errorf("can not set host nic %s qlen: %v", util.NodeNic, err)
 	}
 
+	klog.Infof("wait network ready")
+
 	// ping ovn0 gw to activate the flow
 	klog.Infof("wait ovn0 gw ready")
 	if err := waitNetworkReady(util.NodeNic, ip, gw, false, true, gatewayCheckMaxRetry); err != nil {

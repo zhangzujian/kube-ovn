@@ -13,6 +13,15 @@ import (
 
 // AddLogicalRouterPolicy add a policy route to logical router
 func (c *ovnClient) AddLogicalRouterPolicy(lrName string, priority int, match, action string, nextHops []string, externalIDs map[string]string) error {
+	exists, err := c.LogicalRouterPolicyExists(lrName, priority, match)
+	if err != nil {
+		return err
+	}
+
+	if exists {
+		return nil
+	}
+
 	policy, err := c.newLogicalRouterPolicy(lrName, priority, match, action, nextHops, externalIDs)
 	if err != nil {
 		return fmt.Errorf("new policy for logical router %s: %v", lrName, err)

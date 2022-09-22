@@ -294,11 +294,12 @@ func (suite *OvnClientTestSuite) testCreateBareLogicalSwitchPort() {
 	err := ovnClient.CreateBareLogicalSwitch(lsName)
 	require.NoError(t, err)
 
-	err = ovnClient.CreateBareLogicalSwitchPort(lsName, lspName, "", "")
+	err = ovnClient.CreateBareLogicalSwitchPort(lsName, lspName, "100.64.0.4,fd00:100:64::4", "00:00:00:C9:4E:EE")
 	require.NoError(t, err)
 
 	lsp, err := ovnClient.GetLogicalSwitchPort(lspName, false)
 	require.NoError(t, err)
+	require.Equal(t, []string{"00:00:00:C9:4E:EE 100.64.0.4 fd00:100:64::4"}, lsp.Addresses)
 
 	ls, err := ovnClient.GetLogicalSwitch(lsName, false)
 	require.NoError(t, err)

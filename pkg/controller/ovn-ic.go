@@ -347,45 +347,25 @@ func (c *Controller) waitTsReady() error {
 }
 
 func (c *Controller) delLearnedRoute() error {
-	originalPorts, err := c.ovnLegacyClient.CustomFindEntity("Logical_Router_Static_Route", []string{"_uuid", "ip_prefix"})
+	klog.V(6).Infof("remove learned routes")
+
+	// list all learned routes
+	routes, err := c.ovnClient.ListLogicalRouterStaticRoutes(map[string]string{
+		"ic-learned-route": "",
+	})
+
 	if err != nil {
-		klog.Errorf("failed to list static routes of logical router, %v", err)
+		klog.Errorf("list all learned routes: %v", err)
 		return err
 	}
-	filteredPorts, err := c.ovnLegacyClient.CustomFindEntity("Logical_Router_Static_Route", []string{"_uuid", "ip_prefix"}, "external_ids:ic-learned-route{<=}1")
-	if err != nil {
-		klog.Errorf("failed to filter static routes of logical router, %v", err)
-		return err
-	}
-	learnedPorts := []map[string][]string{}
-	for _, aOriPort := range originalPorts {
-		isFiltered := false
-		for _, aFtPort := range filteredPorts {
-			if aFtPort["_uuid"][0] == aOriPort["_uuid"][0] {
-				isFiltered = true
-			}
-		}
-		if !isFiltered {
-			learnedPorts = append(learnedPorts, aOriPort)
+
+	for _, route := range routes {
+		if err := c.ovnClient.DeleteLogicalRouterStaticRoute(c.config.ClusterRouter, ovnnb.LogicalRouterStaticRoutePolicyDstIP, route.IPPrefix, "", util.NormalRouteType); err != nil {
+			klog.Errorf("delete stale route %s, %v", route.IPPrefix, err)
+			return err
 		}
 	}
-	if len(learnedPorts) != 0 {
-		for _, aLdPort := range learnedPorts {
-			itsRouter, err := c.ovnLegacyClient.CustomFindEntity("Logical_Router", []string{"name"}, fmt.Sprintf("static_routes{>}%s", aLdPort["_uuid"][0]))
-			if err != nil {
-				klog.Errorf("failed to list logical router of static route %s, %v", aLdPort["_uuid"][0], err)
-				return err
-			} else if len(itsRouter) != 1 {
-				klog.Errorf("number wrong of logical router for static route %s, %v", aLdPort["_uuid"][0], itsRouter)
-				return nil
-			}
-			if err := c.ovnLegacyClient.DeleteStaticRoute(aLdPort["ip_prefix"][0], itsRouter[0]["name"][0]); err != nil {
-				klog.Errorf("failed to delete stale route %s, %v", aLdPort["ip_prefix"][0], err)
-				return err
-			}
-		}
-		klog.V(5).Infof("finish removing learned routes")
-	}
+
 	return nil
 }
 

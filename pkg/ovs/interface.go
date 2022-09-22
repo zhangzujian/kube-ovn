@@ -117,14 +117,16 @@ type LogicalRouterStaticRoute interface {
 type LogicalRouterPolicy interface {
 	AddLogicalRouterPolicy(lrName string, priority int, match, action string, nextHops []string, externalIDs map[string]string) error
 	DeleteLogicalRouterPolicy(lrName string, priority int, match string) error
-	DeleteRouterPolicy(lr *ovnnb.LogicalRouter, uuid string) error
+	ClearLogicalRouterPolicy(lrName string) error
 	ListLogicalRouterPolicies(externalIDs map[string]string) ([]ovnnb.LogicalRouterPolicy, error)
+	GetLogicalRouterPolicy(lrName string, priority int, match string, ignoreNotFound bool) (*ovnnb.LogicalRouterPolicy, error)
 }
 
 type NAT interface {
 	UpdateSnat(lrName, externalIP, logicalIP string) error
 	UpdateDnatAndSnat(lrName, externalIP, logicalIP, lspName, externalMac, gatewayType string) error
 	DeleteNats(lrName, natType, logicalIP string) error
+	NatExists(lrName, natType, externalIP, logicalIP string) (bool, error) 
 }
 
 type OvnClient interface {

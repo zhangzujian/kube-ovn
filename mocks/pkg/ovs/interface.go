@@ -1396,6 +1396,20 @@ func (mr *MockLogicalRouterPolicyMockRecorder) AddLogicalRouterPolicy(lrName, pr
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddLogicalRouterPolicy", reflect.TypeOf((*MockLogicalRouterPolicy)(nil).AddLogicalRouterPolicy), lrName, priority, match, action, nextHops, externalIDs)
 }
 
+// ClearLogicalRouterPolicy mocks base method.
+func (m *MockLogicalRouterPolicy) ClearLogicalRouterPolicy(lrName string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ClearLogicalRouterPolicy", lrName)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ClearLogicalRouterPolicy indicates an expected call of ClearLogicalRouterPolicy.
+func (mr *MockLogicalRouterPolicyMockRecorder) ClearLogicalRouterPolicy(lrName interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClearLogicalRouterPolicy", reflect.TypeOf((*MockLogicalRouterPolicy)(nil).ClearLogicalRouterPolicy), lrName)
+}
+
 // DeleteLogicalRouterPolicy mocks base method.
 func (m *MockLogicalRouterPolicy) DeleteLogicalRouterPolicy(lrName string, priority int, match string) error {
 	m.ctrl.T.Helper()
@@ -1410,18 +1424,19 @@ func (mr *MockLogicalRouterPolicyMockRecorder) DeleteLogicalRouterPolicy(lrName,
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteLogicalRouterPolicy", reflect.TypeOf((*MockLogicalRouterPolicy)(nil).DeleteLogicalRouterPolicy), lrName, priority, match)
 }
 
-// DeleteRouterPolicy mocks base method.
-func (m *MockLogicalRouterPolicy) DeleteRouterPolicy(lr *ovnnb.LogicalRouter, uuid string) error {
+// GetLogicalRouterPolicy mocks base method.
+func (m *MockLogicalRouterPolicy) GetLogicalRouterPolicy(lrName string, priority int, match string, ignoreNotFound bool) (*ovnnb.LogicalRouterPolicy, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeleteRouterPolicy", lr, uuid)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret := m.ctrl.Call(m, "GetLogicalRouterPolicy", lrName, priority, match, ignoreNotFound)
+	ret0, _ := ret[0].(*ovnnb.LogicalRouterPolicy)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
-// DeleteRouterPolicy indicates an expected call of DeleteRouterPolicy.
-func (mr *MockLogicalRouterPolicyMockRecorder) DeleteRouterPolicy(lr, uuid interface{}) *gomock.Call {
+// GetLogicalRouterPolicy indicates an expected call of GetLogicalRouterPolicy.
+func (mr *MockLogicalRouterPolicyMockRecorder) GetLogicalRouterPolicy(lrName, priority, match, ignoreNotFound interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteRouterPolicy", reflect.TypeOf((*MockLogicalRouterPolicy)(nil).DeleteRouterPolicy), lr, uuid)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLogicalRouterPolicy", reflect.TypeOf((*MockLogicalRouterPolicy)(nil).GetLogicalRouterPolicy), lrName, priority, match, ignoreNotFound)
 }
 
 // ListLogicalRouterPolicies mocks base method.
@@ -1474,6 +1489,21 @@ func (m *MockNAT) DeleteNats(lrName, natType, logicalIP string) error {
 func (mr *MockNATMockRecorder) DeleteNats(lrName, natType, logicalIP interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteNats", reflect.TypeOf((*MockNAT)(nil).DeleteNats), lrName, natType, logicalIP)
+}
+
+// NatExists mocks base method.
+func (m *MockNAT) NatExists(lrName, natType, externalIP, logicalIP string) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "NatExists", lrName, natType, externalIP, logicalIP)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// NatExists indicates an expected call of NatExists.
+func (mr *MockNATMockRecorder) NatExists(lrName, natType, externalIP, logicalIP interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NatExists", reflect.TypeOf((*MockNAT)(nil).NatExists), lrName, natType, externalIP, logicalIP)
 }
 
 // UpdateDnatAndSnat mocks base method.
@@ -1572,6 +1602,20 @@ func (mr *MockOvnClientMockRecorder) AddressSetUpdateAddress(asName interface{},
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]interface{}{asName}, addresses...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddressSetUpdateAddress", reflect.TypeOf((*MockOvnClient)(nil).AddressSetUpdateAddress), varargs...)
+}
+
+// ClearLogicalRouterPolicy mocks base method.
+func (m *MockOvnClient) ClearLogicalRouterPolicy(lrName string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ClearLogicalRouterPolicy", lrName)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ClearLogicalRouterPolicy indicates an expected call of ClearLogicalRouterPolicy.
+func (mr *MockOvnClientMockRecorder) ClearLogicalRouterPolicy(lrName interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClearLogicalRouterPolicy", reflect.TypeOf((*MockOvnClient)(nil).ClearLogicalRouterPolicy), lrName)
 }
 
 // ClearLogicalRouterStaticRoute mocks base method.
@@ -2109,6 +2153,21 @@ func (mr *MockOvnClientMockRecorder) GetLogicalRouter(lrName, ignoreNotFound int
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLogicalRouter", reflect.TypeOf((*MockOvnClient)(nil).GetLogicalRouter), lrName, ignoreNotFound)
 }
 
+// GetLogicalRouterPolicy mocks base method.
+func (m *MockOvnClient) GetLogicalRouterPolicy(lrName string, priority int, match string, ignoreNotFound bool) (*ovnnb.LogicalRouterPolicy, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetLogicalRouterPolicy", lrName, priority, match, ignoreNotFound)
+	ret0, _ := ret[0].(*ovnnb.LogicalRouterPolicy)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetLogicalRouterPolicy indicates an expected call of GetLogicalRouterPolicy.
+func (mr *MockOvnClientMockRecorder) GetLogicalRouterPolicy(lrName, priority, match, ignoreNotFound interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLogicalRouterPolicy", reflect.TypeOf((*MockOvnClient)(nil).GetLogicalRouterPolicy), lrName, priority, match, ignoreNotFound)
+}
+
 // GetLogicalRouterPort mocks base method.
 func (m *MockOvnClient) GetLogicalRouterPort(lrpName string, ignoreNotFound bool) (*ovnnb.LogicalRouterPort, error) {
 	m.ctrl.T.Helper()
@@ -2484,6 +2543,21 @@ func (mr *MockOvnClientMockRecorder) LogicalSwitchUpdateLoadBalancers(lsName, op
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]interface{}{lsName, op}, lbNames...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LogicalSwitchUpdateLoadBalancers", reflect.TypeOf((*MockOvnClient)(nil).LogicalSwitchUpdateLoadBalancers), varargs...)
+}
+
+// NatExists mocks base method.
+func (m *MockOvnClient) NatExists(lrName, natType, externalIP, logicalIP string) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "NatExists", lrName, natType, externalIP, logicalIP)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// NatExists indicates an expected call of NatExists.
+func (mr *MockOvnClientMockRecorder) NatExists(lrName, natType, externalIP, logicalIP interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NatExists", reflect.TypeOf((*MockOvnClient)(nil).NatExists), lrName, natType, externalIP, logicalIP)
 }
 
 // PortGroupAddPorts mocks base method.

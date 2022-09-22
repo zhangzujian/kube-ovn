@@ -21,7 +21,9 @@ import (
 	"k8s.io/klog/v2"
 
 	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
+	"github.com/kubeovn/kube-ovn/pkg/ipam"
 	"github.com/kubeovn/kube-ovn/pkg/ovs"
+	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
 
@@ -268,16 +270,18 @@ func (c *Controller) handleAddNode(key string) error {
 				"node":           node.Name,
 				"address-family": strconv.Itoa(af),
 			}
-			klog.Infof("add policy route for router: %s, match %s, action %s, nexthop %s, extrenalID %v", c.config.ClusterRouter, match, "reroute", ip, externalIDs)
-			if err = c.ovnLegacyClient.AddPolicyRoute(c.config.ClusterRouter, util.NodeRouterPolicyPriority, match, "reroute", ip, externalIDs); err != nil {
-				klog.Errorf("failed to add logical router policy for node %s: %v", node.Name, err)
+
+			klog.Infof("add policy route for router: %s, match %s, action %s, nexthop %s, extrenalID %v", c.config.ClusterRouter, match, ovnnb.LogicalRouterPolicyActionReroute, ip, externalIDs)
+
+			if err := c.ovnClient.AddLogicalRouterPolicy(c.config.ClusterRouter, util.NodeRouterPolicyPriority, match, ovnnb.LogicalRouterPolicyActionReroute, []string{ip}, externalIDs); err != nil {
+				klog.Errorf("add logical router policy for node %s: %v", node, err)
 				return err
 			}
 		}
 	}
 
-	if err := c.addNodeGwStaticRoute(); err != nil {
-		klog.Errorf("failed to add static route for node gw: %v", err)
+	if err := c.ovnClient.AddLogicalRouterStaticRoute(c.config.ClusterRouter, "", "0.0.0.0/0,::/0", c.config.NodeSwitchGateway, util.NormalRouteType); err != nil {
+		klog.Errorf("add static route for node gw: %v", err)
 		return err
 	}
 
@@ -442,9 +446,10 @@ func (c *Controller) handleDeleteNode(key string) error {
 	portName := fmt.Sprintf("node-%s", key)
 	klog.Infof("delete logical switch port %s", portName)
 	if err := c.ovnClient.DeleteLogicalSwitchPort(portName); err != nil {
-		klog.Errorf("failed to delete node switch port node-%s: %v", key, err)
+		klog.Errorf("delete node switch port node-%s: %v", key, err)
 		return err
 	}
+
 	if err := c.ovnLegacyClient.DeleteChassisByNode(key); err != nil {
 		klog.Errorf("failed to delete chassis for node %s: %v", key, err)
 		return err
@@ -462,19 +467,14 @@ func (c *Controller) handleDeleteNode(key string) error {
 	}
 
 	if err := c.deletePolicyRouteForNode(key); err != nil {
-		klog.Errorf("failed to delete policy route for node %s: %v", key, err)
+		klog.Errorf("delete policy route for node %s: %v", key, err)
 		return err
 	}
 
 	addresses := c.ipam.GetPodAddress(portName)
-	for _, addr := range addresses {
-		if addr.Ip == "" {
-			continue
-		}
-		if err := c.ovnLegacyClient.DeletePolicyRouteByNexthop(c.config.ClusterRouter, util.NodeRouterPolicyPriority, addr.Ip); err != nil {
-			klog.Errorf("failed to delete router policy for node %s: %v", key, err)
-			return err
-		}
+	if err := c.deletePolicyRouteByNexthop(addresses); err != nil {
+		klog.Errorf("delete router policy for node %s: %v", key, err)
+		return err
 	}
 
 	v4AsName := nodeUnderlayAddressSetName(key, 4)
@@ -825,26 +825,6 @@ func (c *Controller) checkGatewayReady() error {
 	return nil
 }
 
-func (c *Controller) checkRouteExist(nextHop, cidrBlock, routePolicy string) (bool, error) {
-	routes, err := c.ovnLegacyClient.GetStaticRouteList(c.config.ClusterRouter)
-	if err != nil {
-		klog.Errorf("failed to list static route %v", err)
-		return false, err
-	}
-
-	for _, route := range routes {
-		if route.Policy != routePolicy {
-			continue
-		}
-
-		if route.CIDR == cidrBlock && route.NextHop == nextHop {
-			klog.V(3).Infof("static route exists for cidr %s, nexthop %v", cidrBlock, nextHop)
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
 func (c *Controller) checkChassisDupl(node *v1.Node) error {
 	// notice that multiple chassises may arise and we are not prepared
 	chassisAdd, err := c.ovnLegacyClient.GetChassis(node.Name)
@@ -1055,13 +1035,15 @@ func (c *Controller) getPolicyRouteParas(cidr string, priority int32) ([]string,
 	if util.CheckProtocol(cidr) == kubeovnv1.ProtocolIPv6 {
 		ipSuffix = "ip6"
 	}
+
 	match := fmt.Sprintf("%s.src == %s", ipSuffix, cidr)
-	nextHops, nameIpMap, err := c.ovnLegacyClient.GetPolicyRouteParas(priority, match)
+	policy, err := c.ovnClient.GetLogicalRouterPolicy(c.config.ClusterRouter, priority, match, false)
 	if err != nil {
-		klog.Errorf("failed to get policy route paras, %v", err)
-		return nextHops, nameIpMap, err
+		klog.Errorf("get logical router policy: %v", err)
+		return nil, nil, err
 	}
-	return nextHops, nameIpMap, nil
+
+	return policy.Nexthops, policy.ExternalIDs, nil
 }
 
 func (c *Controller) checkPolicyRouteExistForNode(nodeName, cidr, nexthop string, priority int32) (bool, error) {
@@ -1206,5 +1188,34 @@ func (c *Controller) addPolicyRouteForCentralizedSubnetOnNode(nodeName, nodeIP s
 			}
 		}
 	}
+	return nil
+}
+func (c *Controller) deletePolicyRouteByNexthop(addresses []*ipam.SubnetAddress) error {
+	policies, err := c.ovnClient.ListLogicalRouterPolicies(map[string]string{logicalRouterKey: c.config.ClusterRouter})
+	if err != nil {
+		return fmt.Errorf("list logical router %s policies: %v", c.config.ClusterRouter, err)
+	}
+
+	for _, addr := range addresses {
+		if addr.Ip == "" {
+			continue
+		}
+
+		for _, policy := range policies {
+			if policy.Priority != util.NodeRouterPolicyPriority {
+				continue
+			}
+
+			if !util.ContainsString(policy.Nexthops, addr.Ip) {
+				continue
+			}
+
+			if err := c.ovnClient.DeleteLogicalRouterPolicy(c.config.ClusterRouter, util.NodeRouterPolicyPriority, policy.Match); err != nil {
+				return err
+			}
+		}
+
+	}
+
 	return nil
 }

@@ -11,8 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ovn-org/libovsdb/ovsdb"
-
 	"gopkg.in/k8snetworkplumbingwg/multus-cni.v3/pkg/logging"
 	multustypes "gopkg.in/k8snetworkplumbingwg/multus-cni.v3/pkg/types"
 
@@ -29,6 +27,7 @@ import (
 	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
 	"github.com/kubeovn/kube-ovn/pkg/ipam"
 	"github.com/kubeovn/kube-ovn/pkg/ovs"
+	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
 
@@ -726,24 +725,25 @@ func (c *Controller) handleDeletePod(pod *v1.Pod) error {
 			if strings.TrimSpace(address.Ip) == "" {
 				continue
 			}
+
 			subnet, err := c.subnetsLister.Get(address.Subnet.Name)
 			if k8serrors.IsNotFound(err) {
 				continue
 			} else if err != nil {
 				return err
 			}
+
 			vpc, err := c.vpcsLister.Get(subnet.Spec.Vpc)
 			if k8serrors.IsNotFound(err) {
 				continue
 			} else if err != nil {
 				return err
 			}
-			// If pod has snat or eip, also need delete staticRoute when delete pod
-			if vpc.Name == util.DefaultVpc {
-				if err := c.ovnLegacyClient.DeleteStaticRoute(address.Ip, vpc.Name); err != nil {
-					return err
-				}
+
+			if err := c.ovnClient.DeleteLogicalRouterStaticRoute(vpc.Name, ovnnb.LogicalRouterStaticRoutePolicySrcIP, address.Ip, "", util.NormalRouteType); err != nil {
+				return err
 			}
+
 			if exGwEnabled == "true" {
 				if err := c.ovnLegacyClient.DeleteNatRule(address.Ip, vpc.Name); err != nil {
 					return err
@@ -930,17 +930,20 @@ func (c *Controller) handleUpdatePod(key string) error {
 					klog.Errorf("failed to get ex-gateway config, %v", err)
 					return err
 				}
+
 				nextHop := cm.Data["external-gw-addr"]
 				if nextHop == "" {
 					klog.Errorf("no available gateway nic address")
 					return fmt.Errorf("no available gateway nic address")
 				}
+
+				// nextHop's format is: 192.168.30.1/24
 				if strings.Contains(nextHop, "/") {
 					nextHop = strings.Split(nextHop, "/")[0]
 				}
 
-				if err := c.ovnLegacyClient.AddStaticRoute(ovs.PolicySrcIP, podIP, nextHop, c.config.ClusterRouter, util.NormalRouteType); err != nil {
-					klog.Errorf("failed to add static route, %v", err)
+				if err := c.ovnClient.AddLogicalRouterStaticRoute(c.config.ClusterRouter, ovnnb.LogicalRouterStaticRoutePolicySrcIP, podIP, nextHop, util.NormalRouteType); err != nil {
+					klog.Errorf("add static route for pod ip %s: %v", podIP, err)
 					return err
 				}
 
@@ -954,7 +957,14 @@ func (c *Controller) handleUpdatePod(key string) error {
 				c.ovnPgKeyMutex.Unlock(pgName)
 
 			} else {
-				if subnet.Spec.GatewayType == kubeovnv1.GWDistributedType && pod.Annotations[util.NorthGatewayAnnotation] == "" {
+				northGateway := pod.Annotations[util.NorthGatewayAnnotation]
+				if subnet.Spec.GatewayType == kubeovnv1.GWDistributedType && len(northGateway) == 0 {
+					node, err := c.nodesLister.Get(pod.Spec.NodeName)
+					if err != nil {
+						klog.Errorf("get node %s failed %v", pod.Spec.NodeName, err)
+						return err
+					}
+
 					nodeTunlIPAddr, err := getNodeTunlIP(node)
 					if err != nil {
 						return err
@@ -987,9 +997,9 @@ func (c *Controller) handleUpdatePod(key string) error {
 					}
 				}
 
-				if pod.Annotations[util.NorthGatewayAnnotation] != "" {
-					if err := c.ovnLegacyClient.AddStaticRoute(ovs.PolicySrcIP, podIP, pod.Annotations[util.NorthGatewayAnnotation], c.config.ClusterRouter, util.NormalRouteType); err != nil {
-						klog.Errorf("failed to add static route, %v", err)
+				if len(northGateway) != 0 {
+					if err := c.ovnClient.AddLogicalRouterStaticRoute(c.config.ClusterRouter, ovnnb.LogicalRouterStaticRoutePolicySrcIP, podIP, northGateway, util.NormalRouteType); err != nil {
+						klog.Errorf("add static route for pod ip %s: %v", podIP, err)
 						return err
 					}
 				} else if c.config.EnableEipSnat {
@@ -1001,25 +1011,41 @@ func (c *Controller) handleUpdatePod(key string) error {
 
 			if c.config.EnableEipSnat {
 				for _, ipStr := range strings.Split(podIP, ",") {
-					if err := c.ovnLegacyClient.UpdateNatRule("dnat_and_snat", ipStr, pod.Annotations[util.EipAnnotation], c.config.ClusterRouter, pod.Annotations[util.MacAddressAnnotation], fmt.Sprintf("%s.%s", podName, pod.Namespace)); err != nil {
-						klog.Errorf("failed to add nat rules, %v", err)
-						return err
-					}
+						if len(pod.Annotations[util.EipAnnotation]) != 0 {
+							if err := c.ovnClient.UpdateDnatAndSnat(c.config.ClusterRouter, pod.Annotations[util.EipAnnotation], ipStr, fmt.Sprintf("%s.%s", podName, pod.Namespace), pod.Annotations[util.MacAddressAnnotation], c.ExternalGatewayType); err != nil {
+								klog.Errorf("add dnat_and_snat rule: %v", err)
+								return err
+							}
+						} else {
+							if err := c.ovnClient.DeleteNats(c.config.ClusterRouter, "dnat_and_snat", ipStr); err != nil {
+								klog.Errorf("delete dnat_and_snat rule: %v", err)
+								return err
+							}
+						}
 
-					if err := c.ovnLegacyClient.UpdateNatRule("snat", ipStr, pod.Annotations[util.SnatAnnotation], c.config.ClusterRouter, "", ""); err != nil {
-						klog.Errorf("failed to add nat rules, %v", err)
-						return err
-					}
+						if len(pod.Annotations[util.SnatAnnotation]) != 0 {
+							if err := c.ovnClient.UpdateSnat(c.config.ClusterRouter, pod.Annotations[util.SnatAnnotation], ipStr); err != nil {
+								klog.Errorf("add snat rule: %v", err)
+								return err
+							}
+						} else {
+							if err := c.ovnClient.DeleteNats(c.config.ClusterRouter, "snat", ipStr); err != nil {
+								klog.Errorf("delete dnat_and_snat rule: %v", err)
+								return err
+							}
+						}
 				}
 			}
 		}
 
 		pod.Annotations[fmt.Sprintf(util.RoutedAnnotationTemplate, podNet.ProviderName)] = "true"
 	}
+
 	patch, err := util.GenerateStrategicMergePatchPayload(oriPod, pod)
 	if err != nil {
 		return err
 	}
+
 	if _, err := c.config.KubeClient.CoreV1().Pods(namespace).Patch(context.Background(), name,
 		types.StrategicMergePatchType, patch, metav1.PatchOptions{}, ""); err != nil {
 		if k8serrors.IsNotFound(err) {

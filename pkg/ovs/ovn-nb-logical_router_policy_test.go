@@ -51,6 +51,9 @@ func (suite *OvnClientTestSuite) testAddLogicalRouterPolicy() {
 	policy, err := ovnClient.GetLogicalRouterPolicy(lrName, priority, match, false)
 	require.NoError(t, err)
 	require.Contains(t, lr.Policies, policy.UUID)
+
+	err = ovnClient.AddLogicalRouterPolicy(lrName, priority, match, action, nextHops, nil)
+	require.NoError(t, err)
 }
 
 func (suite *OvnClientTestSuite) testCreateLogicalRouterPolicies() {
