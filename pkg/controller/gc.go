@@ -132,18 +132,20 @@ func (c *Controller) gcLogicalSwitch() error {
 	klog.Infof("start to gc logical switch")
 	subnets, err := c.subnetsLister.List(labels.Everything())
 	if err != nil {
-		klog.Errorf("failed to list subnet, %v", err)
+		klog.Errorf("list subnet: %v", err)
 		return err
 	}
+
 	subnetNames := make([]string, 0, len(subnets))
 	subnetMap := make(map[string]*kubeovnv1.Subnet, len(subnets))
 	for _, s := range subnets {
 		subnetMap[s.Name] = s
 		subnetNames = append(subnetNames, s.Name)
 	}
+
 	lss, err := c.ovnClient.ListLogicalSwitch(c.config.EnableExternalVpc)
 	if err != nil {
-		klog.Errorf("failed to list logical switch, %v", err)
+		klog.Errorf("list logical switch: %v", err)
 		return err
 	}
 
@@ -165,25 +167,30 @@ func (c *Controller) gcLogicalSwitch() error {
 	}
 
 	klog.Infof("start to gc dhcp options")
-	dhcpOptions, err := c.ovnLegacyClient.ListDHCPOptions(c.config.EnableExternalVpc, "", "")
+	dhcpOptions, err := c.ovnClient.ListDHCPOptions(c.config.EnableExternalVpc, nil)
 	if err != nil {
-		klog.Errorf("failed to list dhcp options, %v", err)
+		klog.Errorf("list logical switch  %s dhcp options: %v", err)
 		return err
 	}
-	var uuidToDeleteList = []string{}
+
+	var deleteUUIDs = []string{}
 	for _, item := range dhcpOptions {
-		ls := item.ExternalIds["ls"]
-		if !util.IsStringIn(ls, subnetNames) {
-			uuidToDeleteList = append(uuidToDeleteList, item.UUID)
+		ls := item.ExternalIDs["ls"]
+		if !util.ContainsString(subnetNames, ls) {
+			deleteUUIDs = append(deleteUUIDs, item.UUID)
 		}
 	}
-	klog.Infof("gc dhcp options %v", uuidToDeleteList)
-	if len(uuidToDeleteList) > 0 {
-		if err = c.ovnLegacyClient.DeleteDHCPOptionsByUUIDs(uuidToDeleteList); err != nil {
-			klog.Errorf("failed to delete dhcp options by uuids, %v", err)
-			return err
-		}
+
+	if len(deleteUUIDs) == 0 {
+		return nil
 	}
+
+	klog.Infof("gc dhcp options %v", deleteUUIDs)
+	if err = c.ovnClient.DeleteDHCPOptionsByUUIDs(deleteUUIDs...); err != nil {
+		klog.Errorf("delete dhcp options by uuids: %v", err)
+		return err
+	}
+
 	return nil
 }
 

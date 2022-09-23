@@ -28,6 +28,7 @@ type LogicalRouter interface {
 
 type LogicalRouterPort interface {
 	CreatePeerRouterPort(localRouter, remoteRouter, localRouterPortIP string) error
+	UpdateLogicalRouterPortRA(lrpName, ipv6RAConfigsStr string, enableIPv6RA bool) error
 	DeleteLogicalRouterPort(lrpName string) error
 	DeleteLogicalRouterPorts(externalIDs map[string]string, filter func(lrp *ovnnb.LogicalRouterPort) bool) error
 	GetLogicalRouterPort(lrpName string, ignoreNotFound bool) (*ovnnb.LogicalRouterPort, error)
@@ -129,6 +130,13 @@ type NAT interface {
 	NatExists(lrName, natType, externalIP, logicalIP string) (bool, error) 
 }
 
+type DHCPOptions interface {
+	UpdateDHCPOptions(subnet *kubeovnv1.Subnet) (*DHCPOptionsUUIDs, error)
+	DeleteDHCPOptions(lsName string, protocol string) error
+	DeleteDHCPOptionsByUUIDs(uuidList ...string) error
+	ListDHCPOptions(needVendorFilter bool, externalIDs map[string]string) ([]ovnnb.DHCPOptions, error)
+}
+
 type OvnClient interface {
 	NbGlobal
 	LogicalRouter
@@ -142,6 +150,7 @@ type OvnClient interface {
 	LogicalRouterStaticRoute
 	LogicalRouterPolicy
 	NAT
+	DHCPOptions
 	CreateGatewayLogicalSwitch(lsName, lrName, provider, ip, mac string, vlanID int, chassises ...string) error
 	CreateLogicalPatchPort(lsName, lrName, lspName, lrpName, ip, mac string, chassises ...string) error
 	RemoveLogicalPatchPort(lspName, lrpName string) error

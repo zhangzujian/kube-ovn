@@ -334,6 +334,20 @@ func (mr *MockLogicalRouterPortMockRecorder) LogicalRouterPortExists(lrpName int
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LogicalRouterPortExists", reflect.TypeOf((*MockLogicalRouterPort)(nil).LogicalRouterPortExists), lrpName)
 }
 
+// UpdateLogicalRouterPortRA mocks base method.
+func (m *MockLogicalRouterPort) UpdateLogicalRouterPortRA(lrpName, ipv6RAConfigsStr string, enableIPv6RA bool) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateLogicalRouterPortRA", lrpName, ipv6RAConfigsStr, enableIPv6RA)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateLogicalRouterPortRA indicates an expected call of UpdateLogicalRouterPortRA.
+func (mr *MockLogicalRouterPortMockRecorder) UpdateLogicalRouterPortRA(lrpName, ipv6RAConfigsStr, enableIPv6RA interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateLogicalRouterPortRA", reflect.TypeOf((*MockLogicalRouterPort)(nil).UpdateLogicalRouterPortRA), lrpName, ipv6RAConfigsStr, enableIPv6RA)
+}
+
 // MockLogicalSwitch is a mock of LogicalSwitch interface.
 type MockLogicalSwitch struct {
 	ctrl     *gomock.Controller
@@ -1534,6 +1548,91 @@ func (mr *MockNATMockRecorder) UpdateSnat(lrName, externalIP, logicalIP interfac
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateSnat", reflect.TypeOf((*MockNAT)(nil).UpdateSnat), lrName, externalIP, logicalIP)
 }
 
+// MockDHCPOptions is a mock of DHCPOptions interface.
+type MockDHCPOptions struct {
+	ctrl     *gomock.Controller
+	recorder *MockDHCPOptionsMockRecorder
+}
+
+// MockDHCPOptionsMockRecorder is the mock recorder for MockDHCPOptions.
+type MockDHCPOptionsMockRecorder struct {
+	mock *MockDHCPOptions
+}
+
+// NewMockDHCPOptions creates a new mock instance.
+func NewMockDHCPOptions(ctrl *gomock.Controller) *MockDHCPOptions {
+	mock := &MockDHCPOptions{ctrl: ctrl}
+	mock.recorder = &MockDHCPOptionsMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockDHCPOptions) EXPECT() *MockDHCPOptionsMockRecorder {
+	return m.recorder
+}
+
+// DeleteDHCPOptions mocks base method.
+func (m *MockDHCPOptions) DeleteDHCPOptions(lsName, protocol string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteDHCPOptions", lsName, protocol)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteDHCPOptions indicates an expected call of DeleteDHCPOptions.
+func (mr *MockDHCPOptionsMockRecorder) DeleteDHCPOptions(lsName, protocol interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteDHCPOptions", reflect.TypeOf((*MockDHCPOptions)(nil).DeleteDHCPOptions), lsName, protocol)
+}
+
+// DeleteDHCPOptionsByUUIDs mocks base method.
+func (m *MockDHCPOptions) DeleteDHCPOptionsByUUIDs(uuidList ...string) error {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{}
+	for _, a := range uuidList {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "DeleteDHCPOptionsByUUIDs", varargs...)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteDHCPOptionsByUUIDs indicates an expected call of DeleteDHCPOptionsByUUIDs.
+func (mr *MockDHCPOptionsMockRecorder) DeleteDHCPOptionsByUUIDs(uuidList ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteDHCPOptionsByUUIDs", reflect.TypeOf((*MockDHCPOptions)(nil).DeleteDHCPOptionsByUUIDs), uuidList...)
+}
+
+// ListDHCPOptions mocks base method.
+func (m *MockDHCPOptions) ListDHCPOptions(needVendorFilter bool, externalIDs map[string]string) ([]ovnnb.DHCPOptions, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListDHCPOptions", needVendorFilter, externalIDs)
+	ret0, _ := ret[0].([]ovnnb.DHCPOptions)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListDHCPOptions indicates an expected call of ListDHCPOptions.
+func (mr *MockDHCPOptionsMockRecorder) ListDHCPOptions(needVendorFilter, externalIDs interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListDHCPOptions", reflect.TypeOf((*MockDHCPOptions)(nil).ListDHCPOptions), needVendorFilter, externalIDs)
+}
+
+// UpdateDHCPOptions mocks base method.
+func (m *MockDHCPOptions) UpdateDHCPOptions(subnet *v1.Subnet) (*ovs.DHCPOptionsUUIDs, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateDHCPOptions", subnet)
+	ret0, _ := ret[0].(*ovs.DHCPOptionsUUIDs)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpdateDHCPOptions indicates an expected call of UpdateDHCPOptions.
+func (mr *MockDHCPOptionsMockRecorder) UpdateDHCPOptions(subnet interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateDHCPOptions", reflect.TypeOf((*MockDHCPOptions)(nil).UpdateDHCPOptions), subnet)
+}
+
 // MockOvnClient is a mock of OvnClient interface.
 type MockOvnClient struct {
 	ctrl     *gomock.Controller
@@ -1941,6 +2040,38 @@ func (mr *MockOvnClientMockRecorder) DeleteAddressSets(externalIDs interface{}) 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteAddressSets", reflect.TypeOf((*MockOvnClient)(nil).DeleteAddressSets), externalIDs)
 }
 
+// DeleteDHCPOptions mocks base method.
+func (m *MockOvnClient) DeleteDHCPOptions(lsName, protocol string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteDHCPOptions", lsName, protocol)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteDHCPOptions indicates an expected call of DeleteDHCPOptions.
+func (mr *MockOvnClientMockRecorder) DeleteDHCPOptions(lsName, protocol interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteDHCPOptions", reflect.TypeOf((*MockOvnClient)(nil).DeleteDHCPOptions), lsName, protocol)
+}
+
+// DeleteDHCPOptionsByUUIDs mocks base method.
+func (m *MockOvnClient) DeleteDHCPOptionsByUUIDs(uuidList ...string) error {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{}
+	for _, a := range uuidList {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "DeleteDHCPOptionsByUUIDs", varargs...)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteDHCPOptionsByUUIDs indicates an expected call of DeleteDHCPOptionsByUUIDs.
+func (mr *MockOvnClientMockRecorder) DeleteDHCPOptionsByUUIDs(uuidList ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteDHCPOptionsByUUIDs", reflect.TypeOf((*MockOvnClient)(nil).DeleteDHCPOptionsByUUIDs), uuidList...)
+}
+
 // DeleteLoadBalancers mocks base method.
 func (m *MockOvnClient) DeleteLoadBalancers(filter func(*ovnnb.LoadBalancer) bool) error {
 	m.ctrl.T.Helper()
@@ -2256,6 +2387,21 @@ func (m *MockOvnClient) ListAddressSets(externalIDs map[string]string) ([]ovnnb.
 func (mr *MockOvnClientMockRecorder) ListAddressSets(externalIDs interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListAddressSets", reflect.TypeOf((*MockOvnClient)(nil).ListAddressSets), externalIDs)
+}
+
+// ListDHCPOptions mocks base method.
+func (m *MockOvnClient) ListDHCPOptions(needVendorFilter bool, externalIDs map[string]string) ([]ovnnb.DHCPOptions, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListDHCPOptions", needVendorFilter, externalIDs)
+	ret0, _ := ret[0].([]ovnnb.DHCPOptions)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListDHCPOptions indicates an expected call of ListDHCPOptions.
+func (mr *MockOvnClientMockRecorder) ListDHCPOptions(needVendorFilter, externalIDs interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListDHCPOptions", reflect.TypeOf((*MockOvnClient)(nil).ListDHCPOptions), needVendorFilter, externalIDs)
 }
 
 // ListLoadBalancers mocks base method.
@@ -2805,6 +2951,21 @@ func (mr *MockOvnClientMockRecorder) SetUseCtInvMatch() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetUseCtInvMatch", reflect.TypeOf((*MockOvnClient)(nil).SetUseCtInvMatch))
 }
 
+// UpdateDHCPOptions mocks base method.
+func (m *MockOvnClient) UpdateDHCPOptions(subnet *v1.Subnet) (*ovs.DHCPOptionsUUIDs, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateDHCPOptions", subnet)
+	ret0, _ := ret[0].(*ovs.DHCPOptionsUUIDs)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UpdateDHCPOptions indicates an expected call of UpdateDHCPOptions.
+func (mr *MockOvnClientMockRecorder) UpdateDHCPOptions(subnet interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateDHCPOptions", reflect.TypeOf((*MockOvnClient)(nil).UpdateDHCPOptions), subnet)
+}
+
 // UpdateDnatAndSnat mocks base method.
 func (m *MockOvnClient) UpdateDnatAndSnat(lrName, externalIP, logicalIP, lspName, externalMac, gatewayType string) error {
 	m.ctrl.T.Helper()
@@ -2817,6 +2978,20 @@ func (m *MockOvnClient) UpdateDnatAndSnat(lrName, externalIP, logicalIP, lspName
 func (mr *MockOvnClientMockRecorder) UpdateDnatAndSnat(lrName, externalIP, logicalIP, lspName, externalMac, gatewayType interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateDnatAndSnat", reflect.TypeOf((*MockOvnClient)(nil).UpdateDnatAndSnat), lrName, externalIP, logicalIP, lspName, externalMac, gatewayType)
+}
+
+// UpdateLogicalRouterPortRA mocks base method.
+func (m *MockOvnClient) UpdateLogicalRouterPortRA(lrpName, ipv6RAConfigsStr string, enableIPv6RA bool) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateLogicalRouterPortRA", lrpName, ipv6RAConfigsStr, enableIPv6RA)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateLogicalRouterPortRA indicates an expected call of UpdateLogicalRouterPortRA.
+func (mr *MockOvnClientMockRecorder) UpdateLogicalRouterPortRA(lrpName, ipv6RAConfigsStr, enableIPv6RA interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateLogicalRouterPortRA", reflect.TypeOf((*MockOvnClient)(nil).UpdateLogicalRouterPortRA), lrpName, ipv6RAConfigsStr, enableIPv6RA)
 }
 
 // UpdateLogicalSwitchAcl mocks base method.

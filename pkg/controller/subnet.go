@@ -688,16 +688,16 @@ func (c *Controller) handleAddOrUpdateSubnet(key string) error {
 
 	subnet.Status.EnsureStandardConditions()
 
-	var dhcpOptionsUUIDs *ovs.DHCPOptionsUUIDs
-	dhcpOptionsUUIDs, err = c.ovnLegacyClient.UpdateDHCPOptions(subnet.Name, subnet.Spec.CIDRBlock, subnet.Spec.Gateway, subnet.Spec.DHCPv4Options, subnet.Spec.DHCPv6Options, subnet.Spec.EnableDHCP)
+	dhcpOptionsUUIDs, err := c.ovnClient.UpdateDHCPOptions(subnet)
 	if err != nil {
-		klog.Errorf("failed to update dhcp options for switch %s, %v", subnet.Name, err)
+		klog.Errorf("update dhcp options for logical switch %s: %v", subnet.Name, err)
 		return err
 	}
 
 	if needRouter {
-		if err := c.ovnLegacyClient.UpdateRouterPortIPv6RA(subnet.Name, vpc.Status.Router, subnet.Spec.CIDRBlock, subnet.Spec.Gateway, subnet.Spec.IPv6RAConfigs, subnet.Spec.EnableIPv6RA); err != nil {
-			klog.Errorf("failed to update ipv6 ra configs for router port %s-%s, %v", vpc.Status.Router, subnet.Name, err)
+		lrpName := fmt.Sprintf("%s-%s", vpc.Status.Router, subnet.Name)
+		if err := c.ovnClient.UpdateLogicalRouterPortRA(lrpName, subnet.Spec.IPv6RAConfigs, subnet.Spec.EnableIPv6RA); err != nil {
+			klog.Errorf("update ipv6 ra configs for logical router port %s, %v", lrpName, err)
 			return err
 		}
 	}
@@ -805,7 +805,7 @@ func (c *Controller) handleDeleteLogicalSwitch(key string) (err error) {
 		return err
 	}
 
-	if err = c.ovnLegacyClient.DeleteDHCPOptions(key, kubeovnv1.ProtocolDual); err != nil {
+	if err = c.ovnClient.DeleteDHCPOptions(key, kubeovnv1.ProtocolDual); err != nil {
 		klog.Errorf("delete dhcp options of logical switch %s: %v", key, err)
 		return err
 	}
