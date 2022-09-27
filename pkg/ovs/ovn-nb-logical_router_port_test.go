@@ -526,14 +526,14 @@ func (suite *OvnClientTestSuite) testlogicalRouterPortFilter() {
 	lrps := make([]*ovnnb.LogicalRouterPort, 0)
 
 	i := 0
-	// create thress normal lsp
+	// create three normal lrp
 	for ; i < 3; i++ {
 		lrpName := fmt.Sprintf("%s-%d", prefix, i)
 		lrp := newLogicalRouterPort(lrName, lrpName, util.GenerateMac(), networks)
 		lrps = append(lrps, lrp)
 	}
 
-	// create two peer lsp
+	// create two peer lrp
 	for ; i < 5; i++ {
 		lrpName := fmt.Sprintf("%s-%d", prefix, i)
 		lrp := newLogicalRouterPort(lrName, lrpName, util.GenerateMac(), networks)
@@ -542,7 +542,7 @@ func (suite *OvnClientTestSuite) testlogicalRouterPortFilter() {
 		lrps = append(lrps, lrp)
 	}
 
-	// create two normal lsp with different logical router name
+	// create two normal lrp with different logical router name
 	for ; i < 6; i++ {
 		lrpName := fmt.Sprintf("%s-%d", prefix, i)
 		lrp := newLogicalRouterPort(lrName, lrpName, util.GenerateMac(), networks)
@@ -550,7 +550,7 @@ func (suite *OvnClientTestSuite) testlogicalRouterPortFilter() {
 		lrps = append(lrps, lrp)
 	}
 
-	t.Run("include all lsp", func(t *testing.T) {
+	t.Run("include all lrp", func(t *testing.T) {
 		filterFunc := logicalRouterPortFilter(nil, nil)
 		count := 0
 		for _, lrp := range lrps {
@@ -596,7 +596,7 @@ func (suite *OvnClientTestSuite) testlogicalRouterPortFilter() {
 		require.Equal(t, count, 2)
 	})
 
-	t.Run("result should exclude lrp when externalIDs's length is not equal", func(t *testing.T) {
+	t.Run("externalIDs's length is not equal", func(t *testing.T) {
 		t.Parallel()
 
 		lrp := newLogicalRouterPort(lrName, prefix+"-test", util.GenerateMac(), networks)

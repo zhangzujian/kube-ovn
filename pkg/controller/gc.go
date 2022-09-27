@@ -143,7 +143,7 @@ func (c *Controller) gcLogicalSwitch() error {
 		subnetNames = append(subnetNames, s.Name)
 	}
 
-	lss, err := c.ovnClient.ListLogicalSwitch(c.config.EnableExternalVpc)
+	lss, err := c.ovnClient.ListLogicalSwitch(c.config.EnableExternalVpc, nil)
 	if err != nil {
 		klog.Errorf("list logical switch: %v", err)
 		return err
@@ -205,7 +205,7 @@ func (c *Controller) gcCustomLogicalRouter() error {
 	for _, s := range vpcs {
 		vpcNames = append(vpcNames, s.Name)
 	}
-	lrs, err := c.ovnClient.ListLogicalRouter(c.config.EnableExternalVpc)
+	lrs, err := c.ovnClient.ListLogicalRouter(c.config.EnableExternalVpc, nil)
 	if err != nil {
 		klog.Errorf("failed to list logical router, %v", err)
 		return err
@@ -304,12 +304,12 @@ func (c *Controller) markAndCleanLSP() error {
 	klog.V(4).Infof("start to gc logical switch ports")
 	pods, err := c.podsLister.List(labels.Everything())
 	if err != nil {
-		klog.Errorf("failed to list ip, %v", err)
+		klog.Errorf("list ips: %v", err)
 		return err
 	}
 	nodes, err := c.nodesLister.List(labels.Everything())
 	if err != nil {
-		klog.Errorf("failed to list node, %v", err)
+		klog.Errorf("list nodes: %v", err)
 		return err
 	}
 	ipMap := make(map[string]struct{}, len(pods)+len(nodes))
@@ -350,9 +350,9 @@ func (c *Controller) markAndCleanLSP() error {
 		ipMap[vmLsp] = struct{}{}
 	}
 
-	lsps, err := c.ovnClient.ListLogicalSwitchPorts(c.config.EnableExternalVpc, nil)
+	lsps, err := c.ovnClient.ListNormalLogicalSwitchPorts(c.config.EnableExternalVpc, nil)
 	if err != nil {
-		klog.Errorf("failed to list logical switch port, %v", err)
+		klog.Errorf("list logical switch ports: %v", err)
 		return err
 	}
 
@@ -370,13 +370,13 @@ func (c *Controller) markAndCleanLSP() error {
 
 		klog.Infof("gc logical switch port %s", lsp.Name)
 		if err := c.ovnClient.DeleteLogicalSwitchPort(lsp.Name); err != nil {
-			klog.Errorf("failed to delete lsp %s, %v", lsp, err)
+			klog.Errorf("delete lsp %s: %v", lsp, err)
 			return err
 		}
 
 		if err := c.config.KubeOvnClient.KubeovnV1().IPs().Delete(context.Background(), lsp.Name, metav1.DeleteOptions{}); err != nil {
 			if !k8serrors.IsNotFound(err) {
-				klog.Errorf("failed to delete ip %s, %v", lsp.Name, err)
+				klog.Errorf("delete ip %s: %v", lsp.Name, err)
 				return err
 			}
 		}

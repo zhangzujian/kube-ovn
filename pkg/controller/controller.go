@@ -34,12 +34,13 @@ import (
 const controllerAgentName = "kube-ovn-controller"
 
 const (
-	logicalSwitchKey = "ls"
-	logicalRouterKey = "lr"
-	portGroupKey     = "pg"
-	networkPolicyKey = "np"
-	sgKey            = "sg"
-	sgsKey           = "security_groups"
+	logicalSwitchKey      = "ls"
+	logicalRouterKey      = "lr"
+	portGroupKey          = "pg"
+	networkPolicyKey      = "np"
+	sgKey                 = "sg"
+	associatedSgKeyPrefix = "associated_sg_"
+	sgsKey                = "security_groups"
 )
 
 // Controller is kube-ovn main controller that watch ns/pod/node/svc/ep and operate ovn

@@ -1,12 +1,14 @@
 package ovs
 
 import (
+	"context"
 	"fmt"
+	"reflect"
 	"strings"
 
-	ovsclient "github.com/kubeovn/kube-ovn/pkg/ovsdb/client"
 	"github.com/ovn-org/libovsdb/ovsdb"
 
+	ovsclient "github.com/kubeovn/kube-ovn/pkg/ovsdb/client"
 	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
@@ -54,7 +56,7 @@ func (c *ovnClient) CreateLogicalPatchPort(lsName, lrName, lspName, lrpName, ip,
 	/* create router port */
 	ops, err := c.CreateRouterPortOp(lsName, lrName, lspName, lrpName, ip, mac)
 	if err != nil {
-		return fmt.Errorf("generate operations for creating gateway chassis %v", err)
+		return fmt.Errorf("generate operations for creating patch port: %v", err)
 	}
 
 	if err = c.Transact("lrp-lsp-add", ops); err != nil {
@@ -190,6 +192,23 @@ func (c *ovnClient) RemoveLogicalPatchPort(lspName, lrpName string) error {
 
 	if err = c.Transact("lrp-lsp-del", ops); err != nil {
 		return fmt.Errorf("delete logical switch port %s and delete logical router port %s: %v", lspName, lrpName, err)
+	}
+
+	return nil
+}
+
+// GetEntityInfo get entity info by column which is the index,
+// reference to ovn-nb.ovsschema(ovsdb-client get-schema unix:/var/run/ovn/ovnnb_db.sock OVN_Northbound) for more information,
+// UUID is index
+func (c *ovnClient) GetEntityInfo(entity interface{}) error {
+	entityPtr := reflect.ValueOf(entity)
+	if entityPtr.Kind() != reflect.Pointer {
+		return fmt.Errorf("entity must be pointer")
+	}
+
+	err := c.Get(context.TODO(), entity)
+	if err != nil {
+		return err
 	}
 
 	return nil

@@ -21,6 +21,12 @@ import (
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
 
+type portsInfo struct {
+	ports       []string
+	v4Addresses []string
+	v6Addresses []string
+}
+
 func (c *Controller) enqueueAddSg(obj interface{}) {
 
 	var key string
@@ -188,7 +194,7 @@ func (c *Controller) initDenyAllSecurityGroup() error {
 // updateDenyAllSgPorts set lsp to deny which security_groups is not empty
 func (c *Controller) updateDenyAllSgPorts() error {
 	// list all lsp which security_groups is not empty
-	lsps, err := c.ovnClient.ListLogicalSwitchPorts(true, map[string]string{sgsKey: ""})
+	lsps, err := c.ovnClient.ListNormalLogicalSwitchPorts(true, map[string]string{sgsKey: ""})
 	if err != nil {
 		klog.Errorf("list logical switch ports with security_groups is not empty: %v", err)
 		return err
@@ -196,8 +202,7 @@ func (c *Controller) updateDenyAllSgPorts() error {
 
 	addPorts := make([]string, 0, len(lsps))
 	for _, lsp := range lsps {
-		// skip lsp which only have mac addresses,
-		// data store in port.PortSecurity[0], em...
+		// skip lsp which only have mac addresses,address is in port.PortSecurity[0]
 		if len(strings.Split(lsp.PortSecurity[0], " ")) < 2 {
 			continue
 		}
@@ -426,59 +431,32 @@ func (c *Controller) syncSgLogicalPort(key string) error {
 		return err
 	}
 
-	results, err := c.ovnLegacyClient.CustomFindEntity("logical_switch_port", []string{"_uuid", "name", "port_security"}, fmt.Sprintf("external_ids:associated_sg_%s=true", key))
+	portsInfo, err := c.getSecurityGroupPortsInfo(key)
 	if err != nil {
-		klog.Errorf("failed to find logical port, %v", err)
+		klog.Errorf("get security group port info: %v", key, err)
 		return err
 	}
 
-	var v4s, v6s []string
-	var ports []string
-	for _, ret := range results {
-		if len(ret["port_security"]) < 2 {
-			continue
-		}
-		ports = append(ports, ret["name"][0])
-		for _, address := range ret["port_security"][1:] {
-			if strings.Contains(address, ":") {
-				v6s = append(v6s, address)
-			} else {
-				v4s = append(v4s, address)
-			}
-		}
-	}
-
-	if err := c.ovnClient.PortGroupAddPorts(sg.Status.PortGroup, ports...); err != nil {
+	if err := c.ovnClient.PortGroupAddPorts(sg.Status.PortGroup, portsInfo.ports...); err != nil {
 		klog.Errorf("add ports to port group %s: %v", sg.Status.PortGroup, err)
 		return err
 	}
 
 	v4AsName := ovs.GetSgV4AssociatedName(key)
-	klog.V(6).Infof("set ips %v to address set %s", v4s, v4AsName)
-	if err := c.ovnClient.AddressSetUpdateAddress(v4AsName, v4s...); err != nil {
+	klog.V(6).Infof("set ips %v to address set %s", portsInfo.v4Addresses, v4AsName)
+	if err := c.ovnClient.AddressSetUpdateAddress(v4AsName, portsInfo.v4Addresses...); err != nil {
 		klog.Errorf("set ips to address set %s: %v", v4AsName, err)
 		return err
 	}
 
 	v6AsName := ovs.GetSgV6AssociatedName(key)
-	klog.V(6).Infof("set ips %v to address set %s", v6s, v6AsName)
-	if err := c.ovnClient.AddressSetUpdateAddress(v6AsName, v6s...); err != nil {
+	klog.V(6).Infof("set ips %v to address set %s", portsInfo.v6Addresses, v6AsName)
+	if err := c.ovnClient.AddressSetUpdateAddress(v6AsName, portsInfo.v6Addresses...); err != nil {
 		klog.Errorf("set ips to address set %s: %v", v6AsName, err)
 		return err
 	}
 	c.addOrUpdateSgQueue.Add(util.DenyAllSecurityGroup)
 	return nil
-}
-
-func (c *Controller) getPortSg(port *ovnnb.LogicalSwitchPort) ([]string, error) {
-	var sgList []string
-	for key, value := range port.ExternalIDs {
-		if strings.HasPrefix(key, "associated_sg_") && value == "true" {
-			sgName := strings.ReplaceAll(key, "associated_sg_", "")
-			sgList = append(sgList, sgName)
-		}
-	}
-	return sgList, nil
 }
 
 func (c *Controller) reconcilePortSg(portName, securityGroups string) error {
@@ -487,7 +465,8 @@ func (c *Controller) reconcilePortSg(portName, securityGroups string) error {
 		klog.Errorf("failed to get logical switch port %s: %v", portName, err)
 		return err
 	}
-	oldSgList, err := c.getPortSg(port)
+
+	oldSgList, err := getPortSg(port)
 	if err != nil {
 		klog.Errorf("get port sg failed, %v", err)
 		return err
@@ -539,4 +518,54 @@ func (c *Controller) securityGroupALLNotExist(sgs []string) (bool, error) {
 	}
 
 	return true, nil
+}
+
+// getSecurityGroupPortsInfo get info including port name, ipv4 and ipv6 from logical switch ports which belongs to sg
+func (c *Controller) getSecurityGroupPortsInfo(sgName string) (result *portsInfo, err error) {
+	lsps, err := c.ovnClient.ListNormalLogicalSwitchPorts(true, map[string]string{
+		fmt.Sprintf("%s%s", associatedSgKeyPrefix, sgName): "true",
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("list security group %s logical switch port: %v", sgName, err)
+	}
+
+	ports := make([]string, 0, len(lsps))
+	v4Addresses := make([]string, 0, len(lsps))
+	v6Addresses := make([]string, 0, len(lsps))
+
+	for _, lsp := range lsps {
+		// address is in port.PortSecurity[0]
+		portSecurity := strings.Split(lsp.PortSecurity[0], " ")
+
+		if len(portSecurity) < 2 {
+			continue // skip lsp which only have mac addresses
+		}
+
+		ports = append(ports, lsp.Name)
+		for _, address := range portSecurity[1:] {
+			if strings.Contains(address, ":") {
+				v6Addresses = append(v6Addresses, address)
+			} else {
+				v4Addresses = append(v4Addresses, address)
+			}
+		}
+	}
+
+	return &portsInfo{
+		ports,
+		v4Addresses,
+		v6Addresses,
+	}, nil
+}
+
+func getPortSg(port *ovnnb.LogicalSwitchPort) ([]string, error) {
+	var sgList []string
+	for key, value := range port.ExternalIDs {
+		if strings.HasPrefix(key, "associated_sg_") && value == "true" {
+			sgName := strings.ReplaceAll(key, "associated_sg_", "")
+			sgList = append(sgList, sgName)
+		}
+	}
+	return sgList, nil
 }

@@ -195,18 +195,18 @@ func (mr *MockLogicalRouterMockRecorder) GetLogicalRouter(lrName, ignoreNotFound
 }
 
 // ListLogicalRouter mocks base method.
-func (m *MockLogicalRouter) ListLogicalRouter(needVendorFilter bool) ([]ovnnb.LogicalRouter, error) {
+func (m *MockLogicalRouter) ListLogicalRouter(needVendorFilter bool, filter func(*ovnnb.LogicalRouter) bool) ([]ovnnb.LogicalRouter, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListLogicalRouter", needVendorFilter)
+	ret := m.ctrl.Call(m, "ListLogicalRouter", needVendorFilter, filter)
 	ret0, _ := ret[0].([]ovnnb.LogicalRouter)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ListLogicalRouter indicates an expected call of ListLogicalRouter.
-func (mr *MockLogicalRouterMockRecorder) ListLogicalRouter(needVendorFilter interface{}) *gomock.Call {
+func (mr *MockLogicalRouterMockRecorder) ListLogicalRouter(needVendorFilter, filter interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListLogicalRouter", reflect.TypeOf((*MockLogicalRouter)(nil).ListLogicalRouter), needVendorFilter)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListLogicalRouter", reflect.TypeOf((*MockLogicalRouter)(nil).ListLogicalRouter), needVendorFilter, filter)
 }
 
 // LogicalRouterExists mocks base method.
@@ -414,18 +414,18 @@ func (mr *MockLogicalSwitchMockRecorder) DeleteLogicalSwitch(lsName interface{})
 }
 
 // ListLogicalSwitch mocks base method.
-func (m *MockLogicalSwitch) ListLogicalSwitch(needVendorFilter bool) ([]ovnnb.LogicalSwitch, error) {
+func (m *MockLogicalSwitch) ListLogicalSwitch(needVendorFilter bool, filter func(*ovnnb.LogicalSwitch) bool) ([]ovnnb.LogicalSwitch, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListLogicalSwitch", needVendorFilter)
+	ret := m.ctrl.Call(m, "ListLogicalSwitch", needVendorFilter, filter)
 	ret0, _ := ret[0].([]ovnnb.LogicalSwitch)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ListLogicalSwitch indicates an expected call of ListLogicalSwitch.
-func (mr *MockLogicalSwitchMockRecorder) ListLogicalSwitch(needVendorFilter interface{}) *gomock.Call {
+func (mr *MockLogicalSwitchMockRecorder) ListLogicalSwitch(needVendorFilter, filter interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListLogicalSwitch", reflect.TypeOf((*MockLogicalSwitch)(nil).ListLogicalSwitch), needVendorFilter)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListLogicalSwitch", reflect.TypeOf((*MockLogicalSwitch)(nil).ListLogicalSwitch), needVendorFilter, filter)
 }
 
 // LogicalSwitchExists mocks base method.
@@ -590,48 +590,33 @@ func (mr *MockLogicalSwitchPortMockRecorder) GetLogicalSwitchPort(lspName, ignor
 }
 
 // ListLogicalSwitchPorts mocks base method.
-func (m *MockLogicalSwitchPort) ListLogicalSwitchPorts(needVendorFilter bool, externalIDs map[string]string) ([]ovnnb.LogicalSwitchPort, error) {
+func (m *MockLogicalSwitchPort) ListLogicalSwitchPorts(needVendorFilter bool, externalIDs map[string]string, filter func(*ovnnb.LogicalSwitchPort) bool) ([]ovnnb.LogicalSwitchPort, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListLogicalSwitchPorts", needVendorFilter, externalIDs)
+	ret := m.ctrl.Call(m, "ListLogicalSwitchPorts", needVendorFilter, externalIDs, filter)
 	ret0, _ := ret[0].([]ovnnb.LogicalSwitchPort)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ListLogicalSwitchPorts indicates an expected call of ListLogicalSwitchPorts.
-func (mr *MockLogicalSwitchPortMockRecorder) ListLogicalSwitchPorts(needVendorFilter, externalIDs interface{}) *gomock.Call {
+func (mr *MockLogicalSwitchPortMockRecorder) ListLogicalSwitchPorts(needVendorFilter, externalIDs, filter interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListLogicalSwitchPorts", reflect.TypeOf((*MockLogicalSwitchPort)(nil).ListLogicalSwitchPorts), needVendorFilter, externalIDs)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListLogicalSwitchPorts", reflect.TypeOf((*MockLogicalSwitchPort)(nil).ListLogicalSwitchPorts), needVendorFilter, externalIDs, filter)
 }
 
-// ListRemoteTypeLogicalSwitchPorts mocks base method.
-func (m *MockLogicalSwitchPort) ListRemoteTypeLogicalSwitchPorts() ([]ovnnb.LogicalSwitchPort, error) {
+// ListNormalLogicalSwitchPorts mocks base method.
+func (m *MockLogicalSwitchPort) ListNormalLogicalSwitchPorts(needVendorFilter bool, externalIDs map[string]string) ([]ovnnb.LogicalSwitchPort, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListRemoteTypeLogicalSwitchPorts")
+	ret := m.ctrl.Call(m, "ListNormalLogicalSwitchPorts", needVendorFilter, externalIDs)
 	ret0, _ := ret[0].([]ovnnb.LogicalSwitchPort)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// ListRemoteTypeLogicalSwitchPorts indicates an expected call of ListRemoteTypeLogicalSwitchPorts.
-func (mr *MockLogicalSwitchPortMockRecorder) ListRemoteTypeLogicalSwitchPorts() *gomock.Call {
+// ListNormalLogicalSwitchPorts indicates an expected call of ListNormalLogicalSwitchPorts.
+func (mr *MockLogicalSwitchPortMockRecorder) ListNormalLogicalSwitchPorts(needVendorFilter, externalIDs interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRemoteTypeLogicalSwitchPorts", reflect.TypeOf((*MockLogicalSwitchPort)(nil).ListRemoteTypeLogicalSwitchPorts))
-}
-
-// ListVirtualTypeLogicalSwitchPorts mocks base method.
-func (m *MockLogicalSwitchPort) ListVirtualTypeLogicalSwitchPorts(lsName string) ([]ovnnb.LogicalSwitchPort, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListVirtualTypeLogicalSwitchPorts", lsName)
-	ret0, _ := ret[0].([]ovnnb.LogicalSwitchPort)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// ListVirtualTypeLogicalSwitchPorts indicates an expected call of ListVirtualTypeLogicalSwitchPorts.
-func (mr *MockLogicalSwitchPortMockRecorder) ListVirtualTypeLogicalSwitchPorts(lsName interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListVirtualTypeLogicalSwitchPorts", reflect.TypeOf((*MockLogicalSwitchPort)(nil).ListVirtualTypeLogicalSwitchPorts), lsName)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListNormalLogicalSwitchPorts", reflect.TypeOf((*MockLogicalSwitchPort)(nil).ListNormalLogicalSwitchPorts), needVendorFilter, externalIDs)
 }
 
 // LogicalSwitchPortExists mocks base method.
@@ -2254,6 +2239,20 @@ func (mr *MockOvnClientMockRecorder) EnablePortLayer2forward(lspName interface{}
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnablePortLayer2forward", reflect.TypeOf((*MockOvnClient)(nil).EnablePortLayer2forward), lspName)
 }
 
+// GetEntityInfo mocks base method.
+func (m *MockOvnClient) GetEntityInfo(entity interface{}) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetEntityInfo", entity)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// GetEntityInfo indicates an expected call of GetEntityInfo.
+func (mr *MockOvnClientMockRecorder) GetEntityInfo(entity interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetEntityInfo", reflect.TypeOf((*MockOvnClient)(nil).GetEntityInfo), entity)
+}
+
 // GetLoadBalancer mocks base method.
 func (m *MockOvnClient) GetLoadBalancer(lbName string, ignoreNotFound bool) (*ovnnb.LoadBalancer, error) {
 	m.ctrl.T.Helper()
@@ -2420,18 +2419,18 @@ func (mr *MockOvnClientMockRecorder) ListLoadBalancers(filter interface{}) *gomo
 }
 
 // ListLogicalRouter mocks base method.
-func (m *MockOvnClient) ListLogicalRouter(needVendorFilter bool) ([]ovnnb.LogicalRouter, error) {
+func (m *MockOvnClient) ListLogicalRouter(needVendorFilter bool, filter func(*ovnnb.LogicalRouter) bool) ([]ovnnb.LogicalRouter, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListLogicalRouter", needVendorFilter)
+	ret := m.ctrl.Call(m, "ListLogicalRouter", needVendorFilter, filter)
 	ret0, _ := ret[0].([]ovnnb.LogicalRouter)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ListLogicalRouter indicates an expected call of ListLogicalRouter.
-func (mr *MockOvnClientMockRecorder) ListLogicalRouter(needVendorFilter interface{}) *gomock.Call {
+func (mr *MockOvnClientMockRecorder) ListLogicalRouter(needVendorFilter, filter interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListLogicalRouter", reflect.TypeOf((*MockOvnClient)(nil).ListLogicalRouter), needVendorFilter)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListLogicalRouter", reflect.TypeOf((*MockOvnClient)(nil).ListLogicalRouter), needVendorFilter, filter)
 }
 
 // ListLogicalRouterPolicies mocks base method.
@@ -2480,33 +2479,48 @@ func (mr *MockOvnClientMockRecorder) ListLogicalRouterStaticRoutes(externalIDs i
 }
 
 // ListLogicalSwitch mocks base method.
-func (m *MockOvnClient) ListLogicalSwitch(needVendorFilter bool) ([]ovnnb.LogicalSwitch, error) {
+func (m *MockOvnClient) ListLogicalSwitch(needVendorFilter bool, filter func(*ovnnb.LogicalSwitch) bool) ([]ovnnb.LogicalSwitch, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListLogicalSwitch", needVendorFilter)
+	ret := m.ctrl.Call(m, "ListLogicalSwitch", needVendorFilter, filter)
 	ret0, _ := ret[0].([]ovnnb.LogicalSwitch)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ListLogicalSwitch indicates an expected call of ListLogicalSwitch.
-func (mr *MockOvnClientMockRecorder) ListLogicalSwitch(needVendorFilter interface{}) *gomock.Call {
+func (mr *MockOvnClientMockRecorder) ListLogicalSwitch(needVendorFilter, filter interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListLogicalSwitch", reflect.TypeOf((*MockOvnClient)(nil).ListLogicalSwitch), needVendorFilter)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListLogicalSwitch", reflect.TypeOf((*MockOvnClient)(nil).ListLogicalSwitch), needVendorFilter, filter)
 }
 
 // ListLogicalSwitchPorts mocks base method.
-func (m *MockOvnClient) ListLogicalSwitchPorts(needVendorFilter bool, externalIDs map[string]string) ([]ovnnb.LogicalSwitchPort, error) {
+func (m *MockOvnClient) ListLogicalSwitchPorts(needVendorFilter bool, externalIDs map[string]string, filter func(*ovnnb.LogicalSwitchPort) bool) ([]ovnnb.LogicalSwitchPort, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListLogicalSwitchPorts", needVendorFilter, externalIDs)
+	ret := m.ctrl.Call(m, "ListLogicalSwitchPorts", needVendorFilter, externalIDs, filter)
 	ret0, _ := ret[0].([]ovnnb.LogicalSwitchPort)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ListLogicalSwitchPorts indicates an expected call of ListLogicalSwitchPorts.
-func (mr *MockOvnClientMockRecorder) ListLogicalSwitchPorts(needVendorFilter, externalIDs interface{}) *gomock.Call {
+func (mr *MockOvnClientMockRecorder) ListLogicalSwitchPorts(needVendorFilter, externalIDs, filter interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListLogicalSwitchPorts", reflect.TypeOf((*MockOvnClient)(nil).ListLogicalSwitchPorts), needVendorFilter, externalIDs)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListLogicalSwitchPorts", reflect.TypeOf((*MockOvnClient)(nil).ListLogicalSwitchPorts), needVendorFilter, externalIDs, filter)
+}
+
+// ListNormalLogicalSwitchPorts mocks base method.
+func (m *MockOvnClient) ListNormalLogicalSwitchPorts(needVendorFilter bool, externalIDs map[string]string) ([]ovnnb.LogicalSwitchPort, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListNormalLogicalSwitchPorts", needVendorFilter, externalIDs)
+	ret0, _ := ret[0].([]ovnnb.LogicalSwitchPort)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListNormalLogicalSwitchPorts indicates an expected call of ListNormalLogicalSwitchPorts.
+func (mr *MockOvnClientMockRecorder) ListNormalLogicalSwitchPorts(needVendorFilter, externalIDs interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListNormalLogicalSwitchPorts", reflect.TypeOf((*MockOvnClient)(nil).ListNormalLogicalSwitchPorts), needVendorFilter, externalIDs)
 }
 
 // ListPortGroups mocks base method.
@@ -2522,36 +2536,6 @@ func (m *MockOvnClient) ListPortGroups(externalIDs map[string]string) ([]ovnnb.P
 func (mr *MockOvnClientMockRecorder) ListPortGroups(externalIDs interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListPortGroups", reflect.TypeOf((*MockOvnClient)(nil).ListPortGroups), externalIDs)
-}
-
-// ListRemoteTypeLogicalSwitchPorts mocks base method.
-func (m *MockOvnClient) ListRemoteTypeLogicalSwitchPorts() ([]ovnnb.LogicalSwitchPort, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListRemoteTypeLogicalSwitchPorts")
-	ret0, _ := ret[0].([]ovnnb.LogicalSwitchPort)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// ListRemoteTypeLogicalSwitchPorts indicates an expected call of ListRemoteTypeLogicalSwitchPorts.
-func (mr *MockOvnClientMockRecorder) ListRemoteTypeLogicalSwitchPorts() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRemoteTypeLogicalSwitchPorts", reflect.TypeOf((*MockOvnClient)(nil).ListRemoteTypeLogicalSwitchPorts))
-}
-
-// ListVirtualTypeLogicalSwitchPorts mocks base method.
-func (m *MockOvnClient) ListVirtualTypeLogicalSwitchPorts(lsName string) ([]ovnnb.LogicalSwitchPort, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListVirtualTypeLogicalSwitchPorts", lsName)
-	ret0, _ := ret[0].([]ovnnb.LogicalSwitchPort)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// ListVirtualTypeLogicalSwitchPorts indicates an expected call of ListVirtualTypeLogicalSwitchPorts.
-func (mr *MockOvnClientMockRecorder) ListVirtualTypeLogicalSwitchPorts(lsName interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListVirtualTypeLogicalSwitchPorts", reflect.TypeOf((*MockOvnClient)(nil).ListVirtualTypeLogicalSwitchPorts), lsName)
 }
 
 // LoadBalancerDeleteVips mocks base method.

@@ -22,7 +22,7 @@ type LogicalRouter interface {
 	CreateLogicalRouter(lrName string) error
 	DeleteLogicalRouter(lrName string) error
 	GetLogicalRouter(lrName string, ignoreNotFound bool) (*ovnnb.LogicalRouter, error)
-	ListLogicalRouter(needVendorFilter bool) ([]ovnnb.LogicalRouter, error)
+	ListLogicalRouter(needVendorFilter bool, filter func(lr *ovnnb.LogicalRouter) bool) ([]ovnnb.LogicalRouter, error)
 	LogicalRouterExists(name string) (bool, error)
 }
 
@@ -41,7 +41,7 @@ type LogicalSwitch interface {
 	CreateBareLogicalSwitch(lsName string) error
 	LogicalSwitchUpdateLoadBalancers(lsName string, op ovsdb.Mutator, lbNames ...string) error
 	DeleteLogicalSwitch(lsName string) error
-	ListLogicalSwitch(needVendorFilter bool) ([]ovnnb.LogicalSwitch, error)
+	ListLogicalSwitch(needVendorFilter bool, filter func(lr *ovnnb.LogicalSwitch) bool) ([]ovnnb.LogicalSwitch, error)
 	LogicalSwitchExists(lsName string) (bool, error)
 }
 
@@ -58,9 +58,8 @@ type LogicalSwitchPort interface {
 	UpdateLogicalSwitchAcl(lsName string, subnetAcls []kubeovnv1.Acl) error
 	EnablePortLayer2forward(lspName string) error
 	DeleteLogicalSwitchPort(lspName string) error
-	ListLogicalSwitchPorts(needVendorFilter bool, externalIDs map[string]string) ([]ovnnb.LogicalSwitchPort, error)
-	ListVirtualTypeLogicalSwitchPorts(lsName string) ([]ovnnb.LogicalSwitchPort, error)
-	ListRemoteTypeLogicalSwitchPorts() ([]ovnnb.LogicalSwitchPort, error)
+	ListLogicalSwitchPorts(needVendorFilter bool, externalIDs map[string]string, filter func(lsp *ovnnb.LogicalSwitchPort) bool) ([]ovnnb.LogicalSwitchPort, error)
+	ListNormalLogicalSwitchPorts(needVendorFilter bool, externalIDs map[string]string) ([]ovnnb.LogicalSwitchPort, error)
 	GetLogicalSwitchPort(lspName string, ignoreNotFound bool) (*ovnnb.LogicalSwitchPort, error)
 	LogicalSwitchPortExists(name string) (bool, error)
 }
@@ -156,4 +155,5 @@ type OvnClient interface {
 	RemoveLogicalPatchPort(lspName, lrpName string) error
 	DeleteLogicalGatewaySwitch(lsName, lrName string) error
 	DeleteSecurityGroup(sgName string) error
+	GetEntityInfo(entity interface{}) error
 }

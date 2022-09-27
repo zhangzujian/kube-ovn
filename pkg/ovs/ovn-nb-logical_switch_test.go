@@ -11,7 +11,21 @@ import (
 
 	ovsclient "github.com/kubeovn/kube-ovn/pkg/ovsdb/client"
 	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
+	"github.com/kubeovn/kube-ovn/pkg/util"
 )
+
+func createLogicalSwitch(c *ovnClient, ls *ovnnb.LogicalSwitch) error {
+	op, err := c.Create(ls)
+	if err != nil {
+		return err
+	}
+
+	if err := c.Transact("ls-add", op); err != nil {
+		return err
+	}
+
+	return nil
+}
 
 func (suite *OvnClientTestSuite) testCreateLogicalSwitch() {
 	t := suite.T()
@@ -272,25 +286,67 @@ func (suite *OvnClientTestSuite) testListLogicalSwitch() {
 	ovnClient := suite.ovnClient
 	namePrefix := "test-list-ls"
 
-	names := make([]string, 3)
-	for i := 0; i < 3; i++ {
-		names[i] = fmt.Sprintf("%s-%d", namePrefix, i)
-		err := ovnClient.CreateBareLogicalSwitch(names[i])
+	i := 0
+	// create three logical switch
+	for ; i < 3; i++ {
+		name := fmt.Sprintf("%s-%d", namePrefix, i)
+		err := ovnClient.CreateBareLogicalSwitch(name)
+		require.NoError(t, err)
+	}
+
+	// create two logical switch which vendor is others
+	for ; i < 5; i++ {
+		name := fmt.Sprintf("%s-%d", namePrefix, i)
+		ls := &ovnnb.LogicalSwitch{
+			Name:        name,
+			ExternalIDs: map[string]string{"vendor": "test-vendor"},
+		}
+
+		err := createLogicalSwitch(ovnClient, ls)
+		require.NoError(t, err)
+	}
+
+	// create two logical switch without vendor
+	for ; i < 7; i++ {
+		name := fmt.Sprintf("%s-%d", namePrefix, i)
+		ls := &ovnnb.LogicalSwitch{
+			Name: name,
+		}
+
+		err := createLogicalSwitch(ovnClient, ls)
 		require.NoError(t, err)
 	}
 
 	t.Run("return all logical switch which match vendor", func(t *testing.T) {
 		t.Parallel()
-		lss, err := ovnClient.ListLogicalSwitch(true)
+		lss, err := ovnClient.ListLogicalSwitch(true, nil)
 		require.NoError(t, err)
 		require.NotEmpty(t, lss)
 
+		count := 0
 		for _, ls := range lss {
-			if !strings.Contains(ls.Name, namePrefix) {
-				continue
+			if strings.Contains(ls.Name, namePrefix) {
+				count++
 			}
-			require.Contains(t, names, ls.Name)
 		}
+		require.Equal(t, count, 3)
+	})
+
+	t.Run("has custom filter", func(t *testing.T) {
+		t.Parallel()
+		lss, err := ovnClient.ListLogicalSwitch(false, func(ls *ovnnb.LogicalSwitch) bool {
+			return len(ls.ExternalIDs) == 0 || ls.ExternalIDs["vendor"] != util.CniTypeName
+		})
+
+		require.NoError(t, err)
+
+		count := 0
+		for _, ls := range lss {
+			if strings.Contains(ls.Name, namePrefix) {
+				count++
+			}
+		}
+		require.Equal(t, count, 4)
 	})
 }
 

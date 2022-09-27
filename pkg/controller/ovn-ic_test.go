@@ -3,6 +3,7 @@ package controller
 import (
 	"testing"
 
+	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
@@ -30,7 +31,7 @@ func Test_listRemoteLogicalSwitchPortAddress(t *testing.T) {
 		mockLsp([]string{}),
 	}
 
-	mockOvnClient.EXPECT().ListRemoteTypeLogicalSwitchPorts().Return(lsps, nil)
+	mockOvnClient.EXPECT().ListLogicalSwitchPorts(gomock.Any(), gomock.Any(), gomock.Any()).Return(lsps, nil)
 
 	addresses, err := ctrl.listRemoteLogicalSwitchPortAddress()
 	require.NoError(t, err)

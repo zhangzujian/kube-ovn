@@ -939,8 +939,9 @@ func (c *Controller) reconcileSubnet(subnet *kubeovnv1.Subnet) error {
 }
 
 func (c *Controller) reconcileVips(subnet *kubeovnv1.Subnet) error {
-	/* get all virtual port belongs to this logical switch */
-	lsps, err := c.ovnClient.ListVirtualTypeLogicalSwitchPorts(subnet.Name)
+	lsps, err := c.ovnClient.ListLogicalSwitchPorts(true, map[string]string{logicalSwitchKey: subnet.Name}, func(lsp *ovnnb.LogicalSwitchPort) bool {
+		return lsp.Type == "virtual"
+	})
 	if err != nil {
 		klog.Errorf("list logical switch %s virtual ports: %v", subnet.Name, err)
 		return err
@@ -1009,7 +1010,7 @@ func (c *Controller) syncVirtualPort(key string) error {
 		logicalSwitchKey: subnet.Name,
 		"attach-vips":    "true",
 	}
-	lsps, err := c.ovnClient.ListLogicalSwitchPorts(true, externalIDs)
+	lsps, err := c.ovnClient.ListNormalLogicalSwitchPorts(true, externalIDs)
 	if err != nil {
 		klog.Errorf("list logical switch %s ports: %v", subnet.Name, err)
 		return err

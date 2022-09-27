@@ -211,3 +211,70 @@ func (suite *OvnClientTestSuite) testDeleteSecurityGroup() {
 	_, err = ovnClient.GetPortGroup(pgName, false)
 	require.ErrorContains(t, err, "object not found")
 }
+
+func (suite *OvnClientTestSuite) testGetEntityInfo() {
+	t := suite.T()
+	t.Parallel()
+
+	ovnClient := suite.ovnClient
+
+	lsName := "test-get-entity-ls"
+	err := ovnClient.CreateBareLogicalSwitch(lsName)
+	require.NoError(t, err)
+
+	lspName := "test-get-entity-lsp"
+	err = ovnClient.CreateBareLogicalSwitchPort(lsName, lspName, "", "")
+	require.NoError(t, err)
+
+	t.Run("get logical switch by uuid", func(t *testing.T) {
+		t.Parallel()
+
+		ls, err := ovnClient.GetLogicalSwitch(lsName, false)
+		require.NoError(t, err)
+
+		newLs := &ovnnb.LogicalSwitch{UUID: ls.UUID}
+		err = ovnClient.GetEntityInfo(newLs)
+		require.NoError(t, err)
+		require.Equal(t, lsName, newLs.Name)
+	})
+
+	t.Run("get logical switch by name which is not index", func(t *testing.T) {
+		t.Parallel()
+
+		ls := &ovnnb.LogicalSwitch{Name: lsName}
+		err = ovnClient.GetEntityInfo(ls)
+		require.ErrorContains(t, err, "object not found")
+	})
+
+	t.Run("get logical switch port by uuid", func(t *testing.T) {
+		t.Parallel()
+
+		lsp, err := ovnClient.GetLogicalSwitchPort(lspName, false)
+		require.NoError(t, err)
+
+		newLsp := &ovnnb.LogicalSwitchPort{UUID: lsp.UUID}
+		err = ovnClient.GetEntityInfo(newLsp)
+		require.NoError(t, err)
+		require.Equal(t, lspName, newLsp.Name)
+	})
+
+	t.Run("get logical switch port by name which is index", func(t *testing.T) {
+		t.Parallel()
+
+		lsp, err := ovnClient.GetLogicalSwitchPort(lspName, false)
+		require.NoError(t, err)
+
+		newLsp := &ovnnb.LogicalSwitchPort{Name: lspName}
+		err = ovnClient.GetEntityInfo(newLsp)
+		require.NoError(t, err)
+		require.Equal(t, lsp.UUID, newLsp.UUID)
+	})
+
+	t.Run("entity is not a pointer", func(t *testing.T) {
+		t.Parallel()
+
+		newLsp := ovnnb.LogicalSwitchPort{Name: lspName}
+		err = ovnClient.GetEntityInfo(newLsp)
+		require.ErrorContains(t, err, "entity must be pointer")
+	})
+}

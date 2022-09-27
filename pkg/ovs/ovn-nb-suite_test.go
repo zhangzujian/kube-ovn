@@ -182,20 +182,16 @@ func (suite *OvnClientTestSuite) Test_ListLogicalSwitchPorts() {
 	suite.testListLogicalSwitchPorts()
 }
 
-func (suite *OvnClientTestSuite) Test_ListRemoteTypeLogicalSwitchPorts() {
-	suite.testListRemoteTypeLogicalSwitchPorts()
-}
-
-func (suite *OvnClientTestSuite) Test_ListVirtualTypeLogicalSwitchPorts() {
-	suite.testListVirtualTypeLogicalSwitchPorts()
-}
-
 func (suite *OvnClientTestSuite) Test_CreateLogicalSwitchPortOp() {
 	suite.testCreateLogicalSwitchPortOp()
 }
 
 func (suite *OvnClientTestSuite) Test_DeleteLogicalSwitchPortOp() {
 	suite.testDeleteLogicalSwitchPortOp()
+}
+
+func (suite *OvnClientTestSuite) Test_logicalSwitchPortFilter() {
+	suite.testlogicalSwitchPortFilter()
 }
 
 /* logical_router unit test */
@@ -592,6 +588,20 @@ func (suite *OvnClientTestSuite) Test_DeleteLogicalGatewaySwitch() {
 
 func (suite *OvnClientTestSuite) Test_DeleteSecurityGroup() {
 	suite.testDeleteSecurityGroup()
+}
+
+func (suite *OvnClientTestSuite) Test_GetEntityInfo() {
+	suite.testGetEntityInfo()
+}
+
+func Test_scratch(t *testing.T) {
+	t.SkipNow()
+	endpoint := "tcp:[172.20.149.35]:6641"
+	ovnClient, err := newOvnClient(t, endpoint, 10, "")
+	require.NoError(t, err)
+
+	err = ovnClient.Echo(context.Background())
+	require.NoError(t, err)
 }
 
 func newOVSDBServer(t *testing.T, dbModel model.ClientDBModel, schema ovsdb.DatabaseSchema) (*server.OvsdbServer, string) {

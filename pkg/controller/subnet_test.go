@@ -50,7 +50,7 @@ func Test_reconcileVips(t *testing.T) {
 	}
 
 	t.Run("existent vips and new vips has intersection", func(t *testing.T) {
-		mockOvnClient.EXPECT().ListVirtualTypeLogicalSwitchPorts(subnet.Name).Return(lsps, nil)
+		mockOvnClient.EXPECT().ListLogicalSwitchPorts(true, gomock.Any(), gomock.Any()).Return(lsps, nil)
 		mockOvnClient.EXPECT().DeleteLogicalSwitchPort(lspNamePrefix + "-0").Return(nil)
 		mockOvnClient.EXPECT().DeleteLogicalSwitchPort(lspNamePrefix + "-1").Return(nil)
 		mockOvnClient.EXPECT().CreateVirtualLogicalSwitchPorts(subnet.Name, "192.168.123.11", "192.168.123.12", "192.168.123.13").Return(nil)
@@ -60,7 +60,7 @@ func Test_reconcileVips(t *testing.T) {
 	})
 
 	t.Run("existent vips is empty", func(t *testing.T) {
-		mockOvnClient.EXPECT().ListVirtualTypeLogicalSwitchPorts(subnet.Name).Return(nil, nil)
+		mockOvnClient.EXPECT().ListLogicalSwitchPorts(true, gomock.Any(), gomock.Any()).Return(nil, nil)
 		mockOvnClient.EXPECT().CreateVirtualLogicalSwitchPorts(subnet.Name, "192.168.123.10", "192.168.123.11", "192.168.123.12", "192.168.123.13").Return(nil)
 
 		err := ctrl.reconcileVips(subnet)
@@ -74,7 +74,7 @@ func Test_reconcileVips(t *testing.T) {
 			},
 		}
 
-		mockOvnClient.EXPECT().ListVirtualTypeLogicalSwitchPorts(subnet.Name).Return(lsps, nil)
+		mockOvnClient.EXPECT().ListLogicalSwitchPorts(true, gomock.Any(), gomock.Any()).Return(lsps, nil)
 		mockOvnClient.EXPECT().DeleteLogicalSwitchPort(lspNamePrefix + "-0").Return(nil)
 		mockOvnClient.EXPECT().DeleteLogicalSwitchPort(lspNamePrefix + "-1").Return(nil)
 		mockOvnClient.EXPECT().DeleteLogicalSwitchPort(lspNamePrefix + "-2").Return(nil)
@@ -123,7 +123,7 @@ func Test_syncVirtualPort(t *testing.T) {
 		mockLsp("", lspNamePrefix+"-1", "192.168.123.10,192.168.123.11"),
 	}
 
-	mockOvnClient.EXPECT().ListLogicalSwitchPorts(true, gomock.Any()).Return(lsps, nil)
+	mockOvnClient.EXPECT().ListNormalLogicalSwitchPorts(true, gomock.Any()).Return(lsps, nil)
 	virtualParents := fmt.Sprintf("%s,%s", lspNamePrefix+"-0", lspNamePrefix+"-1")
 	mockOvnClient.EXPECT().SetLogicalSwitchPortVirtualParents(subnet.Name, virtualParents, "192.168.123.10").Return(nil)
 	mockOvnClient.EXPECT().SetLogicalSwitchPortVirtualParents(subnet.Name, virtualParents, "192.168.123.11").Return(nil)

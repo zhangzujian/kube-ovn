@@ -713,7 +713,7 @@ func (c *Controller) handleDeletePod(pod *v1.Pod) error {
 		return nil
 	}
 
-	ports, err := c.ovnClient.ListLogicalSwitchPorts(true, map[string]string{"pod": key})
+	ports, err := c.ovnClient.ListNormalLogicalSwitchPorts(true, map[string]string{"pod": key})
 	if err != nil {
 		klog.Errorf("failed to list lsps of pod '%s', %v", pod.Name, err)
 		return err
@@ -778,7 +778,7 @@ func (c *Controller) handleDeletePod(pod *v1.Pod) error {
 	}
 
 	for _, port := range ports {
-		sgs, err := c.getPortSg(&port)
+		sgs, err := getPortSg(&port)
 		if err != nil {
 			klog.Warningf("failed to get port '%s' sg, %v", port.Name, err)
 		}

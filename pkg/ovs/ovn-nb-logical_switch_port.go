@@ -377,7 +377,7 @@ func (c *ovnClient) SetLogicalSwitchPortsSecurityGroup(sgName string, op string)
 	}
 
 	externalIds := map[string]string{associatedSgKey: associated}
-	lsps, err := c.ListLogicalSwitchPorts(true, externalIds)
+	lsps, err := c.ListNormalLogicalSwitchPorts(true, externalIds)
 	if err != nil {
 		return fmt.Errorf("list logical switch ports with external_ids %v: %v", externalIds, err)
 	}
@@ -481,65 +481,23 @@ func (c *ovnClient) GetLogicalSwitchPort(lspName string, ignoreNotFound bool) (*
 	return lsp, nil
 }
 
-func (c *ovnClient) ListRemoteTypeLogicalSwitchPorts() ([]ovnnb.LogicalSwitchPort, error) {
-	lspList := make([]ovnnb.LogicalSwitchPort, 0, 1)
-	if err := c.WhereCache(func(lsp *ovnnb.LogicalSwitchPort) bool {
-		return lsp.Type == "remote"
-	}).List(context.TODO(), &lspList); err != nil {
-		return nil, fmt.Errorf("list logical switch port which type is remote: %v", err)
+// ListNormalLogicalSwitchPorts list logical switch ports which type is ""
+func (c *ovnClient) ListNormalLogicalSwitchPorts(needVendorFilter bool, externalIDs map[string]string) ([]ovnnb.LogicalSwitchPort, error) {
+	lsps, err := c.ListLogicalSwitchPorts(needVendorFilter, externalIDs, func(lsp *ovnnb.LogicalSwitchPort) bool {
+		return lsp.Type == ""
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list logical switch ports: %v", err)
 	}
 
-	return lspList, nil
+	return lsps, nil
 }
 
-func (c *ovnClient) ListVirtualTypeLogicalSwitchPorts(lsName string) ([]ovnnb.LogicalSwitchPort, error) {
-	lspList := make([]ovnnb.LogicalSwitchPort, 0, 1)
-	if err := c.WhereCache(func(lsp *ovnnb.LogicalSwitchPort) bool {
-		return lsp.Type == "virtual" && len(lsp.ExternalIDs) != 0 && lsp.ExternalIDs[logicalSwitchKey] == lsName
-	}).List(context.TODO(), &lspList); err != nil {
-		return nil, fmt.Errorf("list logical switch port which type is remote: %v", err)
-	}
-
-	return lspList, nil
-}
-
-// ListLogicalSwitchPorts list logical switch ports which match the given externalIDs,
-// result should include all logical switch ports when externalIDs is empty,
-// result should include all logical switch ports which externalIDs[key] is not empty when externalIDs[key] is ""
-func (c *ovnClient) ListLogicalSwitchPorts(needVendorFilter bool, externalIDs map[string]string) ([]ovnnb.LogicalSwitchPort, error) {
+// ListLogicalSwitchPorts list logical switch ports
+func (c *ovnClient) ListLogicalSwitchPorts(needVendorFilter bool, externalIDs map[string]string, filter func(lsp *ovnnb.LogicalSwitchPort) bool) ([]ovnnb.LogicalSwitchPort, error) {
 	lspList := make([]ovnnb.LogicalSwitchPort, 0)
 
-	if err := c.WhereCache(func(lsp *ovnnb.LogicalSwitchPort) bool {
-		if lsp.Type != "" {
-			return false
-		}
-
-		if needVendorFilter && (len(lsp.ExternalIDs) == 0 || lsp.ExternalIDs["vendor"] != util.CniTypeName) {
-			return false
-		}
-
-		if len(lsp.ExternalIDs) < len(externalIDs) {
-			return false
-		}
-
-		if len(lsp.ExternalIDs) != 0 {
-			for k, v := range externalIDs {
-				// if only key exist but not value in externalIDs, we should include this lsp,
-				// it's equal to shell command `ovn-nbctl --columns=xx find logical_switch_port external_ids:key!=\"\"`
-				if len(v) == 0 {
-					if len(lsp.ExternalIDs[k]) == 0 {
-						return false
-					}
-				} else {
-					if lsp.ExternalIDs[k] != v {
-						return false
-					}
-				}
-			}
-		}
-
-		return true
-	}).List(context.TODO(), &lspList); err != nil {
+	if err := c.WhereCache(logicalSwitchPortFilter(needVendorFilter, externalIDs, filter)).List(context.TODO(), &lspList); err != nil {
 		return nil, fmt.Errorf("list logical switch ports: %v", err)
 	}
 
@@ -633,6 +591,41 @@ func (c *ovnClient) UpdateLogicalSwitchPortOp(lsp *ovnnb.LogicalSwitchPort, fiel
 	}
 
 	return op, nil
+}
+
+// logicalSwitchPortFilter filter logical_switch_port which match the given externalIDs and the custom filter
+func logicalSwitchPortFilter(needVendorFilter bool, externalIDs map[string]string, filter func(lsp *ovnnb.LogicalSwitchPort) bool) func(lsp *ovnnb.LogicalSwitchPort) bool {
+	return func(lsp *ovnnb.LogicalSwitchPort) bool {
+		if needVendorFilter && (len(lsp.ExternalIDs) == 0 || lsp.ExternalIDs["vendor"] != util.CniTypeName) {
+			return false
+		}
+
+		if len(lsp.ExternalIDs) < len(externalIDs) {
+			return false
+		}
+
+		if len(lsp.ExternalIDs) != 0 {
+			for k, v := range externalIDs {
+				// if only key exist but not value in externalIDs, we should include this lsp,
+				// it's equal to shell command `ovn-nbctl --columns=xx find logical_switch_port external_ids:key!=\"\"`
+				if len(v) == 0 {
+					if len(lsp.ExternalIDs[k]) == 0 {
+						return false
+					}
+				} else {
+					if lsp.ExternalIDs[k] != v {
+						return false
+					}
+				}
+			}
+		}
+
+		if filter != nil {
+			return filter(lsp)
+		}
+
+		return true
+	}
 }
 
 // getLogicalSwitchPortSgs get logical switch port security group

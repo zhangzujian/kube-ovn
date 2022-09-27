@@ -287,13 +287,17 @@ func (c *Controller) InitIPAM() error {
 		}
 	}
 
-	result, err := c.ovnLegacyClient.CustomFindEntity("logical_switch_port", []string{"name"}, `external-ids:vendor{<}""`)
+	lsps, err := c.ovnClient.ListLogicalSwitchPorts(false, nil, func(lsp *ovnnb.LogicalSwitchPort) bool {
+		return len(lsp.ExternalIDs) == 0 || len(lsp.ExternalIDs["vendor"]) == 0
+	})
+
 	if err != nil {
-		klog.Errorf("failed to find logical switch port without external-ids:vendor: %v", err)
+		klog.Errorf("list logical switch port without external-ids:vendor: %v", err)
 	}
-	lspWithoutVendor := make(map[string]struct{}, len(result))
-	for _, lsp := range result {
-		lspWithoutVendor[lsp["name"][0]] = struct{}{}
+
+	lspWithoutVendor := make(map[string]struct{}, len(lsps))
+	for _, lsp := range lsps {
+		lspWithoutVendor[lsp.Name] = struct{}{}
 	}
 
 	pods, err := c.podsLister.List(labels.Everything())

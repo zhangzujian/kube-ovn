@@ -197,13 +197,18 @@ func (c *ovnClient) LogicalSwitchExists(lsName string) (bool, error) {
 }
 
 // ListLogicalSwitch list logical switch
-func (c *ovnClient) ListLogicalSwitch(needVendorFilter bool) ([]ovnnb.LogicalSwitch, error) {
+func (c *ovnClient) ListLogicalSwitch(needVendorFilter bool, filter func(lr *ovnnb.LogicalSwitch) bool) ([]ovnnb.LogicalSwitch, error) {
 	lsList := make([]ovnnb.LogicalSwitch, 0)
 
 	if err := c.ovnNbClient.WhereCache(func(ls *ovnnb.LogicalSwitch) bool {
 		if needVendorFilter && (len(ls.ExternalIDs) == 0 || ls.ExternalIDs["vendor"] != util.CniTypeName) {
 			return false
 		}
+
+		if filter != nil {
+			return filter(ls)
+		}
+
 		return true
 	}).List(context.TODO(), &lsList); err != nil {
 		return nil, fmt.Errorf("list logical switch: %v", err)
