@@ -171,7 +171,7 @@ func (suite *OvnClientTestSuite) Test_UpdateLogicalSwitchPort() {
 }
 
 func (suite *OvnClientTestSuite) Test_getLogicalSwitchPortSgs() {
-	suite.test_getLogicalSwitchPortSgs()
+	suite.testgetLogicalSwitchPortSgs()
 }
 
 func (suite *OvnClientTestSuite) Test_DeleteLogicalSwitchPort() {

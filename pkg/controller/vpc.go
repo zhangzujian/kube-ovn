@@ -16,6 +16,7 @@ import (
 	"k8s.io/klog/v2"
 
 	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
+	"github.com/kubeovn/kube-ovn/pkg/ovs"
 	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
@@ -231,8 +232,8 @@ func (c *Controller) reconcileRouterPortBySubnet(vpc *kubeovnv1.Vpc, subnet *kub
 		networks := util.GetIpAddrWithMask(gateway, subnet.Spec.CIDRBlock)
 		klog.Infof("router port does not exist, trying to create %s with ip %s", routerPortName, networks)
 
-		if err := c.ovnClient.AddLogicalRouterPort(router, routerPortName, "", networks); err != nil {
-			klog.Errorf("failed to create router port %s, err %v", routerPortName, err)
+		if err := c.ovnClient.CreateLogicalRouterPort(router, routerPortName, util.GenerateMac(), strings.Split(networks, ",")); err != nil {
+			klog.Errorf("create logical router port %s, err %v", routerPortName, err)
 			return err
 		}
 	}

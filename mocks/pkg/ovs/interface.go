@@ -247,6 +247,20 @@ func (m *MockLogicalRouterPort) EXPECT() *MockLogicalRouterPortMockRecorder {
 	return m.recorder
 }
 
+// CreateLogicalRouterPort mocks base method.
+func (m *MockLogicalRouterPort) CreateLogicalRouterPort(lrName, lrpName, mac string, networks []string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateLogicalRouterPort", lrName, lrpName, mac, networks)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateLogicalRouterPort indicates an expected call of CreateLogicalRouterPort.
+func (mr *MockLogicalRouterPortMockRecorder) CreateLogicalRouterPort(lrName, lrpName, mac, networks interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateLogicalRouterPort", reflect.TypeOf((*MockLogicalRouterPort)(nil).CreateLogicalRouterPort), lrName, lrpName, mac, networks)
+}
+
 // CreatePeerRouterPort mocks base method.
 func (m *MockLogicalRouterPort) CreatePeerRouterPort(localRouter, remoteRouter, localRouterPortIP string) error {
 	m.ctrl.T.Helper()
@@ -1423,6 +1437,20 @@ func (mr *MockLogicalRouterPolicyMockRecorder) DeleteLogicalRouterPolicy(lrName,
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteLogicalRouterPolicy", reflect.TypeOf((*MockLogicalRouterPolicy)(nil).DeleteLogicalRouterPolicy), lrName, priority, match)
 }
 
+// DeleteLogicalRouterPolicyByUUID mocks base method.
+func (m *MockLogicalRouterPolicy) DeleteLogicalRouterPolicyByUUID(lrName, uuid string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteLogicalRouterPolicyByUUID", lrName, uuid)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteLogicalRouterPolicyByUUID indicates an expected call of DeleteLogicalRouterPolicyByUUID.
+func (mr *MockLogicalRouterPolicyMockRecorder) DeleteLogicalRouterPolicyByUUID(lrName, uuid interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteLogicalRouterPolicyByUUID", reflect.TypeOf((*MockLogicalRouterPolicy)(nil).DeleteLogicalRouterPolicyByUUID), lrName, uuid)
+}
+
 // GetLogicalRouterPolicy mocks base method.
 func (m *MockLogicalRouterPolicy) GetLogicalRouterPolicy(lrName string, priority int, match string, ignoreNotFound bool) (*ovnnb.LogicalRouterPolicy, error) {
 	m.ctrl.T.Helper()
@@ -1880,6 +1908,20 @@ func (mr *MockOvnClientMockRecorder) CreateLogicalRouter(lrName interface{}) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateLogicalRouter", reflect.TypeOf((*MockOvnClient)(nil).CreateLogicalRouter), lrName)
 }
 
+// CreateLogicalRouterPort mocks base method.
+func (m *MockOvnClient) CreateLogicalRouterPort(lrName, lrpName, mac string, networks []string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateLogicalRouterPort", lrName, lrpName, mac, networks)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateLogicalRouterPort indicates an expected call of CreateLogicalRouterPort.
+func (mr *MockOvnClientMockRecorder) CreateLogicalRouterPort(lrName, lrpName, mac, networks interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateLogicalRouterPort", reflect.TypeOf((*MockOvnClient)(nil).CreateLogicalRouterPort), lrName, lrpName, mac, networks)
+}
+
 // CreateLogicalSwitch mocks base method.
 func (m *MockOvnClient) CreateLogicalSwitch(lsName, lrName, cidrBlock, gateway string, needRouter bool) error {
 	m.ctrl.T.Helper()
@@ -2111,6 +2153,20 @@ func (m *MockOvnClient) DeleteLogicalRouterPolicy(lrName string, priority int, m
 func (mr *MockOvnClientMockRecorder) DeleteLogicalRouterPolicy(lrName, priority, match interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteLogicalRouterPolicy", reflect.TypeOf((*MockOvnClient)(nil).DeleteLogicalRouterPolicy), lrName, priority, match)
+}
+
+// DeleteLogicalRouterPolicyByUUID mocks base method.
+func (m *MockOvnClient) DeleteLogicalRouterPolicyByUUID(lrName, uuid string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteLogicalRouterPolicyByUUID", lrName, uuid)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteLogicalRouterPolicyByUUID indicates an expected call of DeleteLogicalRouterPolicyByUUID.
+func (mr *MockOvnClientMockRecorder) DeleteLogicalRouterPolicyByUUID(lrName, uuid interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteLogicalRouterPolicyByUUID", reflect.TypeOf((*MockOvnClient)(nil).DeleteLogicalRouterPolicyByUUID), lrName, uuid)
 }
 
 // DeleteLogicalRouterPort mocks base method.

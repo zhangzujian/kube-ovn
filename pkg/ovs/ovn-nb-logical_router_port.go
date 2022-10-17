@@ -98,6 +98,16 @@ func (c *ovnClient) UpdateLogicalRouterPort(lrp *ovnnb.LogicalRouterPort, fields
 
 // CreateLogicalRouterPort create logical router port with basic configuration
 func (c *ovnClient) CreateLogicalRouterPort(lrName string, lrpName, mac string, networks []string) error {
+	exists, err := c.LogicalRouterPortExists(lrpName)
+	if err != nil {
+		return err
+	}
+
+	// ignore
+	if exists {
+		return nil
+	}
+
 	lrp := &ovnnb.LogicalRouterPort{
 		UUID:     ovsclient.NamedUUID(),
 		Name:     lrpName,

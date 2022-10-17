@@ -1192,16 +1192,6 @@ func (c *Controller) reconcileOvnRoute(subnet *kubeovnv1.Subnet) error {
 					continue
 				}
 
-				node, err := c.nodesLister.Get(pod.Spec.NodeName)
-				if err != nil {
-					if k8serrors.IsNotFound(err) {
-						continue
-					} else {
-						klog.Errorf("failed to get node %s, %v", pod.Spec.NodeName, err)
-						return err
-					}
-				}
-
 				podNets, err := c.getPodKubeovnNets(pod)
 				if err != nil {
 					klog.Errorf("failed to get pod nets %v", err)
@@ -1560,19 +1550,13 @@ func calcDualSubnetStatusIP(subnet *kubeovnv1.Subnet, c *Controller) error {
 	v6toSubIPs := util.ExpandExcludeIPs(v6ExcludeIps, cidrBlocks[1])
 	_, v4CIDR, _ := net.ParseCIDR(cidrBlocks[0])
 	_, v6CIDR, _ := net.ParseCIDR(cidrBlocks[1])
-	v4UsingIPs := make([]string, 0, len(podUsedIPs.Items))
-	v6UsingIPs := make([]string, 0, len(podUsedIPs.Items))
-	for _, podUsedIP := range podUsedIPs.Items {
-		// The format of podUsedIP.Spec.IPAddress is 10.244.0.0/16,fd00:10:244::/64 when protocol is dualstack
-		splitIPs := strings.Split(podUsedIP.Spec.IPAddress, ",")
-		v4toSubIPs = append(v4toSubIPs, splitIPs[0])
-		v4UsingIPs = append(v4UsingIPs, splitIPs[0])
-		if len(splitIPs) == 2 {
-			v6toSubIPs = append(v6toSubIPs, splitIPs[1])
-			v6UsingIPs = append(v6UsingIPs, splitIPs[1])
-		}
-	}
+	v4availableIPs := util.AddressCount(v4CIDR) - util.CountIpNums(v4toSubIPs)
+	v6availableIPs := util.AddressCount(v6CIDR) - util.CountIpNums(v6toSubIPs)
 
+	usingIPs := float64(len(podUsedIPs.Items))
+
+	vipSelectors := fields.AndSelectors(fields.OneTermEqualSelector(util.SubnetNameLabel, subnet.Name),
+		fields.OneTermEqualSelector(util.IpReservedLabel, "")).String()
 	vips, err := c.config.KubeOvnClient.KubeovnV1().Vips().List(context.Background(), metav1.ListOptions{
 		LabelSelector: vipSelectors,
 	})

@@ -100,26 +100,35 @@ func (c *ovnClient) DeleteLogicalRouterPolicy(lrName string, priority int, match
 		return nil
 	}
 
+	if err := c.DeleteLogicalRouterPolicyByUUID(lrName, policy.UUID); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *ovnClient) DeleteLogicalRouterPolicyByUUID(lrName string, uuid string) error {
 	// remove policy from logical router
-	policyRemoveOp, err := c.LogicalRouterUpdatePolicyOp(lrName, []string{policy.UUID}, ovsdb.MutateOperationDelete)
+	policyRemoveOp, err := c.LogicalRouterUpdatePolicyOp(lrName, []string{uuid}, ovsdb.MutateOperationDelete)
 	if err != nil {
-		return fmt.Errorf("generate operations for removing policy 'priority %d match %s' from logical router %s: %v", priority, match, lrName, err)
+		return fmt.Errorf("generate operations for removing policy '%s' from logical router %s: %v", uuid, lrName, err)
 	}
 
-	// delete logical router policy
-	policyDelOp, err := c.Where(policy).Delete()
+	deleteOps, err := c.ovnNbClient.Where(&ovnnb.LogicalRouterPolicy{
+		UUID: uuid,
+	}).Delete()
 	if err != nil {
-		return fmt.Errorf("generate operations for deleting logical router policy 'priority %d match %s': %v", priority, match, err)
+		return fmt.Errorf("failed to generate delete operations for router policy %s: %v", uuid, err)
 	}
 
-	ops := make([]ovsdb.Operation, 0, len(policyRemoveOp)+len(policyDelOp))
+	ops := make([]ovsdb.Operation, 0, len(policyRemoveOp)+len(deleteOps))
 	ops = append(ops, policyRemoveOp...)
-	ops = append(ops, policyDelOp...)
+
+	ops = append(ops, deleteOps...)
 
 	if err = c.Transact("lr-policy-del", ops); err != nil {
-		return fmt.Errorf("delete logical router policy 'priority %d match %s': %v", priority, match, err)
+		return fmt.Errorf("delete logical router policy '%s' from logical router %s: %v", uuid, lrName, err)
 	}
-
 	return nil
 }
 
@@ -304,31 +313,6 @@ func (c *ovnClient) AddRouterPolicy(lr *ovnnb.LogicalRouter, match string, actio
 
 	if err = c.Transact("lr-policy-add", ops); err != nil {
 		return fmt.Errorf("failed to create route policy %s: %v", match, err)
-	}
-	return nil
-}
-
-func (c *ovnClient) DeleteRouterPolicy(lr *ovnnb.LogicalRouter, uuid string) error {
-	ops, err := c.ovnNbClient.Where(lr).Mutate(lr, model.Mutation{
-		Field:   &lr.Policies,
-		Mutator: ovsdb.MutateOperationDelete,
-		Value:   []string{uuid},
-	})
-	if err != nil {
-		return fmt.Errorf("failed to generate delete operations for router %s: %v", uuid, err)
-	}
-
-	lrPolicy := &ovnnb.LogicalRouterPolicy{
-		UUID: uuid,
-	}
-	deleteOps, err := c.ovnNbClient.Where(lrPolicy).Delete()
-	if err != nil {
-		return fmt.Errorf("failed to generate delete operations for router policy %s: %v", uuid, err)
-	}
-	ops = append(ops, deleteOps...)
-
-	if err = c.Transact("lr-policy-delete", ops); err != nil {
-		return fmt.Errorf("failed to delete route policy %s: %v", uuid, err)
 	}
 	return nil
 }

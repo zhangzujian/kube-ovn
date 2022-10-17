@@ -131,11 +131,6 @@ func (suite *OvnClientTestSuite) testDeleteLogicalRouterPolicy() {
 		require.NoError(t, err)
 		require.NotContains(t, lr.Policies, policy.UUID)
 	})
-
-	t.Run("no err when delete non-existent logical switch port", func(t *testing.T) {
-		err := ovnClient.DeleteLogicalSwitchPort("test-delete-lrp-non-existent")
-		require.NoError(t, err)
-	})
 }
 
 func (suite *OvnClientTestSuite) testClearLogicalRouterPolicy() {

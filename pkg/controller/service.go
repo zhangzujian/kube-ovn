@@ -405,15 +405,6 @@ func (c *Controller) getServicesVips() (map[string]map[string]struct{}, error) {
 	return vips, nil
 }
 
-// Parse key of map, [fd00:10:96::11c9]:10665 for example
-func parseVipAddr(vipStr string) string {
-	vip := strings.Split(vipStr, ":")[0]
-	if strings.ContainsAny(vipStr, "[]") {
-		vip = strings.Trim(strings.Split(vipStr, "]")[0], "[]")
-	}
-	return vip
-}
-
 // getServiceVips get service vips,
 // return a map with key is tcpVipsKey,udpVipsKey and
 // value is map which key is vip

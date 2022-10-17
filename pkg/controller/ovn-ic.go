@@ -443,7 +443,11 @@ func (c *Controller) syncOneRouteToPolicy(key, value string) {
 			return
 		}
 		for _, lrPolicy := range lrPolicyList {
-			if err := c.ovnClient.DeleteRouterPolicy(lr, lrPolicy.UUID); err != nil {
+			if err := c.ovnClient.DeleteLogicalRouterPolicyByUUID(lr.Name, lrPolicy.UUID); err != nil {
+				klog.Errorf("deleting router policy failed %v", err)
+			}
+
+			if err := c.ovnClient.DeleteLogicalRouterPolicy(lr.Name, lrPolicy.Priority, lrPolicy.Match); err != nil {
 				klog.Errorf("deleting router policy failed %v", err)
 			}
 		}
@@ -475,7 +479,7 @@ func (c *Controller) syncOneRouteToPolicy(key, value string) {
 		}
 	}
 	for _, uuid := range policyMap {
-		if err := c.ovnClient.DeleteRouterPolicy(lr, uuid); err != nil {
+		if err := c.ovnClient.DeleteLogicalRouterPolicyByUUID(lr.Name, uuid); err != nil {
 			klog.Errorf("deleting router policy failed %v", err)
 		}
 	}

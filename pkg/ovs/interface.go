@@ -28,6 +28,7 @@ type LogicalRouter interface {
 
 type LogicalRouterPort interface {
 	CreatePeerRouterPort(localRouter, remoteRouter, localRouterPortIP string) error
+	CreateLogicalRouterPort(lrName string, lrpName, mac string, networks []string) error
 	UpdateLogicalRouterPortRA(lrpName, ipv6RAConfigsStr string, enableIPv6RA bool) error
 	DeleteLogicalRouterPort(lrpName string) error
 	DeleteLogicalRouterPorts(externalIDs map[string]string, filter func(lrp *ovnnb.LogicalRouterPort) bool) error
@@ -117,6 +118,7 @@ type LogicalRouterStaticRoute interface {
 type LogicalRouterPolicy interface {
 	AddLogicalRouterPolicy(lrName string, priority int, match, action string, nextHops []string, externalIDs map[string]string) error
 	DeleteLogicalRouterPolicy(lrName string, priority int, match string) error
+	DeleteLogicalRouterPolicyByUUID(lrName string, uuid string) error
 	ClearLogicalRouterPolicy(lrName string) error
 	ListLogicalRouterPolicies(externalIDs map[string]string) ([]ovnnb.LogicalRouterPolicy, error)
 	GetLogicalRouterPolicy(lrName string, priority int, match string, ignoreNotFound bool) (*ovnnb.LogicalRouterPolicy, error)
@@ -126,7 +128,7 @@ type NAT interface {
 	UpdateSnat(lrName, externalIP, logicalIP string) error
 	UpdateDnatAndSnat(lrName, externalIP, logicalIP, lspName, externalMac, gatewayType string) error
 	DeleteNats(lrName, natType, logicalIP string) error
-	NatExists(lrName, natType, externalIP, logicalIP string) (bool, error) 
+	NatExists(lrName, natType, externalIP, logicalIP string) (bool, error)
 }
 
 type DHCPOptions interface {

@@ -745,7 +745,7 @@ func (c *Controller) handleDeletePod(pod *v1.Pod) error {
 			}
 
 			if exGwEnabled == "true" {
-				if err := c.ovnLegacyClient.DeleteNatRule(address.Ip, vpc.Name); err != nil {
+				if err := c.ovnClient.DeleteNats(vpc.Name, "", address.Ip); err != nil {
 					return err
 				}
 			}
@@ -854,8 +854,9 @@ func (c *Controller) handleUpdatePodSecurity(key string) error {
 		mac := pod.Annotations[fmt.Sprintf(util.MacAddressAnnotationTemplate, podNet.ProviderName)]
 		ipStr := pod.Annotations[fmt.Sprintf(util.IpAddressAnnotationTemplate, podNet.ProviderName)]
 		vips := pod.Annotations[fmt.Sprintf(util.PortVipAnnotationTemplate, podNet.ProviderName)]
-		if err = c.ovnLegacyClient.SetPortSecurity(portSecurity, podNet.Subnet.Name, ovs.PodNameToPortName(podName, namespace, podNet.ProviderName), mac, ipStr, vips); err != nil {
-			klog.Errorf("setPortSecurity failed. %v", err)
+
+		if err = c.ovnClient.SetLogicalSwitchPortSecurity(portSecurity, ovs.PodNameToPortName(podName, namespace, podNet.ProviderName), mac, ipStr, vips); err != nil {
+			klog.Errorf("set logical switch port security: %v", err)
 			return err
 		}
 
@@ -1011,29 +1012,29 @@ func (c *Controller) handleUpdatePod(key string) error {
 
 			if c.config.EnableEipSnat {
 				for _, ipStr := range strings.Split(podIP, ",") {
-						if len(pod.Annotations[util.EipAnnotation]) != 0 {
-							if err := c.ovnClient.UpdateDnatAndSnat(c.config.ClusterRouter, pod.Annotations[util.EipAnnotation], ipStr, fmt.Sprintf("%s.%s", podName, pod.Namespace), pod.Annotations[util.MacAddressAnnotation], c.ExternalGatewayType); err != nil {
-								klog.Errorf("add dnat_and_snat rule: %v", err)
-								return err
-							}
-						} else {
-							if err := c.ovnClient.DeleteNats(c.config.ClusterRouter, "dnat_and_snat", ipStr); err != nil {
-								klog.Errorf("delete dnat_and_snat rule: %v", err)
-								return err
-							}
+					if len(pod.Annotations[util.EipAnnotation]) != 0 {
+						if err := c.ovnClient.UpdateDnatAndSnat(c.config.ClusterRouter, pod.Annotations[util.EipAnnotation], ipStr, fmt.Sprintf("%s.%s", podName, pod.Namespace), pod.Annotations[util.MacAddressAnnotation], c.ExternalGatewayType); err != nil {
+							klog.Errorf("add dnat_and_snat rule: %v", err)
+							return err
 						}
+					} else {
+						if err := c.ovnClient.DeleteNats(c.config.ClusterRouter, "dnat_and_snat", ipStr); err != nil {
+							klog.Errorf("delete dnat_and_snat rule: %v", err)
+							return err
+						}
+					}
 
-						if len(pod.Annotations[util.SnatAnnotation]) != 0 {
-							if err := c.ovnClient.UpdateSnat(c.config.ClusterRouter, pod.Annotations[util.SnatAnnotation], ipStr); err != nil {
-								klog.Errorf("add snat rule: %v", err)
-								return err
-							}
-						} else {
-							if err := c.ovnClient.DeleteNats(c.config.ClusterRouter, "snat", ipStr); err != nil {
-								klog.Errorf("delete dnat_and_snat rule: %v", err)
-								return err
-							}
+					if len(pod.Annotations[util.SnatAnnotation]) != 0 {
+						if err := c.ovnClient.UpdateSnat(c.config.ClusterRouter, pod.Annotations[util.SnatAnnotation], ipStr); err != nil {
+							klog.Errorf("add snat rule: %v", err)
+							return err
 						}
+					} else {
+						if err := c.ovnClient.DeleteNats(c.config.ClusterRouter, "snat", ipStr); err != nil {
+							klog.Errorf("delete dnat_and_snat rule: %v", err)
+							return err
+						}
+					}
 				}
 			}
 		}

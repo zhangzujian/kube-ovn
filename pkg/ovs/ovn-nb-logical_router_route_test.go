@@ -67,7 +67,7 @@ func (suite *OvnClientTestSuite) testAddLogicalRouterStaticRoute() {
 		routeType := util.NormalRouteType
 
 		t.Run("create route", func(t *testing.T) {
-			err = ovnClient.AddLogicalRouterStaticRoute(lrName, policy, prefixes, nextHops, routeType)
+			err = ovnClient.AddLogicalRouterStaticRoute(lrName, policy, prefixs, nextHops, routeType)
 			require.NoError(t, err)
 
 			lr, err := ovnClient.GetLogicalRouter(lrName, false)
@@ -86,7 +86,7 @@ func (suite *OvnClientTestSuite) testAddLogicalRouterStaticRoute() {
 			nextHops := "192.168.30.254,fd00:100:64::fe"
 			nextHopList := strings.Split(nextHops, ",")
 
-			err = ovnClient.AddLogicalRouterStaticRoute(lrName, policy, prefixes, nextHops, routeType)
+			err = ovnClient.AddLogicalRouterStaticRoute(lrName, policy, prefixs, nextHops, routeType)
 			require.NoError(t, err)
 
 			lr, err := ovnClient.GetLogicalRouter(lrName, false)
