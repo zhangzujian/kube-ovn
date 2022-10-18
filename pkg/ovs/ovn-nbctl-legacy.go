@@ -19,7 +19,11 @@ import (
 
 func (c LegacyClient) ovnNbCommand(cmdArgs ...string) (string, error) {
 	start := time.Now()
-	cmdArgs = append([]string{fmt.Sprintf("--timeout=%d", c.OvnTimeout), "--no-wait"}, cmdArgs...)
+	cmdArgs = append([]string{
+		fmt.Sprintf("--timeout=%d", c.OvnTimeout),
+		fmt.Sprintf("--db=%s", c.OvnNbAddress),
+		"--no-wait",
+	}, cmdArgs...)
 	raw, err := exec.Command(OvnNbCtl, cmdArgs...).CombinedOutput()
 	elapsed := float64((time.Since(start)) / time.Millisecond)
 	klog.V(4).Infof("command %s %s in %vms, output %q", OvnNbCtl, strings.Join(cmdArgs, " "), elapsed, raw)
