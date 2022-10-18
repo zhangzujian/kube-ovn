@@ -1,11 +1,7 @@
 package ovs
 
 import (
-	"bytes"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"regexp"
 	"sort"
@@ -17,7 +13,6 @@ import (
 	netv1 "k8s.io/api/networking/v1"
 	"k8s.io/klog/v2"
 
-	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
 	"github.com/kubeovn/kube-ovn/pkg/util"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
@@ -28,8 +23,6 @@ const (
 	SgAclIngressDirection AclDirection = "to-lport"
 	SgAclEgressDirection  AclDirection = "from-lport"
 )
-
-var nbctlDaemonSocketRegexp = regexp.MustCompile(`^/var/run/ovn/ovn-nbctl\.[0-9]+\.ctl$`)
 
 func (c LegacyClient) ovnNbCommand(cmdArgs ...string) (string, error) {
 	start := time.Now()
@@ -72,13 +65,6 @@ func (c LegacyClient) GetVersion() (string, error) {
 		c.Version = strings.Split(lines[0], " ")[1]
 	}
 	return c.Version, nil
-}
-
-func (c LegacyClient) SetAzName(azName string) error {
-	if _, err := c.ovnNbCommand("set", "NB_Global", ".", fmt.Sprintf("name=%s", azName)); err != nil {
-		return fmt.Errorf("failed to set az name, %v", err)
-	}
-	return nil
 }
 
 func (c LegacyClient) SetLsDnatModDlDst(enabled bool) error {
