@@ -17,13 +17,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
-type AclDirection string
-
-const (
-	SgAclIngressDirection AclDirection = "to-lport"
-	SgAclEgressDirection  AclDirection = "from-lport"
-)
-
 func (c LegacyClient) ovnNbCommand(cmdArgs ...string) (string, error) {
 	start := time.Now()
 	cmdArgs = append([]string{fmt.Sprintf("--timeout=%d", c.OvnTimeout), "--no-wait"}, cmdArgs...)
