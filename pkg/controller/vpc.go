@@ -320,11 +320,6 @@ func (c *Controller) handleAddOrUpdateVpc(key string) error {
 		return err
 	}
 
-	if err := c.reconcileRouterPorts(vpc); err != nil {
-		klog.ErrorS(err, "unable to reconcileRouterPorts")
-		return err
-	}
-
 	var newPeers []string
 	for _, peering := range vpc.Spec.VpcPeerings {
 		if err = util.CheckCidrs(peering.LocalConnectIP); err != nil {

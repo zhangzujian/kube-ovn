@@ -195,16 +195,6 @@ func (c *Controller) initNodeSwitch() error {
 
 // InitClusterRouter init cluster router to connect different logical switches
 func (c *Controller) initClusterRouter() error {
-	exists, err := c.ovnClient.LogicalRouterExists(c.config.ClusterRouter)
-	if err != nil {
-		return err
-	}
-
-	// found, ingnore
-	if exists {
-		return nil
-	}
-
 	return c.ovnClient.CreateLogicalRouter(c.config.ClusterRouter)
 }
 
