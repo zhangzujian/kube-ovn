@@ -40,7 +40,7 @@ func (c *ovnClient) CreateIngressAcl(pgName, asIngressName, asExceptName, protoc
 	acls = append(acls, defaultDropAcl)
 
 	/* allow acl */
-	matches := newNetworkPolicyAclMatch(pgName, asIngressName, asExceptName, kubeovnv1.ProtocolIPv4, ovnnb.ACLDirectionToLport, npp)
+	matches := newNetworkPolicyAclMatch(pgName, asIngressName, asExceptName, protocol, ovnnb.ACLDirectionToLport, npp)
 	for _, m := range matches {
 		allowAcl, err := c.newAcl(pgName, ovnnb.ACLDirectionToLport, util.IngressAllowPriority, m, ovnnb.ACLActionAllowRelated)
 		if err != nil {
@@ -80,7 +80,7 @@ func (c *ovnClient) CreateEgressAcl(pgName, asEgressName, asExceptName, protocol
 	acls = append(acls, defaultDropAcl)
 
 	/* allow acl */
-	matches := newNetworkPolicyAclMatch(pgName, asEgressName, asExceptName, kubeovnv1.ProtocolIPv4, ovnnb.ACLDirectionFromLport, npp)
+	matches := newNetworkPolicyAclMatch(pgName, asEgressName, asExceptName, protocol, ovnnb.ACLDirectionFromLport, npp)
 	for _, m := range matches {
 		allowAcl, err := c.newAcl(pgName, ovnnb.ACLDirectionFromLport, util.EgressAllowPriority, m, ovnnb.ACLActionAllowRelated)
 		if err != nil {

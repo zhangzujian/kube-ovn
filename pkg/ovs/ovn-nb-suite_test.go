@@ -445,8 +445,8 @@ func (suite *OvnClientTestSuite) Test_newAcl() {
 	suite.test_newAcl()
 }
 
-func (suite *OvnClientTestSuite) Test_newAllowAclMatch() {
-	suite.test_newAllowAclMatch()
+func (suite *OvnClientTestSuite) Test_newNetworkPolicyAclMatch() {
+	suite.testnewNetworkPolicyAclMatch()
 }
 
 func (suite *OvnClientTestSuite) Test_aclFilter() {
@@ -596,16 +596,6 @@ func (suite *OvnClientTestSuite) Test_DeleteSecurityGroup() {
 
 func (suite *OvnClientTestSuite) Test_GetEntityInfo() {
 	suite.testGetEntityInfo()
-}
-
-func Test_scratch(t *testing.T) {
-	t.SkipNow()
-	endpoint := "tcp:[172.20.149.35]:6641"
-	ovnClient, err := newOvnClient(t, endpoint, 10, "")
-	require.NoError(t, err)
-
-	err = ovnClient.Echo(context.Background())
-	require.NoError(t, err)
 }
 
 func newOVSDBServer(t *testing.T, dbModel model.ClientDBModel, schema ovsdb.DatabaseSchema) (*server.OvsdbServer, string) {
