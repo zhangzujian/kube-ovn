@@ -1035,14 +1035,31 @@ func Test_CIDRContainIP(t *testing.T) {
 			"fc00::0af4:10,fd00::0af4:11,192.168.230.10,192.168.230.11",
 			false,
 		},
+		{
+			"different family",
+			"fd00::c0a8:d200/120",
+			"fd00::c0a8:d210",
+			true,
+		},
+		{
+			"different family",
+			"fd00::c0a8:d200/120",
+			"10.96.0.1",
+			false,
+		},
+		{
+			"different family",
+			"10.96.0.0/16",
+			"fd00::c0a8:d201",
+			false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			// t.Parallel()
 			got := CIDRContainIP(tt.cidrs, tt.ips)
 			require.Equal(t, got, tt.want)
 		})
 	}
-
 }
+
