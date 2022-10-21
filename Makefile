@@ -549,7 +549,7 @@ scan:
 
 .PHONY: ut
 ut: # Please exec 'hack/mockgen.sh' before this target
-	ginkgo -mod=mod -progress -reportPassed --slowSpecThreshold=60 test/unittest
+	ginkgo -mod=mod -progress --always-emit-ginkgo-writer --slow-spec-threshold=60s test/unittest
 	go test ./pkg/...
 
 .PHONY: ipam-bench

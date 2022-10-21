@@ -1012,10 +1012,22 @@ func Test_CIDRContainIP(t *testing.T) {
 			true,
 		},
 		{
+			"ipv4 family which CIDR does't contain ip",
+			"192.168.230.0/24",
+			"192.168.231.10,192.168.230.11",
+			false,
+		},
+		{
 			"ipv6 family",
 			"fc00::0af4:00/112",
 			"fc00::0af4:10,fc00::0af4:11",
 			true,
+		},
+		{
+			"ipv6 family which CIDR does't contain ip",
+			"fd00::c0a8:d200/120",
+			"fc00::c0a8:d210",
+			false,
 		},
 		{
 			"dual",
@@ -1024,22 +1036,10 @@ func Test_CIDRContainIP(t *testing.T) {
 			true,
 		},
 		{
-			"ipv4 family",
-			"192.168.230.0/24",
-			"192.168.231.10,192.168.230.11",
-			false,
-		},
-		{
-			"dual",
+			"dual which CIDR does't contain ip",
 			"192.168.230.0/24,fc00::0af4:00/112",
 			"fc00::0af4:10,fd00::0af4:11,192.168.230.10,192.168.230.11",
 			false,
-		},
-		{
-			"different family",
-			"fd00::c0a8:d200/120",
-			"fd00::c0a8:d210",
-			true,
 		},
 		{
 			"different family",
@@ -1062,4 +1062,3 @@ func Test_CIDRContainIP(t *testing.T) {
 		})
 	}
 }
-

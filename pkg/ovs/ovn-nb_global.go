@@ -76,6 +76,10 @@ func (c *ovnClient) SetAzName(azName string) error {
 		return fmt.Errorf("get nb global: %v", err)
 	}
 
+	if azName == nbGlobal.Name {
+		return nil // no need to update
+	}
+
 	nbGlobal.Name = azName
 
 	if err := c.UpdateNbGlobal(nbGlobal, &nbGlobal.Name); err != nil {
