@@ -1043,6 +1043,10 @@ func (c *Controller) getPolicyRouteParas(cidr string, priority int32) ([]string,
 		return nil, nil, err
 	}
 
+	if policy == nil {
+		return nil, nil, nil
+	}
+
 	return policy.Nexthops, policy.ExternalIDs, nil
 }
 
