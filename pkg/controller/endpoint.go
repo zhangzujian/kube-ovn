@@ -13,8 +13,6 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
-	"github.com/ovn-org/libovsdb/ovsdb"
-
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
 
@@ -186,7 +184,7 @@ func (c *Controller) handleUpdateEndpoint(key string) error {
 	handleLoadBalancerVips := func(lbName, vip, backends string) error {
 		// for performance reason delete lb with no backends
 		if len(backends) != 0 {
-			if err = c.ovnClient.LoadBalancerUpdateVips(lbName, map[string]string{vip: backends}, ovsdb.MutateOperationInsert); err != nil {
+			if err = c.ovnClient.LoadBalancerAddVips(lbName, map[string]string{vip: backends}); err != nil {
 				return fmt.Errorf("add vip %s to lb %s: %v", vip, lbName, err)
 			}
 		} else {

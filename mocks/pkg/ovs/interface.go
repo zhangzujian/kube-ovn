@@ -818,6 +818,20 @@ func (mr *MockLoadBalancerMockRecorder) ListLoadBalancers(filter interface{}) *g
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListLoadBalancers", reflect.TypeOf((*MockLoadBalancer)(nil).ListLoadBalancers), filter)
 }
 
+// LoadBalancerAddVips mocks base method.
+func (m *MockLoadBalancer) LoadBalancerAddVips(lbName string, vips map[string]string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LoadBalancerAddVips", lbName, vips)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// LoadBalancerAddVips indicates an expected call of LoadBalancerAddVips.
+func (mr *MockLoadBalancerMockRecorder) LoadBalancerAddVips(lbName, vips interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LoadBalancerAddVips", reflect.TypeOf((*MockLoadBalancer)(nil).LoadBalancerAddVips), lbName, vips)
+}
+
 // LoadBalancerDeleteVips mocks base method.
 func (m *MockLoadBalancer) LoadBalancerDeleteVips(lbName string, vips map[string]struct{}) error {
 	m.ctrl.T.Helper()
@@ -845,20 +859,6 @@ func (m *MockLoadBalancer) LoadBalancerExists(lbName string) (bool, error) {
 func (mr *MockLoadBalancerMockRecorder) LoadBalancerExists(lbName interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LoadBalancerExists", reflect.TypeOf((*MockLoadBalancer)(nil).LoadBalancerExists), lbName)
-}
-
-// LoadBalancerUpdateVips mocks base method.
-func (m *MockLoadBalancer) LoadBalancerUpdateVips(lbName string, vips map[string]string, op ovsdb.Mutator) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "LoadBalancerUpdateVips", lbName, vips, op)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// LoadBalancerUpdateVips indicates an expected call of LoadBalancerUpdateVips.
-func (mr *MockLoadBalancerMockRecorder) LoadBalancerUpdateVips(lbName, vips, op interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LoadBalancerUpdateVips", reflect.TypeOf((*MockLoadBalancer)(nil).LoadBalancerUpdateVips), lbName, vips, op)
 }
 
 // MockPortGroup is a mock of PortGroup interface.
@@ -2594,6 +2594,20 @@ func (mr *MockOvnClientMockRecorder) ListPortGroups(externalIDs interface{}) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListPortGroups", reflect.TypeOf((*MockOvnClient)(nil).ListPortGroups), externalIDs)
 }
 
+// LoadBalancerAddVips mocks base method.
+func (m *MockOvnClient) LoadBalancerAddVips(lbName string, vips map[string]string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LoadBalancerAddVips", lbName, vips)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// LoadBalancerAddVips indicates an expected call of LoadBalancerAddVips.
+func (mr *MockOvnClientMockRecorder) LoadBalancerAddVips(lbName, vips interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LoadBalancerAddVips", reflect.TypeOf((*MockOvnClient)(nil).LoadBalancerAddVips), lbName, vips)
+}
+
 // LoadBalancerDeleteVips mocks base method.
 func (m *MockOvnClient) LoadBalancerDeleteVips(lbName string, vips map[string]struct{}) error {
 	m.ctrl.T.Helper()
@@ -2621,20 +2635,6 @@ func (m *MockOvnClient) LoadBalancerExists(lbName string) (bool, error) {
 func (mr *MockOvnClientMockRecorder) LoadBalancerExists(lbName interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LoadBalancerExists", reflect.TypeOf((*MockOvnClient)(nil).LoadBalancerExists), lbName)
-}
-
-// LoadBalancerUpdateVips mocks base method.
-func (m *MockOvnClient) LoadBalancerUpdateVips(lbName string, vips map[string]string, op ovsdb.Mutator) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "LoadBalancerUpdateVips", lbName, vips, op)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// LoadBalancerUpdateVips indicates an expected call of LoadBalancerUpdateVips.
-func (mr *MockOvnClientMockRecorder) LoadBalancerUpdateVips(lbName, vips, op interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LoadBalancerUpdateVips", reflect.TypeOf((*MockOvnClient)(nil).LoadBalancerUpdateVips), lbName, vips, op)
 }
 
 // LogicalRouterExists mocks base method.

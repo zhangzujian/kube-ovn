@@ -294,6 +294,10 @@ func (suite *OvnClientTestSuite) Test_CreateLoadBalancer() {
 	suite.testCreateLoadBalancer()
 }
 
+func (suite *OvnClientTestSuite) Test_UpdateLoadBalancer() {
+	suite.testUpdateLoadBalancer()
+}
+
 func (suite *OvnClientTestSuite) Test_DeleteLoadBalancers() {
 	suite.testDeleteLoadBalancers()
 }
@@ -314,8 +318,8 @@ func (suite *OvnClientTestSuite) Test_ListLoadBalancers() {
 	suite.testListLoadBalancers()
 }
 
-func (suite *OvnClientTestSuite) Test_LoadBalancerUpdateVips() {
-	suite.testLoadBalancerUpdateVips()
+func (suite *OvnClientTestSuite) Test_LoadBalancerAddVips() {
+	suite.testLoadBalancerAddVips()
 }
 
 func (suite *OvnClientTestSuite) Test_DeleteLoadBalancerOp() {

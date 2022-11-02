@@ -67,9 +67,9 @@ type LogicalSwitchPort interface {
 
 type LoadBalancer interface {
 	CreateLoadBalancer(lbName, protocol, selectFields string) error
-	LoadBalancerUpdateVips(lbName string, vips map[string]string, op ovsdb.Mutator) error
-	DeleteLoadBalancers(filter func(lb *ovnnb.LoadBalancer) bool) error
+	LoadBalancerAddVips(lbName string, vips map[string]string) error
 	LoadBalancerDeleteVips(lbName string, vips map[string]struct{}) error
+	DeleteLoadBalancers(filter func(lb *ovnnb.LoadBalancer) bool) error
 	GetLoadBalancer(lbName string, ignoreNotFound bool) (*ovnnb.LoadBalancer, error)
 	ListLoadBalancers(filter func(lb *ovnnb.LoadBalancer) bool) ([]ovnnb.LoadBalancer, error)
 	LoadBalancerExists(lbName string) (bool, error)

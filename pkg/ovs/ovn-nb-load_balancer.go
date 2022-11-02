@@ -45,29 +45,41 @@ func (c *ovnClient) CreateLoadBalancer(lbName, protocol, selectFields string) er
 	return nil
 }
 
-// LoadBalancerUpdateVips update load balancer vips
-func (c *ovnClient) LoadBalancerUpdateVips(lbName string, vips map[string]string, op ovsdb.Mutator) error {
+// UpdateLoadBalancer update load balancer
+func (c *ovnClient) UpdateLoadBalancer(lb *ovnnb.LoadBalancer, fields ...interface{}) error {
+	op, err := c.ovnNbClient.Where(lb).Update(lb, fields...)
+	if err != nil {
+		return fmt.Errorf("generate operations for updating load balancer %s: %v", lb.Name, err)
+	}
+
+	if err = c.Transact("lb-update", op); err != nil {
+		return fmt.Errorf("update load balancer %s: %v", lb.Name, err)
+	}
+
+	return nil
+}
+
+// LoadBalancerAddVips add vips
+func (c *ovnClient) LoadBalancerAddVips(lbName string, vips map[string]string) error {
 	if len(vips) == 0 {
 		return nil
 	}
 
-	mutation := func(lb *ovnnb.LoadBalancer) *model.Mutation {
-		mutation := &model.Mutation{
-			Field:   &lb.Vips,
-			Value:   vips,
-			Mutator: op,
-		}
-
-		return mutation
-	}
-
-	ops, err := c.LoadBalancerOp(lbName, mutation)
+	lb, err := c.GetLoadBalancer(lbName, false)
 	if err != nil {
-		return fmt.Errorf("generate operations for update load balancer %s vips %s: %v", lbName, vips, err)
+		return err
 	}
 
-	if err := c.Transact("update-lb-vips", ops); err != nil {
-		return fmt.Errorf("update vips %s for load balancer %s: %v", vips, lbName, err)
+	if lb.Vips == nil {
+		lb.Vips = make(map[string]string)
+	}
+
+	for vip, backends := range vips {
+		lb.Vips[vip] = backends
+	}
+
+	if err := c.UpdateLoadBalancer(lb, &lb.Vips); err != nil {
+		return fmt.Errorf("add vips %v to lb %s: %v", vips, lbName, err)
 	}
 
 	return nil
@@ -114,20 +126,16 @@ func (c *ovnClient) LoadBalancerDeleteVips(lbName string, vips map[string]struct
 		return nil
 	}
 
-	deleteVips := make(map[string]string)
-
 	lb, err := c.GetLoadBalancer(lbName, false)
 	if err != nil {
 		return err
 	}
 
 	for vip := range vips {
-		if ips, ok := lb.Vips[vip]; ok {
-			deleteVips[vip] = ips
-		}
+		delete(lb.Vips, vip)
 	}
 
-	if err := c.LoadBalancerUpdateVips(lbName, deleteVips, ovsdb.MutateOperationDelete); err != nil {
+	if err := c.UpdateLoadBalancer(lb, &lb.Vips); err != nil {
 		return fmt.Errorf("delete vips %v from lb %s: %v", vips, lbName, err)
 	}
 

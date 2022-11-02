@@ -34,7 +34,53 @@ func (suite *OvnClientTestSuite) testCreateLoadBalancer() {
 	require.NoError(t, err)
 }
 
-func (suite *OvnClientTestSuite) testLoadBalancerUpdateVips() {
+func (suite *OvnClientTestSuite) testUpdateLoadBalancer() {
+	t := suite.T()
+	t.Parallel()
+
+	ovnClient := suite.ovnClient
+	lbName := "test-update-lb"
+
+	err := ovnClient.CreateLoadBalancer(lbName, "tcp", "ip_dst")
+	require.NoError(t, err)
+
+	lb, err := ovnClient.GetLoadBalancer(lbName, false)
+	require.NoError(t, err)
+
+	t.Run("update vips", func(t *testing.T) {
+		lb.Vips = map[string]string{
+			"10.96.0.1:443":           "192.168.20.3:6443",
+			"10.107.43.237:8080":      "10.244.0.15:8080,10.244.0.16:8080,10.244.0.17:8080",
+			"[fd00:10:96::e82f]:8080": "[fc00::af4:f]:8080,[fc00::af4:10]:8080,[fc00::af4:11]:8080",
+		}
+
+		err := ovnClient.UpdateLoadBalancer(lb, &lb.Vips)
+		require.NoError(t, err)
+
+		lb, err := ovnClient.GetLoadBalancer(lbName, false)
+		require.NoError(t, err)
+
+		require.Equal(t, map[string]string{
+			"10.96.0.1:443":           "192.168.20.3:6443",
+			"10.107.43.237:8080":      "10.244.0.15:8080,10.244.0.16:8080,10.244.0.17:8080",
+			"[fd00:10:96::e82f]:8080": "[fc00::af4:f]:8080,[fc00::af4:10]:8080,[fc00::af4:11]:8080",
+		}, lb.Vips)
+	})
+
+	t.Run("clear vips", func(t *testing.T) {
+		lb.Vips = nil
+
+		err := ovnClient.UpdateLoadBalancer(lb, &lb.Vips)
+		require.NoError(t, err)
+
+		lb, err := ovnClient.GetLoadBalancer(lbName, false)
+		require.NoError(t, err)
+
+		require.Nil(t, lb.Vips)
+	})
+}
+
+func (suite *OvnClientTestSuite) testLoadBalancerAddVips() {
 	t := suite.T()
 	t.Parallel()
 
@@ -54,7 +100,7 @@ func (suite *OvnClientTestSuite) testLoadBalancerUpdateVips() {
 	require.NoError(t, err)
 
 	t.Run("add new vips to load balancer", func(t *testing.T) {
-		err := ovnClient.LoadBalancerUpdateVips(lbName, vips, ovsdb.MutateOperationInsert)
+		err := ovnClient.LoadBalancerAddVips(lbName, vips)
 		require.NoError(t, err)
 
 		lb, err := ovnClient.GetLoadBalancer(lbName, false)
@@ -63,47 +109,18 @@ func (suite *OvnClientTestSuite) testLoadBalancerUpdateVips() {
 	})
 
 	t.Run("add new vips to load balancer repeatedly", func(t *testing.T) {
+		vips["10.96.0.1:443"] = "192.168.20.3:6443,192.168.20.4:6443"
+		vips["10.96.0.112:143"] = "192.168.120.3:6443,192.168.120.4:6443"
+
+		err := ovnClient.LoadBalancerAddVips(lbName, map[string]string{
+			"10.96.0.1:443":   "192.168.20.3:6443,192.168.20.4:6443",
+			"10.96.0.112:143": "192.168.120.3:6443,192.168.120.4:6443",
+		})
+		require.NoError(t, err)
+
 		lb, err := ovnClient.GetLoadBalancer(lbName, false)
 		require.NoError(t, err)
 		require.Equal(t, vips, lb.Vips)
-
-		err = ovnClient.LoadBalancerUpdateVips(lbName, vips, ovsdb.MutateOperationInsert)
-		require.NoError(t, err)
-
-		lb, err = ovnClient.GetLoadBalancer(lbName, false)
-		require.NoError(t, err)
-		require.Equal(t, vips, lb.Vips)
-	})
-
-	t.Run("del vips from load balancer", func(t *testing.T) {
-		delVips := map[string]string{
-			"10.96.0.1:443":           "192.168.20.3:6443",
-			"[fd00:10:96::e82f]:8080": "[fc00::af4:f]:8080,[fc00::af4:10]:8080,[fc00::af4:11]:8080",
-		}
-
-		err = ovnClient.LoadBalancerUpdateVips(lbName, delVips, ovsdb.MutateOperationDelete)
-		require.NoError(t, err)
-
-		lb, err := ovnClient.GetLoadBalancer(lbName, false)
-		require.NoError(t, err)
-		require.Equal(t, map[string]string{
-			"10.107.43.237:8080": "10.244.0.15:8080,10.244.0.16:8080,10.244.0.17:8080",
-		}, lb.Vips)
-	})
-
-	t.Run("should no error when del non-existent vips from load balancer", func(t *testing.T) {
-		delVips := map[string]string{
-			"10.96.10.100:443": "192.168.100.31:6443",
-		}
-
-		err = ovnClient.LoadBalancerUpdateVips(lbName, delVips, ovsdb.MutateOperationDelete)
-		require.NoError(t, err)
-
-		lb, err := ovnClient.GetLoadBalancer(lbName, false)
-		require.NoError(t, err)
-		require.Equal(t, map[string]string{
-			"10.107.43.237:8080": "10.244.0.15:8080,10.244.0.16:8080,10.244.0.17:8080",
-		}, lb.Vips)
 	})
 }
 
@@ -167,7 +184,7 @@ func (suite *OvnClientTestSuite) testLoadBalancerDeleteVips() {
 	err := ovnClient.CreateLoadBalancer(lbName, "tcp", "")
 	require.NoError(t, err)
 
-	err = ovnClient.LoadBalancerUpdateVips(lbName, vips, ovsdb.MutateOperationInsert)
+	err = ovnClient.LoadBalancerAddVips(lbName, vips)
 	require.NoError(t, err)
 
 	err = ovnClient.LoadBalancerDeleteVips(lbName, map[string]struct{}{
