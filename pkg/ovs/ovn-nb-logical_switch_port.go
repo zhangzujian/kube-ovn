@@ -410,7 +410,7 @@ func (c *ovnClient) EnablePortLayer2forward(lspName string) error {
 
 func (c *ovnClient) SetLogicalSwitchPortVlanTag(lspName string, vlanID int) error {
 	// valid vlan id is 0~4095
-	if vlanID < 1 || vlanID > 4095 {
+	if vlanID < 0 || vlanID > 4095 {
 		return fmt.Errorf("invalid vlan id %d", vlanID)
 	}
 
@@ -419,12 +419,15 @@ func (c *ovnClient) SetLogicalSwitchPortVlanTag(lspName string, vlanID int) erro
 		return fmt.Errorf("get logical switch port %s: %v", lspName, err)
 	}
 
-	// no need update vlan id
+	// no need update vlan id when vlan id is the same
 	if lsp.Tag != nil && *lsp.Tag == vlanID {
 		return nil
 	}
 
 	lsp.Tag = &vlanID
+	if vlanID == 0 {
+		lsp.Tag = nil
+	}
 
 	if err := c.UpdateLogicalSwitchPort(lsp, &lsp.Tag); err != nil {
 		return fmt.Errorf("set logical switch port %s tag %d: %v", lspName, vlanID, err)

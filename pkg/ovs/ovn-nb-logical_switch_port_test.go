@@ -870,6 +870,15 @@ func (suite *OvnClientTestSuite) testSetLogicalSwitchPortVlanTag() {
 	err := createLogicalSwitchPort(ovnClient, lsp)
 	require.NoError(t, err)
 
+	t.Run("set logical switch port tag when vlan id is 0", func(t *testing.T) {
+		err = ovnClient.SetLogicalSwitchPortVlanTag(lspName, 0)
+		require.NoError(t, err)
+
+		lsp, err = ovnClient.GetLogicalSwitchPort(lspName, false)
+		require.NoError(t, err)
+		require.Nil(t, lsp.Tag)
+	})
+
 	t.Run("set logical switch port vlan id", func(t *testing.T) {
 		err = ovnClient.SetLogicalSwitchPortVlanTag(lspName, 10)
 		require.NoError(t, err)
@@ -883,8 +892,17 @@ func (suite *OvnClientTestSuite) testSetLogicalSwitchPortVlanTag() {
 		require.NoError(t, err)
 	})
 
-	t.Run("invalid vlan id", func(t *testing.T) {
+	t.Run("set logical switch port tag when vlan id is 0 again", func(t *testing.T) {
 		err = ovnClient.SetLogicalSwitchPortVlanTag(lspName, 0)
+		require.NoError(t, err)
+
+		lsp, err = ovnClient.GetLogicalSwitchPort(lspName, false)
+		require.NoError(t, err)
+		require.Nil(t, lsp.Tag)
+	})
+
+	t.Run("invalid vlan id", func(t *testing.T) {
+		err = ovnClient.SetLogicalSwitchPortVlanTag(lspName, -1)
 		require.ErrorContains(t, err, "invalid vlan id")
 
 		err = ovnClient.SetLogicalSwitchPortVlanTag(lspName, 4096)
