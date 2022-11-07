@@ -995,7 +995,7 @@ jobs:
     needs: build-kube-ovn
     name: dual-stack-underlay-logical-gateway-e2e
     runs-on: ubuntu-20.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v3
 
