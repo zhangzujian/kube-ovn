@@ -39,7 +39,7 @@ func (suite *OvnClientTestSuite) SetupSuite() {
 	endpoint := fmt.Sprintf("unix:%s", sock)
 	require.FileExists(suite.T(), sock)
 
-	ovnClient, err := newOvnClient(suite.T(), endpoint, 10*time.Second)
+	ovnClient, err := newOvnClient(suite.T(), endpoint, 10, "100.64.0.0/16,fd00:100:64::/64")
 	require.NoError(suite.T(), err)
 
 	suite.ovnClient = ovnClient
@@ -634,19 +634,20 @@ func newOVSDBServer(t *testing.T, dbModel model.ClientDBModel, schema ovsdb.Data
 	return server, tmpfile
 }
 
-func newOvnClient(t *testing.T, ovnNbAddr string, ovnNbTimeout time.Duration) (*ovnClient, error) {
+func newOvnClient(t *testing.T, ovnNbAddr string, ovnNbTimeout int, nodeSwitchCIDR string) (*ovnClient, error) {
 	nbClient, err := newNbClient(ovnNbAddr, ovnNbTimeout)
 	require.NoError(t, err)
 
 	return &ovnClient{
 		ovnNbClient: ovnNbClient{
 			Client:  nbClient,
-			Timeout: ovnNbTimeout,
+			Timeout: time.Duration(ovnNbTimeout) * time.Second,
 		},
+		NodeSwitchCIDR: nodeSwitchCIDR,
 	}, nil
 }
 
-func newNbClient(addr string, timeout time.Duration) (client.Client, error) {
+func newNbClient(addr string, timeout int) (client.Client, error) {
 	dbModel, err := ovnnb.FullDatabaseModel()
 	if err != nil {
 		return nil, err
@@ -658,7 +659,7 @@ func newNbClient(addr string, timeout time.Duration) (client.Client, error) {
 	stdr.SetVerbosity(1)
 
 	options := []client.Option{
-		client.WithReconnect(timeout, &backoff.ZeroBackOff{}),
+		client.WithReconnect(time.Duration(timeout)*time.Second, &backoff.ZeroBackOff{}),
 		client.WithLeaderOnly(false),
 		client.WithLogger(&logger),
 	}

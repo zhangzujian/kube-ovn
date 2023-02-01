@@ -499,3 +499,30 @@ func (c *Controller) setAzName(azName string) error {
 
 	return nil
 }
+
+func (c *Controller) listRemoteLogicalSwitchPortAddress() (map[string]struct{}, error) {
+	lsps, err := c.ovnClient.ListLogicalSwitchPorts(true, nil, func(lsp *ovnnb.LogicalSwitchPort) bool {
+		return lsp.Type == "remote"
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list remote logical switch ports: %v", err)
+	}
+
+	existAddress := make(map[string]struct{})
+	for _, lsp := range lsps {
+		if len(lsp.Addresses) == 0 {
+			continue
+		}
+
+		addresses := lsp.Addresses[0]
+
+		fields := strings.Fields(addresses)
+		if len(fields) != 2 {
+			continue
+		}
+
+		existAddress[fields[1]] = struct{}{}
+	}
+
+	return existAddress, nil
+}

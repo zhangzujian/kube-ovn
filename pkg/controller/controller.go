@@ -405,7 +405,7 @@ func NewController(config *Configuration) *Controller {
 	}
 
 	var err error
-	if controller.ovnClient, err = ovs.NewOvnClient(config.OvnNbAddr, config.OvnTimeout); err != nil {
+	if controller.ovnClient, err = ovs.NewOvnClient(config.OvnNbAddr, config.OvnTimeout, config.NodeSwitchCIDR); err != nil {
 		util.LogFatalAndExit(err, "failed to create ovn client")
 	}
 

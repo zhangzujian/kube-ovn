@@ -18,6 +18,7 @@ import (
 
 	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
 	"github.com/kubeovn/kube-ovn/pkg/ovs"
+	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
 
@@ -241,9 +242,11 @@ func (c *Controller) handleUpdateNp(key string) error {
 		}
 	}
 
-	ingressAsNames, err := c.ovnLegacyClient.ListNpAddressSet(np.Namespace, npName, "ingress")
-	if err != nil {
-		klog.Errorf("failed to list ingress address_set, %v", err)
+	// we should first delete acl and address_set before update
+	if err := c.ovnClient.DeleteAddressSets(map[string]string{
+		networkPolicyKey: fmt.Sprintf("%s/%s/%s", np.Namespace, np.Name, "ingress"),
+	}); err != nil {
+		klog.Errorf("delete np %s ingress address set: %v", key, err)
 		return err
 	}
 
@@ -347,9 +350,11 @@ func (c *Controller) handleUpdateNp(key string) error {
 			}
 		}
 
-		var asNames []string
-		if asNames, err = c.ovnLegacyClient.ListNpAddressSet(np.Namespace, npName, "ingress"); err != nil {
-			klog.Errorf("failed to list address_set, %v", err)
+		ass, err := c.ovnClient.ListAddressSets(map[string]string{
+			networkPolicyKey: fmt.Sprintf("%s/%s/%s", np.Namespace, np.Name, "ingress"),
+		})
+		if err != nil {
+			klog.Errorf("list np %s address sets: %v", key, err)
 			return err
 		}
 
@@ -495,9 +500,11 @@ func (c *Controller) handleUpdateNp(key string) error {
 			}
 		}
 
-		var asNames []string
-		if asNames, err = c.ovnLegacyClient.ListNpAddressSet(np.Namespace, npName, "egress"); err != nil {
-			klog.Errorf("failed to list address_set, %v", err)
+		ass, err := c.ovnClient.ListAddressSets(map[string]string{
+			networkPolicyKey: fmt.Sprintf("%s/%s/%s", np.Namespace, np.Name, "egress"),
+		})
+		if err != nil {
+			klog.Errorf("list np %s address sets: %v", key, err)
 			return err
 		}
 
@@ -553,32 +560,30 @@ func (c *Controller) handleDeleteNp(key string) error {
 		utilruntime.HandleError(fmt.Errorf("invalid resource key: %s", key))
 		return nil
 	}
-	npName := name
-	nameArray := []rune(name)
-	if !unicode.IsLetter(nameArray[0]) {
-		npName = "np" + name
-	}
 
 	pgName := strings.Replace(fmt.Sprintf("%s.%s", name, namespace), "-", ".", -1)
 	if err = c.ovnClient.DeletePortGroup(pgName); err != nil {
 		klog.Errorf("delete np %s port group: %v", key, err)
 	}
 
-	svcAsNames, err := c.ovnLegacyClient.ListNpAddressSet(namespace, npName, "service")
-	if err != nil {
-		klog.Errorf("failed to list svc address_set, %v", err)
+	if err := c.ovnClient.DeleteAddressSets(map[string]string{
+		networkPolicyKey: fmt.Sprintf("%s/%s/%s", namespace, name, "service"),
+	}); err != nil {
+		klog.Errorf("delete np %s service address set: %v", key, err)
 		return err
 	}
 
-	ingressAsNames, err := c.ovnLegacyClient.ListNpAddressSet(namespace, npName, "ingress")
-	if err != nil {
-		klog.Errorf("failed to list address_set, %v", err)
+	if err := c.ovnClient.DeleteAddressSets(map[string]string{
+		networkPolicyKey: fmt.Sprintf("%s/%s/%s", namespace, name, "ingress"),
+	}); err != nil {
+		klog.Errorf("delete np %s ingress address set: %v", key, err)
 		return err
 	}
 
-	egressAsNames, err := c.ovnLegacyClient.ListNpAddressSet(namespace, npName, "egress")
-	if err != nil {
-		klog.Errorf("failed to list address_set, %v", err)
+	if err := c.ovnClient.DeleteAddressSets(map[string]string{
+		networkPolicyKey: fmt.Sprintf("%s/%s/%s", namespace, name, "egress"),
+	}); err != nil {
+		klog.Errorf("delete np %s egress address set: %v", key, err)
 		return err
 	}
 

@@ -1838,15 +1838,6 @@ func (c *Controller) addCommonRoutesForSubnet(subnet *kubeovnv1.Subnet) error {
 			klog.Errorf("add logical router policy for CIDR %s of subnet %s: %v", cidr, subnet.Name, err)
 			return err
 		}
-		if !exist {
-			externalIDs := map[string]string{"vendor": util.CniTypeName, "subnet": subnet.Name}
-			klog.Infof("add policy route for router: %s, match %s, action %s, nexthop %s, extrenalID %v", c.config.ClusterRouter, match, "allow", "", externalIDs)
-			if err = c.ovnLegacyClient.AddPolicyRoute(c.config.ClusterRouter, util.SubnetRouterPolicyPriority, match, "allow", "", externalIDs); err != nil {
-				klog.Errorf("failed to add logical router policy for CIDR %s of subnet %s: %v", cidr, subnet.Name, err)
-				return err
-			}
-		}
-
 	}
 	return nil
 }
@@ -2014,7 +2005,7 @@ func (c *Controller) deletePolicyRouteByGatewayType(subnet *kubeovnv1.Subnet, ga
 		match := fmt.Sprintf("ip%d.dst == %s", af, cidr)
 
 		klog.Infof("delete policy route for router: %s, priority: %d, match %s", c.config.ClusterRouter, util.SubnetRouterPolicyPriority, match)
-		
+
 		if err := c.ovnClient.DeleteLogicalRouterPolicy(c.config.ClusterRouter, util.SubnetRouterPolicyPriority, match); err != nil {
 			klog.Errorf("delete logical router policy for CIDR %s of subnet %s: %v", cidr, subnet.Name, err)
 			return err

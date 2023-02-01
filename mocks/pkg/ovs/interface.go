@@ -995,25 +995,6 @@ func (mr *MockPortGroupMockRecorder) PortGroupRemovePorts(pgName interface{}, ls
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PortGroupRemovePorts", reflect.TypeOf((*MockPortGroup)(nil).PortGroupRemovePorts), varargs...)
 }
 
-// PortGroupUpdatePorts mocks base method.
-func (m *MockPortGroup) PortGroupUpdatePorts(pgName string, op ovsdb.Mutator, lspNames ...string) error {
-	m.ctrl.T.Helper()
-	varargs := []interface{}{pgName}
-	for _, a := range lspNames {
-		varargs = append(varargs, a)
-	}
-	ret := m.ctrl.Call(m, "PortGroupRemovePorts", varargs...)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// PortGroupRemovePorts indicates an expected call of PortGroupRemovePorts.
-func (mr *MockPortGroupMockRecorder) PortGroupRemovePorts(pgName interface{}, lspNames ...interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	varargs := append([]interface{}{pgName}, lspNames...)
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PortGroupRemovePorts", reflect.TypeOf((*MockPortGroup)(nil).PortGroupRemovePorts), varargs...)
-}
-
 // PortGroupResetPorts mocks base method.
 func (m *MockPortGroup) PortGroupResetPorts(pgName string) error {
 	m.ctrl.T.Helper()
@@ -2782,25 +2763,6 @@ func (mr *MockOvnClientMockRecorder) PortGroupExists(pgName interface{}) *gomock
 
 // PortGroupRemovePorts mocks base method.
 func (m *MockOvnClient) PortGroupRemovePorts(pgName string, lspNames ...string) error {
-	m.ctrl.T.Helper()
-	varargs := []interface{}{pgName}
-	for _, a := range lspNames {
-		varargs = append(varargs, a)
-	}
-	ret := m.ctrl.Call(m, "PortGroupRemovePorts", varargs...)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// PortGroupRemovePorts indicates an expected call of PortGroupRemovePorts.
-func (mr *MockOvnClientMockRecorder) PortGroupRemovePorts(pgName interface{}, lspNames ...interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	varargs := append([]interface{}{pgName}, lspNames...)
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PortGroupRemovePorts", reflect.TypeOf((*MockOvnClient)(nil).PortGroupRemovePorts), varargs...)
-}
-
-// PortGroupUpdatePorts mocks base method.
-func (m *MockOvnClient) PortGroupUpdatePorts(pgName string, op ovsdb.Mutator, lspNames ...string) error {
 	m.ctrl.T.Helper()
 	varargs := []interface{}{pgName}
 	for _, a := range lspNames {

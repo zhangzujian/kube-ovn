@@ -72,15 +72,7 @@ func (c *Controller) gcLogicalRouterPort() error {
 		klog.Errorf("delete non-existent peer logical router port: %v", err)
 		return err
 	}
-	for _, lrp := range lrps {
-		if !util.ContainsString(exceptPeerPorts, lrp) {
-			klog.Infof("gc logical router port %s", lrp)
-			if err = c.ovnClient.DeleteLogicalRouterPort(lrp); err != nil {
-				klog.Errorf("failed to delete logical router port %s, %v", lrp, err)
-				return err
-			}
-		}
-	}
+
 	return nil
 }
 
@@ -398,12 +390,14 @@ func (c *Controller) markAndCleanLSP() error {
 
 func (c *Controller) gcLoadBalancer() error {
 	klog.Infof("start to gc loadbalancers")
+
+	vpcs, err := c.vpcsLister.List(labels.Everything())
+	if err != nil {
+		return err
+	}
+
 	if !c.config.EnableLb {
 		// remove lb from logical switch
-		vpcs, err := c.vpcsLister.List(labels.Everything())
-		if err != nil {
-			return err
-		}
 		for _, cachedVpc := range vpcs {
 			vpc := cachedVpc.DeepCopy()
 			for _, subnetName := range vpc.Status.Subnets {

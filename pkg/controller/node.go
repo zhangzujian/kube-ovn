@@ -1005,27 +1005,12 @@ func (c *Controller) addNodeGwStaticRoute() error {
 			return nil
 		}
 	}
-	dstCidr := "0.0.0.0/0,::/0"
-	for _, cidrBlock := range strings.Split(dstCidr, ",") {
-		for _, nextHop := range strings.Split(c.config.NodeSwitchGateway, ",") {
-			if util.CheckProtocol(cidrBlock) != util.CheckProtocol(nextHop) {
-				continue
-			}
-			exist, err := c.checkRouteExist(nextHop, cidrBlock, ovs.PolicyDstIP)
-			if err != nil {
-				klog.Errorf("get static route for node gw error %v", err)
-				return err
-			}
 
-			if !exist {
-				klog.Infof("add static route for node gw")
-				if err := c.ovnLegacyClient.AddStaticRoute("", cidrBlock, nextHop, c.config.ClusterRouter, util.NormalRouteType); err != nil {
-					klog.Errorf("failed to add static route for node gw: %v", err)
-					return err
-				}
-			}
-		}
+	if err := c.ovnClient.AddLogicalRouterStaticRoute(c.config.ClusterRouter, "", "0.0.0.0/0,::/0", c.config.NodeSwitchGateway, util.NormalRouteType); err != nil {
+		klog.Errorf("add static route for node gw: %v", err)
+		return err
 	}
+
 	return nil
 }
 
@@ -1037,7 +1022,7 @@ func (c *Controller) getPolicyRouteParas(cidr string, priority int32) ([]string,
 	}
 
 	match := fmt.Sprintf("%s.src == %s", ipSuffix, cidr)
-	policy, err := c.ovnClient.GetLogicalRouterPolicy(c.config.ClusterRouter, priority, match, false)
+	policy, err := c.ovnClient.GetLogicalRouterPolicy(c.config.ClusterRouter, int(priority), match, false)
 	if err != nil {
 		klog.Errorf("get logical router policy: %v", err)
 		return nil, nil, err
