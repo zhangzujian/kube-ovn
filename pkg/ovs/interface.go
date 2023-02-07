@@ -127,6 +127,7 @@ type NAT interface {
 	UpdateSnat(lrName, externalIP, logicalIP string) error
 	UpdateDnatAndSnat(lrName, externalIP, logicalIP, lspName, externalMac, gatewayType string) error
 	DeleteNats(lrName, natType, logicalIP string) error
+	DeleteNat(lrName, natType, externalIP, logicalIP string) error
 	NatExists(lrName, natType, externalIP, logicalIP string) (bool, error)
 }
 

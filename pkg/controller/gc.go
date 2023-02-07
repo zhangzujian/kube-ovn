@@ -573,11 +573,13 @@ func (c *Controller) gcPortGroup() error {
 
 func (c *Controller) gcStaticRoute() error {
 	klog.Infof("start to gc static routes")
-	routes, err := c.ovnLegacyClient.GetStaticRouteList(util.DefaultVpc)
+
+	routes, err := c.ovnClient.ListLogicalRouterStaticRoutes(map[string]string{logicalRouterKey: util.DefaultVpc})
 	if err != nil {
-		klog.Errorf("failed to list static route %v", err)
+		klog.Errorf("list static route for logical router %s: %v", util.DefaultVpc, err)
 		return err
 	}
+
 	defaultVpc, err := c.vpcsLister.Get(util.DefaultVpc)
 	if err != nil {
 		klog.Errorf("failed to get default vpc, %v", err)
@@ -587,7 +589,7 @@ func (c *Controller) gcStaticRoute() error {
 	for _, route := range routes {
 		keepStaticRoute = false
 		for _, item := range defaultVpc.Spec.StaticRoutes {
-			if route.CIDR == item.CIDR && route.NextHop == item.NextHopIP {
+			if route.IPPrefix == item.CIDR && route.Nexthop == item.NextHopIP {
 				keepStaticRoute = true
 				break
 			}
@@ -595,15 +597,11 @@ func (c *Controller) gcStaticRoute() error {
 		if keepStaticRoute {
 			continue
 		}
-		if route.CIDR != "0.0.0.0/0" && route.CIDR != "::/0" && c.ipam.ContainAddress(route.CIDR) {
-			exist, err := c.ovnLegacyClient.NatRuleExists(route.CIDR)
-			if exist || err != nil {
-				klog.Errorf("failed to get NatRule by LogicalIP %s, %v", route.CIDR, err)
-				continue
-			}
-			klog.Infof("gc static route %s %s %s", route.Policy, route.CIDR, route.NextHop)
-			if err := c.ovnLegacyClient.DeleteStaticRoute(route.CIDR, c.config.ClusterRouter); err != nil {
-				klog.Errorf("failed to delete stale route %s, %v", route.NextHop, err)
+		if route.IPPrefix != "0.0.0.0/0" && route.IPPrefix != "::/0" && c.ipam.ContainAddress(route.IPPrefix) {
+			klog.Infof("gc static route %s %s %s", route.Policy, route.IPPrefix, route.Nexthop)
+
+			if err := c.ovnClient.DeleteLogicalRouterStaticRoute(c.config.ClusterRouter, *route.Policy, route.IPPrefix, "", util.NormalRouteType); err != nil {
+				klog.Errorf("delete stale route for logical router: %v", util.DefaultVpc, err)
 			}
 		}
 	}

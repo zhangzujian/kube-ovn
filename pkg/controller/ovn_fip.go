@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
+	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
 	"github.com/kubeovn/kube-ovn/pkg/util"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -226,12 +227,13 @@ func (c *Controller) handleAddOvnFip(key string) error {
 		klog.Errorf("failed to handle finalizer for ovn fip, %v", err)
 		return err
 	}
+
 	// ovn add fip
-	if err = c.ovnLegacyClient.AddFipRule(vpcName, cachedEip.Spec.V4Ip,
-		vpcPodIp.Spec.V4IPAddress, vpcPodIp.Spec.MacAddress, vpcPodIp.Name); err != nil {
+	if err = c.ovnClient.UpdateDnatAndSnat(vpcName, cachedEip.Spec.V4Ip, vpcPodIp.Spec.V4IPAddress, vpcPodIp.Name, vpcPodIp.Spec.MacAddress, c.ExternalGatewayType); err != nil {
 		klog.Errorf("failed to create fip, %v", err)
 		return err
 	}
+
 	// patch fip eip relationship
 	if err = c.natLabelOvnEip(eipName, cachedFip.Name, vpcName); err != nil {
 		klog.Errorf("failed to label fip '%s' in eip %s, %v", cachedFip.Name, eipName, err)
@@ -301,16 +303,18 @@ func (c *Controller) handleUpdateOvnFip(key string) error {
 	// fip change eip
 	if c.ovnFipChangeEip(fip, cachedEip) {
 		klog.V(3).Infof("fip change ip, old ip '%s', new ip %s", fip.Status.V4Ip, cachedEip.Spec.V4Ip)
-		if err = c.ovnLegacyClient.DeleteFipRule(vpcName, fip.Status.V4Ip, vpcPodIp.Spec.V4IPAddress); err != nil {
-			klog.Errorf("failed to create fip, %v", err)
+
+		if err = c.ovnClient.DeleteNat(vpcName, ovnnb.NATTypeDNATAndSNAT, fip.Status.V4Ip, vpcPodIp.Spec.V4IPAddress); err != nil {
+			klog.Errorf("failed to delete fip: %v", err)
 			return err
 		}
+
 		// ovn add fip
-		if err = c.ovnLegacyClient.AddFipRule(vpcName, cachedEip.Spec.V4Ip,
-			vpcPodIp.Spec.V4IPAddress, vpcPodIp.Spec.MacAddress, vpcPodIp.Name); err != nil {
+		if err = c.ovnClient.UpdateDnatAndSnat(vpcName, cachedEip.Spec.V4Ip, vpcPodIp.Spec.V4IPAddress, vpcPodIp.Name, vpcPodIp.Spec.MacAddress, c.ExternalGatewayType); err != nil {
 			klog.Errorf("failed to create fip, %v", err)
 			return err
 		}
+
 		if err = c.natLabelOvnEip(eipName, fip.Name, vpcName); err != nil {
 			klog.Errorf("failed to label fip '%s' in eip %s, %v", fip.Name, eipName, err)
 			return err
@@ -351,11 +355,13 @@ func (c *Controller) handleDelOvnFip(key string) error {
 		klog.Errorf("failed to get eip, %v", err)
 		return err
 	}
+
 	// ovn delete fip
-	if err = c.ovnLegacyClient.DeleteFipRule(cachedFip.Status.Vpc, cachedFip.Status.V4Eip, cachedFip.Status.V4Ip); err != nil {
-		klog.Errorf("failed to create fip, %v", err)
+	if err = c.ovnClient.DeleteNat(cachedFip.Status.Vpc, ovnnb.NATTypeDNATAndSNAT, cachedFip.Status.V4Eip, cachedFip.Status.V4Ip); err != nil {
+		klog.Errorf("failed to delete fip: %v", err)
 		return err
 	}
+
 	if err = c.handleDelOvnFipFinalizer(cachedFip); err != nil {
 		klog.Errorf("failed to handle remove finalizer from ovn fip, %v", err)
 		return err

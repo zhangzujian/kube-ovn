@@ -499,6 +499,10 @@ func (suite *OvnClientTestSuite) Test_DeleteNats() {
 	suite.testDeleteNats()
 }
 
+func (suite *OvnClientTestSuite) Test_DeleteNat() {
+	suite.testDeleteNat()
+}
+
 func (suite *OvnClientTestSuite) Test_GetNat() {
 	suite.testGetNat()
 }

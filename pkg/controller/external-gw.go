@@ -156,10 +156,12 @@ func (c *Controller) establishExternalGateway(config map[string]string) error {
 		klog.Infof("lrp %s exist", lrpName)
 		return nil
 	}
-	if err := c.ovnLegacyClient.CreateGatewaySwitch(c.config.ExternalGatewaySwitch, c.config.ExternalGatewayNet, c.config.ExternalGatewayVlanID, lrpIp, lrpMac, chassises); err != nil {
-		klog.Errorf("failed to create external gateway switch, %v", err)
+
+	if err := c.ovnClient.CreateGatewayLogicalSwitch(c.config.ExternalGatewaySwitch, c.config.ClusterRouter, c.config.ExternalGatewayNet, lrpIp, lrpMac, c.config.ExternalGatewayVlanID, chassises...); err != nil {
+		klog.Errorf("create external gateway switch %s: %v", c.config.ExternalGatewaySwitch, err)
 		return err
 	}
+
 	return nil
 }
 

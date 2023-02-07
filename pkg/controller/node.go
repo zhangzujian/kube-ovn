@@ -996,10 +996,12 @@ func (c *Controller) validateChassis(node *v1.Node) error {
 func (c *Controller) addNodeGwStaticRoute() error {
 	// If user not manage static route for default vpc, just add route about ovn-default to join
 	if vpc, err := c.vpcsLister.Get(util.DefaultVpc); err != nil || vpc.Spec.StaticRoutes != nil {
-		existRoute, err := c.ovnLegacyClient.GetStaticRouteList(c.config.ClusterRouter)
+		existRoute, err := c.ovnClient.ListLogicalRouterStaticRoutes(map[string]string{logicalRouterKey: c.config.ClusterRouter})
 		if err != nil {
-			klog.Errorf("failed to get vpc %s static route list, %v", c.config.ClusterRouter, err)
+			klog.Errorf("list static route for logical router %s: %v", c.config.ClusterRouter, err)
+			return err
 		}
+
 		if len(existRoute) != 0 {
 			klog.Infof("skip add static route for node gw")
 			return nil

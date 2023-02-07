@@ -1485,6 +1485,20 @@ func (m *MockNAT) EXPECT() *MockNATMockRecorder {
 	return m.recorder
 }
 
+// DeleteNat mocks base method.
+func (m *MockNAT) DeleteNat(lrName, natType, externalIP, logicalIP string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteNat", lrName, natType, externalIP, logicalIP)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteNat indicates an expected call of DeleteNat.
+func (mr *MockNATMockRecorder) DeleteNat(lrName, natType, externalIP, logicalIP interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteNat", reflect.TypeOf((*MockNAT)(nil).DeleteNat), lrName, natType, externalIP, logicalIP)
+}
+
 // DeleteNats mocks base method.
 func (m *MockNAT) DeleteNats(lrName, natType, logicalIP string) error {
 	m.ctrl.T.Helper()
@@ -2218,6 +2232,20 @@ func (m *MockOvnClient) DeleteLogicalSwitchPort(lspName string) error {
 func (mr *MockOvnClientMockRecorder) DeleteLogicalSwitchPort(lspName interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteLogicalSwitchPort", reflect.TypeOf((*MockOvnClient)(nil).DeleteLogicalSwitchPort), lspName)
+}
+
+// DeleteNat mocks base method.
+func (m *MockOvnClient) DeleteNat(lrName, natType, externalIP, logicalIP string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteNat", lrName, natType, externalIP, logicalIP)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteNat indicates an expected call of DeleteNat.
+func (mr *MockOvnClientMockRecorder) DeleteNat(lrName, natType, externalIP, logicalIP interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteNat", reflect.TypeOf((*MockOvnClient)(nil).DeleteNat), lrName, natType, externalIP, logicalIP)
 }
 
 // DeleteNats mocks base method.

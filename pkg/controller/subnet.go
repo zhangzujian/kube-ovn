@@ -1109,13 +1109,13 @@ func (c *Controller) reconcileOvnRoute(subnet *kubeovnv1.Subnet) error {
 		if !subnet.Spec.LogicalGateway && subnet.Name != c.config.ExternalGatewaySwitch && !subnet.Spec.U2OInterconnection {
 			lspName := fmt.Sprintf("%s-%s", subnet.Name, c.config.ClusterRouter)
 			klog.Infof("delete logical switch port %s", lspName)
-			if err := c.ovnLegacyClient.DeleteLogicalSwitchPort(lspName); err != nil {
+			if err := c.ovnClient.DeleteLogicalSwitchPort(lspName); err != nil {
 				klog.Errorf("failed to delete lsp %s-%s, %v", subnet.Name, c.config.ClusterRouter, err)
 				return err
 			}
 			lrpName := fmt.Sprintf("%s-%s", c.config.ClusterRouter, subnet.Name)
 			klog.Infof("delete logical router port %s", lrpName)
-			if err := c.ovnLegacyClient.DeleteLogicalRouterPort(lrpName); err != nil {
+			if err := c.ovnClient.DeleteLogicalRouterPort(lrpName); err != nil {
 				klog.Errorf("failed to delete lrp %s-%s, %v", c.config.ClusterRouter, subnet.Name, err)
 				return err
 			}
@@ -2137,19 +2137,19 @@ func (c *Controller) addPolicyRouteForU2OInterconn(subnet *kubeovnv1.Subnet) err
 			policy3: underlay pod first access u2o interconnection lrp and then reoute to physical gw
 		*/
 		klog.Infof("add u2o interconnection policy for router: %s, match %s, action %s", subnet.Spec.Vpc, match1, "allow")
-		if err := c.ovnLegacyClient.AddPolicyRoute(subnet.Spec.Vpc, util.SubnetRouterPolicyPriority, match1, "allow", "", externalIDs); err != nil {
+		if err := c.ovnClient.AddLogicalRouterPolicy(subnet.Spec.Vpc, util.SubnetRouterPolicyPriority, match1, "allow", nil, externalIDs); err != nil {
 			klog.Errorf("failed to add u2o interconnection policy1 for subnet %s %v", subnet.Name, err)
 			return err
 		}
 
 		klog.Infof("add u2o interconnection policy for router: %s, match %s, action %s", subnet.Spec.Vpc, match2, "allow")
-		if err := c.ovnLegacyClient.AddPolicyRoute(subnet.Spec.Vpc, util.SubnetRouterPolicyPriority, match2, "allow", "", externalIDs); err != nil {
+		if err := c.ovnClient.AddLogicalRouterPolicy(subnet.Spec.Vpc, util.SubnetRouterPolicyPriority, match2, "allow", nil, externalIDs); err != nil {
 			klog.Errorf("failed to add u2o interconnection policy2 for subnet %s %v", subnet.Name, err)
 			return err
 		}
 
 		klog.Infof("add u2o interconnection policy for router: %s, match %s, action %s, nexthop %s", subnet.Spec.Vpc, match3, "reroute", nextHop)
-		if err := c.ovnLegacyClient.AddPolicyRoute(subnet.Spec.Vpc, util.GatewayRouterPolicyPriority, match3, "reroute", nextHop, externalIDs); err != nil {
+		if err := c.ovnClient.AddLogicalRouterPolicy(subnet.Spec.Vpc, util.GatewayRouterPolicyPriority, match3, "reroute", []string{nextHop}, externalIDs); err != nil {
 			klog.Errorf("failed to add u2o interconnection policy3 for subnet %s %v", subnet.Name, err)
 			return err
 		}

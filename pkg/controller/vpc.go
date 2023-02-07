@@ -302,6 +302,41 @@ func (c *Controller) addLoadBalancer(vpcName string) (*VpcLoadBalancer, error) {
 	return vpcLb, nil
 }
 
+func (c *Controller) GetStaticRoutes(lrName string) (routes []*kubeovnv1.StaticRoute, err error) {
+	output, err := c.ovnClient.ListLogicalRouterStaticRoutes(map[string]string{logicalRouterKey: lrName})
+	if err != nil {
+		return nil, fmt.Errorf("list logical router routes: %v", err)
+	}
+
+	for _, r := range output {
+		routes = append(routes, &kubeovnv1.StaticRoute{
+			Policy:    kubeovnv1.RoutePolicy(*r.Policy),
+			CIDR:      r.IPPrefix,
+			NextHopIP: r.Nexthop,
+		})
+	}
+
+	return routes, nil
+}
+
+func (c *Controller) GetPolicyRoutes(lrName string) (routes []*kubeovnv1.PolicyRoute, err error) {
+	output, err := c.ovnClient.ListLogicalRouterPolicies(map[string]string{logicalRouterKey: lrName})
+	if err != nil {
+		return nil, fmt.Errorf("list policy routes: %v", err)
+	}
+
+	for _, r := range output {
+		routes = append(routes, &kubeovnv1.PolicyRoute{
+			Priority:  int32(r.Priority),
+			Match:     r.Match,
+			Action:    kubeovnv1.PolicyRouteAction(r.Action),
+			NextHopIP: r.Nexthops[0],
+		})
+	}
+
+	return routes, nil
+}
+
 func (c *Controller) handleAddOrUpdateVpc(key string) error {
 	// get latest vpc info
 	cachedVpc, err := c.config.KubeOvnClient.KubeovnV1().Vpcs().Get(context.Background(), key, metav1.GetOptions{})
@@ -333,16 +368,18 @@ func (c *Controller) handleAddOrUpdateVpc(key string) error {
 			return err
 		}
 		newPeers = append(newPeers, peering.RemoteVpc)
-		if err := c.ovnLegacyClient.CreatePeerRouterPort(vpc.Name, peering.RemoteVpc, peering.LocalConnectIP); err != nil {
+
+		if err := c.ovnClient.CreatePeerRouterPort(vpc.Name, peering.RemoteVpc, peering.LocalConnectIP); err != nil {
 			klog.Errorf("failed to create peer router port for vpc %s, %v", vpc.Name, err)
 			return err
 		}
 	}
+
 	for _, oldPeer := range vpc.Status.VpcPeerings {
 		if !util.ContainsString(newPeers, oldPeer) {
 			lrpName := fmt.Sprintf("%s-%s", vpc.Name, oldPeer)
 			klog.Infof("delete logical router port %s", lrpName)
-			if err = c.ovnLegacyClient.DeleteLogicalRouterPort(lrpName); err != nil {
+			if err = c.ovnClient.DeleteLogicalRouterPort(lrpName); err != nil {
 				klog.Errorf("failed to delete peer router port for vpc %s, %v", vpc.Name, err)
 				return err
 			}
@@ -350,9 +387,9 @@ func (c *Controller) handleAddOrUpdateVpc(key string) error {
 	}
 
 	// handle static route
-	existRoute, err := c.ovnLegacyClient.GetStaticRouteList(vpc.Name)
+	existRoute, err := c.GetStaticRoutes(vpc.Name)
 	if err != nil {
-		klog.Errorf("failed to get vpc %s static route list, %v", vpc.Name, err)
+		klog.Errorf("get vpc %s static routes: %v", vpc.Name, err)
 		return err
 	}
 
@@ -422,14 +459,14 @@ func (c *Controller) handleAddOrUpdateVpc(key string) error {
 		return err
 	}
 	for _, item := range routeNeedDel {
-		if err = c.ovnLegacyClient.DeleteStaticRoute(item.CIDR, vpc.Name); err != nil {
+		if err = c.ovnClient.DeleteLogicalRouterStaticRoute(vpc.Name, string(item.Policy), item.CIDR, item.NextHopIP, ""); err != nil {
 			klog.Errorf("del vpc %s static route failed, %v", vpc.Name, err)
 			return err
 		}
 	}
 
 	for _, item := range routeNeedAdd {
-		if err = c.ovnLegacyClient.AddStaticRoute(convertPolicy(item.Policy), item.CIDR, item.NextHopIP, vpc.Name, util.NormalRouteType); err != nil {
+		if err = c.ovnClient.AddLogicalRouterStaticRoute(vpc.Name, convertPolicy(item.Policy), item.CIDR, item.NextHopIP, util.NormalRouteType); err != nil {
 			klog.Errorf("add static route to vpc %s failed, %v", vpc.Name, err)
 			return err
 		}
@@ -437,7 +474,7 @@ func (c *Controller) handleAddOrUpdateVpc(key string) error {
 
 	if vpc.Name != util.DefaultVpc && vpc.Spec.PolicyRoutes == nil {
 		// do not clean default vpc policy routes
-		if err = c.ovnLegacyClient.CleanPolicyRoute(vpc.Name); err != nil {
+		if err = c.ovnClient.ClearLogicalRouterPolicy(vpc.Name); err != nil {
 			klog.Errorf("clean all vpc %s policy route failed, %v", vpc.Name, err)
 			return err
 		}
@@ -445,11 +482,12 @@ func (c *Controller) handleAddOrUpdateVpc(key string) error {
 
 	if vpc.Spec.PolicyRoutes != nil {
 		// diff update vpc policy route
-		existPolicyRoute, err := c.ovnLegacyClient.GetPolicyRouteList(vpc.Name)
+		existPolicyRoute, err := c.GetPolicyRoutes(vpc.Name)
 		if err != nil {
-			klog.Errorf("failed to get vpc %s policy route list, %v", vpc.Name, err)
+			klog.Errorf("get vpc %s policy routes: %v", vpc.Name, err)
 			return err
 		}
+
 		policyRouteNeedDel, policyRouteNeedAdd, err := diffPolicyRoute(existPolicyRoute, vpc.Spec.PolicyRoutes)
 		if err != nil {
 			klog.Errorf("failed to diff vpc %s policy route, %v", vpc.Name, err)
@@ -457,7 +495,8 @@ func (c *Controller) handleAddOrUpdateVpc(key string) error {
 		}
 		for _, item := range policyRouteNeedDel {
 			klog.Infof("delete policy route for router: %s, priority: %d, match %s", vpc.Name, item.Priority, item.Match)
-			if err = c.ovnLegacyClient.DeletePolicyRoute(vpc.Name, item.Priority, item.Match); err != nil {
+
+			if err = c.ovnClient.DeleteLogicalRouterPolicy(vpc.Name, int(item.Priority), item.Match); err != nil {
 				klog.Errorf("del vpc %s policy route failed, %v", vpc.Name, err)
 				return err
 			}
@@ -465,7 +504,8 @@ func (c *Controller) handleAddOrUpdateVpc(key string) error {
 		for _, item := range policyRouteNeedAdd {
 			externalIDs := map[string]string{"vendor": util.CniTypeName}
 			klog.Infof("add policy route for router: %s, match %s, action %s, nexthop %s, extrenalID %v", c.config.ClusterRouter, item.Match, string(item.Action), item.NextHopIP, externalIDs)
-			if err = c.ovnLegacyClient.AddPolicyRoute(vpc.Name, item.Priority, item.Match, string(item.Action), item.NextHopIP, externalIDs); err != nil {
+
+			if err = c.ovnClient.AddLogicalRouterPolicy(vpc.Name, int(item.Priority), item.Match, string(item.Action), []string{item.NextHopIP}, externalIDs); err != nil {
 				klog.Errorf("add policy route to vpc %s failed, %v", vpc.Name, err)
 				return err
 			}
@@ -532,19 +572,9 @@ func (c *Controller) handleAddOrUpdateVpc(key string) error {
 	return nil
 }
 
-func diffPolicyRoute(exist []*ovs.PolicyRoute, target []*kubeovnv1.PolicyRoute) (routeNeedDel []*kubeovnv1.PolicyRoute, routeNeedAdd []*kubeovnv1.PolicyRoute, err error) {
-	existV1 := make([]*kubeovnv1.PolicyRoute, 0, len(exist))
-	for _, item := range exist {
-		existV1 = append(existV1, &kubeovnv1.PolicyRoute{
-			Priority:  item.Priority,
-			Match:     item.Match,
-			Action:    kubeovnv1.PolicyRouteAction(item.Action),
-			NextHopIP: item.NextHopIP,
-		})
-	}
-
+func diffPolicyRoute(exist []*kubeovnv1.PolicyRoute, target []*kubeovnv1.PolicyRoute) (routeNeedDel []*kubeovnv1.PolicyRoute, routeNeedAdd []*kubeovnv1.PolicyRoute, err error) {
 	existRouteMap := make(map[string]*kubeovnv1.PolicyRoute, len(exist))
-	for _, item := range existV1 {
+	for _, item := range exist {
 		existRouteMap[getPolicyRouteItemKey(item)] = item
 	}
 
@@ -566,22 +596,9 @@ func getPolicyRouteItemKey(item *kubeovnv1.PolicyRoute) (key string) {
 	return fmt.Sprintf("%d:%s:%s:%s", item.Priority, item.Match, item.Action, item.NextHopIP)
 }
 
-func diffStaticRoute(exist []*ovs.StaticRoute, target []*kubeovnv1.StaticRoute) (routeNeedDel []*kubeovnv1.StaticRoute, routeNeedAdd []*kubeovnv1.StaticRoute, err error) {
-	existV1 := make([]*kubeovnv1.StaticRoute, 0, len(exist))
-	for _, item := range exist {
-		policy := kubeovnv1.PolicyDst
-		if item.Policy == ovs.PolicySrcIP {
-			policy = kubeovnv1.PolicySrc
-		}
-		existV1 = append(existV1, &kubeovnv1.StaticRoute{
-			Policy:    policy,
-			CIDR:      item.CIDR,
-			NextHopIP: item.NextHop,
-		})
-	}
-
+func diffStaticRoute(exist []*kubeovnv1.StaticRoute, target []*kubeovnv1.StaticRoute) (routeNeedDel []*kubeovnv1.StaticRoute, routeNeedAdd []*kubeovnv1.StaticRoute, err error) {
 	existRouteMap := make(map[string]*kubeovnv1.StaticRoute, len(exist))
-	for _, item := range existV1 {
+	for _, item := range exist {
 		existRouteMap[getStaticRouteItemKey(item)] = item
 	}
 
