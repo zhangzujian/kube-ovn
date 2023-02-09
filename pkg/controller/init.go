@@ -697,10 +697,30 @@ func (c *Controller) initSyncCrdVlans() error {
 	return nil
 }
 
+func (c *Controller) IsPolicyRouteNexthopConsistent(lrName string, priority int, match string, nexthop string) (bool, error) {
+	policy, err := c.ovnClient.GetLogicalRouterPolicy(lrName, priority, match, false)
+
+	if err != nil {
+		return false, err
+	}
+
+	if policy == nil {
+		return false, nil
+	}
+
+	for _, next := range policy.Nexthops {
+		if next == nexthop {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
 func (c *Controller) migrateNodeRoute(af int, node, ip, nexthop string) error {
 	// migrate from old version static route to policy route
 	match := fmt.Sprintf("ip%d.dst == %s", af, ip)
-	consistent, err := c.ovnLegacyClient.CheckPolicyRouteNexthopConsistent(c.config.ClusterRouter, match, nexthop, util.NodeRouterPolicyPriority)
+	consistent, err := c.IsPolicyRouteNexthopConsistent(c.config.ClusterRouter, util.NodeRouterPolicyPriority, match, nexthop)
 	if err != nil {
 		return err
 	}
@@ -708,7 +728,8 @@ func (c *Controller) migrateNodeRoute(af int, node, ip, nexthop string) error {
 		klog.V(3).Infof("node policy route migrated")
 		return nil
 	}
-	if err := c.ovnLegacyClient.DeleteStaticRoute(ip, c.config.ClusterRouter); err != nil {
+
+	if err := c.ovnClient.DeleteLogicalRouterStaticRoute(c.config.ClusterRouter, "", ip, "", util.NormalRouteType); err != nil {
 		klog.Errorf("failed to delete obsolete static route for node %s: %v", node, err)
 		return err
 	}

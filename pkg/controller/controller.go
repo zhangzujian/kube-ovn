@@ -681,7 +681,7 @@ func (c *Controller) Run(ctx context.Context) {
 		util.LogFatalAndExit(nil, "failed to wait for caches to sync")
 	}
 
-	if err := c.ovnLegacyClient.SetLsDnatModDlDst(c.config.LsDnatModDlDst); err != nil {
+	if err := c.ovnClient.SetLsDnatModDlDst(c.config.LsDnatModDlDst); err != nil {
 		util.LogFatalAndExit(err, "failed to set NB_Global option ls_dnat_mod_dl_dst")
 	}
 

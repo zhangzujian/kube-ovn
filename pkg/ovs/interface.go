@@ -15,6 +15,7 @@ type NbGlobal interface {
 	SetUseCtInvMatch() error
 	SetICAutoRoute(enable bool, blackList []string) error
 	SetLBCIDR(serviceCIDR string) error
+	SetLsDnatModDlDst(enabled bool) error
 	GetNbGlobal() (*ovnnb.NBGlobal, error)
 }
 
@@ -117,9 +118,10 @@ type LogicalRouterStaticRoute interface {
 type LogicalRouterPolicy interface {
 	AddLogicalRouterPolicy(lrName string, priority int, match, action string, nextHops []string, externalIDs map[string]string) error
 	DeleteLogicalRouterPolicy(lrName string, priority int, match string) error
+	DeleteLogicalRouterPolicies(lrName string, priority int, externalIDs map[string]string) error
 	DeleteLogicalRouterPolicyByUUID(lrName string, uuid string) error
 	ClearLogicalRouterPolicy(lrName string) error
-	ListLogicalRouterPolicies(externalIDs map[string]string) ([]ovnnb.LogicalRouterPolicy, error)
+	ListLogicalRouterPolicies(priority int, externalIDs map[string]string) ([]ovnnb.LogicalRouterPolicy, error)
 	GetLogicalRouterPolicy(lrName string, priority int, match string, ignoreNotFound bool) (*ovnnb.LogicalRouterPolicy, error)
 }
 
@@ -129,6 +131,7 @@ type NAT interface {
 	DeleteNats(lrName, natType, logicalIP string) error
 	DeleteNat(lrName, natType, externalIP, logicalIP string) error
 	NatExists(lrName, natType, externalIP, logicalIP string) (bool, error)
+	ListNats(natType, logicalIP string, externalIDs map[string]string) ([]ovnnb.NAT, error)
 }
 
 type DHCPOptions interface {

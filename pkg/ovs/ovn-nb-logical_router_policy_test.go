@@ -6,6 +6,7 @@ import (
 
 	ovsclient "github.com/kubeovn/kube-ovn/pkg/ovsdb/client"
 	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
+	"github.com/kubeovn/kube-ovn/pkg/util"
 	"github.com/stretchr/testify/require"
 )
 
@@ -130,6 +131,74 @@ func (suite *OvnClientTestSuite) testDeleteLogicalRouterPolicy() {
 		lr, err = ovnClient.GetLogicalRouter(lrName, false)
 		require.NoError(t, err)
 		require.NotContains(t, lr.Policies, policy.UUID)
+	})
+}
+
+func (suite *OvnClientTestSuite) testDeleteLogicalRouterPolicies() {
+	t := suite.T()
+	t.Parallel()
+
+	ovnClient := suite.ovnClient
+	lrName := "test-clear-policies-lr"
+	basePriority := 12100
+	match := "ip4.src == $ovn.default.lm2_ip4"
+	action := ovnnb.LogicalRouterPolicyActionAllow
+	nextHops := []string{"100.64.0.2"}
+
+	externalIDs := map[string]string{
+		"vendor":           util.CniTypeName,
+		"subnet":           "test-subnet",
+		"isU2ORoutePolicy": "true",
+	}
+
+	err := ovnClient.CreateLogicalRouter(lrName)
+	require.NoError(t, err)
+
+	prepare := func() {
+		for i := 0; i < 3; i++ {
+			priority := basePriority + i
+			err = ovnClient.AddLogicalRouterPolicy(lrName, priority, match, action, nextHops, externalIDs)
+			require.NoError(t, err)
+		}
+
+		lr, err := ovnClient.GetLogicalRouter(lrName, false)
+		require.NoError(t, err)
+		require.Len(t, lr.Policies, 3)
+
+		policies, err := ovnClient.ListLogicalRouterPolicies(-1, externalIDs)
+		require.NoError(t, err)
+		require.Len(t, policies, 3)
+	}
+
+	t.Run("delete some policies with different priority", func(t *testing.T) {
+		prepare()
+
+		err = ovnClient.DeleteLogicalRouterPolicies(lrName, -1, externalIDs)
+		require.NoError(t, err)
+
+		lr, err := ovnClient.GetLogicalRouter(lrName, false)
+		require.NoError(t, err)
+		require.Empty(t, lr.Policies)
+
+		policies, err := ovnClient.ListLogicalRouterPolicies(-1, externalIDs)
+		require.NoError(t, err)
+		require.Empty(t, policies)
+	})
+
+	t.Run("delete same priority", func(t *testing.T) {
+		prepare()
+
+		err = ovnClient.DeleteLogicalRouterPolicies(lrName, basePriority, externalIDs)
+		require.NoError(t, err)
+
+		lr, err := ovnClient.GetLogicalRouter(lrName, false)
+		require.NoError(t, err)
+		require.Len(t, lr.Policies, 2)
+
+		// no basePriority policy
+		policies, err := ovnClient.ListLogicalRouterPolicies(-1, externalIDs)
+		require.NoError(t, err)
+		require.Len(t, policies, 2)
 	})
 }
 
@@ -278,7 +347,7 @@ func (suite *OvnClientTestSuite) test_policyFilter() {
 	}
 
 	t.Run("include all policies", func(t *testing.T) {
-		filterFunc := policyFilter(nil)
+		filterFunc := policyFilter(-1, nil)
 		count := 0
 		for _, policy := range policies {
 			if filterFunc(policy) {
@@ -289,7 +358,7 @@ func (suite *OvnClientTestSuite) test_policyFilter() {
 	})
 
 	t.Run("include all policies with external ids", func(t *testing.T) {
-		filterFunc := policyFilter(map[string]string{logicalRouterKey: lrName})
+		filterFunc := policyFilter(-1, map[string]string{logicalRouterKey: lrName})
 		count := 0
 		for _, policy := range policies {
 			if filterFunc(policy) {
@@ -299,11 +368,22 @@ func (suite *OvnClientTestSuite) test_policyFilter() {
 		require.Equal(t, count, 3)
 	})
 
+	t.Run("include all policies with same priority", func(t *testing.T) {
+		filterFunc := policyFilter(10000, map[string]string{logicalRouterKey: lrName})
+		count := 0
+		for _, policy := range policies {
+			if filterFunc(policy) {
+				count++
+			}
+		}
+		require.Equal(t, count, 1)
+	})
+
 	t.Run("result should exclude policies when externalIDs's length is not equal", func(t *testing.T) {
 		t.Parallel()
 
 		policy := newLogicalRouterPolicy(lrName, basePriority+10, match, action, nextHops, nil)
-		filterFunc := policyFilter(map[string]string{
+		filterFunc := policyFilter(-1, map[string]string{
 			logicalRouterKey: lrName,
 			"key":            "value",
 		})

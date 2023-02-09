@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
+	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
 	"github.com/kubeovn/kube-ovn/pkg/util"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -234,7 +235,7 @@ func (c *Controller) handleAddOvnSnatRule(key string) error {
 		return err
 	}
 	// ovn add snat
-	if err = c.ovnLegacyClient.AddSnatRule(vpcName, cachedEip.Spec.V4Ip, v4IpCidr); err != nil {
+	if err = c.ovnClient.UpdateSnat(vpcName, cachedEip.Spec.V4Ip, v4IpCidr); err != nil {
 		klog.Errorf("failed to create snat, %v", err)
 		return err
 	}
@@ -279,7 +280,7 @@ func (c *Controller) handleUpdateOvnSnatRule(key string) error {
 	if !cachedSnat.DeletionTimestamp.IsZero() {
 		klog.V(3).Infof("ovn clean snat %s", key)
 		// ovn delete snat
-		if err = c.ovnLegacyClient.DeleteSnatRule(cachedSnat.Status.Vpc, cachedEip.Spec.V4Ip, cachedSnat.Status.V4IpCidr); err != nil {
+		if err = c.ovnClient.DeleteNat(cachedSnat.Status.Vpc, ovnnb.NATTypeSNAT, cachedEip.Spec.V4Ip, cachedSnat.Status.V4IpCidr); err != nil {
 			klog.Errorf("failed to delte snat, %v", err)
 			return err
 		}
@@ -333,12 +334,7 @@ func (c *Controller) handleUpdateOvnSnatRule(key string) error {
 	// snat change eip
 	if c.ovnSnatChangeEip(cachedSnat, cachedEip) {
 		klog.V(3).Infof("snat change ip, old ip %s, new ip %s", cachedEip.Status.V4Ip, cachedEip.Spec.V4Ip)
-		if err = c.ovnLegacyClient.DeleteSnatRule(vpcName, cachedEip.Status.V4Ip, v4IpCidr); err != nil {
-			klog.Errorf("failed to delte snat, %v", err)
-			return err
-		}
-		// ovn add snat with new eip
-		if err = c.ovnLegacyClient.AddSnatRule(vpcName, cachedEip.Spec.V4Ip, v4IpCidr); err != nil {
+		if err = c.ovnClient.UpdateSnat(vpcName, cachedEip.Spec.V4Ip, v4IpCidr); err != nil {
 			klog.Errorf("failed to create snat, %v", err)
 			return err
 		}

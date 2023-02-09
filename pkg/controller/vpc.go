@@ -320,7 +320,8 @@ func (c *Controller) GetStaticRoutes(lrName string) (routes []*kubeovnv1.StaticR
 }
 
 func (c *Controller) GetPolicyRoutes(lrName string) (routes []*kubeovnv1.PolicyRoute, err error) {
-	output, err := c.ovnClient.ListLogicalRouterPolicies(map[string]string{logicalRouterKey: lrName})
+	// list all policies from router
+	output, err := c.ovnClient.ListLogicalRouterPolicies(-1, map[string]string{logicalRouterKey: lrName})
 	if err != nil {
 		return nil, fmt.Errorf("list policy routes: %v", err)
 	}
@@ -430,21 +431,18 @@ func (c *Controller) handleAddOrUpdateVpc(key string) error {
 					nextHop = strings.Split(nextHop, "/")[0]
 				}
 
-				nats, err := c.ovnLegacyClient.GetRouterNat(vpc.Name)
+				// list all nats from router
+				nats, err := c.ovnClient.ListNats("", "", map[string]string{logicalRouterKey: vpc.Name})
 				if err != nil {
-					klog.Errorf("failed to get nat for vpc %s, %v", vpc.Name, err)
+					klog.Errorf("failed to get nat for vpc %s: %v", vpc.Name, err)
 					return err
 				}
+
 				for _, nat := range nats {
-					logical_ip, err := c.ovnLegacyClient.GetNatIPInfo(nat)
-					if err != nil {
-						klog.Errorf("failed to get nat ip info for vpc %s, %v", vpc.Name, err)
-						return err
-					}
-					if logical_ip != "" {
+					if nat.LogicalIP != "" {
 						targetRoutes = append(targetRoutes, &kubeovnv1.StaticRoute{
 							Policy:    kubeovnv1.PolicySrc,
-							CIDR:      logical_ip,
+							CIDR:      nat.LogicalIP,
 							NextHopIP: nextHop,
 						})
 					}

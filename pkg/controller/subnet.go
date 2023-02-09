@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/exp/slices"
 	v1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -1317,7 +1318,7 @@ func (c *Controller) reconcileOvnRoute(subnet *kubeovnv1.Subnet) error {
 				v4Cidr, v6Cidr := util.SplitStringIP(subnet.Spec.CIDRBlock)
 				if nodeV4Ips != nil && v4Cidr != "" {
 					sort.Strings(nodeV4Ips)
-					exist, err := c.ovnLegacyClient.VpcHasPolicyRoute(c.config.ClusterRouter, nodeV4Ips, util.GatewayRouterPolicyPriority)
+					exist, err := c.vpcHasPolicyRoute(c.config.ClusterRouter, nodeV4Ips, util.GatewayRouterPolicyPriority)
 					if err != nil {
 						klog.Errorf("failed to check if vpc %s has v4 ecmp policy route for centralized subnet %s, %v", c.config.ClusterRouter, subnet.Name, err)
 						return err
@@ -1337,7 +1338,7 @@ func (c *Controller) reconcileOvnRoute(subnet *kubeovnv1.Subnet) error {
 				}
 				if nodeV6Ips != nil && v6Cidr != "" {
 					sort.Strings(nodeV6Ips)
-					exist, err := c.ovnLegacyClient.VpcHasPolicyRoute(c.config.ClusterRouter, nodeV6Ips, util.GatewayRouterPolicyPriority)
+					exist, err := c.vpcHasPolicyRoute(c.config.ClusterRouter, nodeV6Ips, util.GatewayRouterPolicyPriority)
 					if err != nil {
 						klog.Errorf("failed to check if vpc %s has v6 ecmp policy route for centralized subnet %s, %v", c.config.ClusterRouter, subnet.Name, err)
 						return err
@@ -1420,6 +1421,21 @@ func (c *Controller) reconcileOvnRoute(subnet *kubeovnv1.Subnet) error {
 		}
 	}
 	return nil
+}
+
+func (c *Controller) vpcHasPolicyRoute(vpc string, nextHops []string, priority int32) (bool, error) {
+	policies, err := c.ovnClient.ListLogicalRouterPolicies(int(priority), map[string]string{logicalRouterKey: vpc})
+	if err != nil {
+		return false, err
+	}
+
+	for _, policy := range policies {
+		if slices.Equal(nextHops, policy.Nexthops) {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 func (c *Controller) deleteStaticRoute(ip, router string) error {
@@ -2158,28 +2174,15 @@ func (c *Controller) addPolicyRouteForU2OInterconn(subnet *kubeovnv1.Subnet) err
 }
 
 func (c *Controller) deletePolicyRouteForU2OInterconn(subnet *kubeovnv1.Subnet) error {
-
-	results, err := c.ovnLegacyClient.CustomFindEntity("Logical_Router_Policy", []string{"_uuid", "match", "priority"},
-		"external_ids:isU2ORoutePolicy=\"true\"",
-		fmt.Sprintf("external_ids:vendor=\"%s\"", util.CniTypeName),
-		fmt.Sprintf("external_ids:subnet=\"%s\"", subnet.Name))
-	if err != nil {
-		klog.Errorf("customFindEntity failed, %v", err)
-		return err
+	externalIDs := map[string]string{
+		"vendor":           util.CniTypeName,
+		"subnet":           subnet.Name,
+		"isU2ORoutePolicy": "true",
 	}
 
-	if len(results) == 0 {
-		return nil
-	}
-
-	var uuids []string
-	for _, result := range results {
-		uuids = append(uuids, result["_uuid"][0])
-		klog.Infof("delete u2o interconnection policy for router %s with match %s priority %s ", subnet.Spec.Vpc, result["match"], result["priority"])
-	}
-
-	if err := c.ovnLegacyClient.DeletePolicyRouteByUUID(subnet.Spec.Vpc, uuids); err != nil {
-		klog.Errorf("failed to delete u2o interconnection policy for subnet %s: %v", subnet.Name, err)
+	// delete all priority policies
+	if err := c.ovnClient.DeleteLogicalRouterPolicies(subnet.Spec.Vpc, -1, externalIDs); err != nil {
+		klog.Errorf("delete u2o interconnection policy for subnet %s: %v", subnet.Name, err)
 		return err
 	}
 

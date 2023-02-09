@@ -466,6 +466,10 @@ func (suite *OvnClientTestSuite) Test_DeleteLogicalRouterPolicy() {
 	suite.testDeleteLogicalRouterPolicy()
 }
 
+func (suite *OvnClientTestSuite) Test_DeleteLogicalRouterPolicies() {
+	suite.testDeleteLogicalRouterPolicies()
+}
+
 func (suite *OvnClientTestSuite) Test_ClearLogicalRouterPolicy() {
 	suite.testClearLogicalRouterPolicy()
 }
@@ -600,6 +604,18 @@ func (suite *OvnClientTestSuite) Test_DeleteSecurityGroup() {
 
 func (suite *OvnClientTestSuite) Test_GetEntityInfo() {
 	suite.testGetEntityInfo()
+}
+
+func Test_scratch(t *testing.T) {
+	t.SkipNow()
+	endpoint := "tcp:[172.20.149.35]:6641"
+	ovnClient, err := newOvnClient(t, endpoint, 10, "")
+	require.NoError(t, err)
+
+	policies, err := ovnClient.ListLogicalRouterPolicies(29000, map[string]string{logicalRouterKey: "ovn-cluster"})
+	require.NoError(t, err)
+
+	fmt.Println(policies)
 }
 
 func newOVSDBServer(t *testing.T, dbModel model.ClientDBModel, schema ovsdb.DatabaseSchema) (*server.OvsdbServer, string) {

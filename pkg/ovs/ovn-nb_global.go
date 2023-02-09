@@ -3,6 +3,7 @@ package ovs
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
@@ -139,6 +140,21 @@ func (c *ovnClient) SetLBCIDR(serviceCIDR string) error {
 
 	if err := c.UpdateNbGlobal(nbGlobal, &nbGlobal.Options); err != nil {
 		return fmt.Errorf("set svc cidr %s for lb, %v", serviceCIDR, err)
+	}
+
+	return nil
+}
+
+func (c *ovnClient) SetLsDnatModDlDst(enabled bool) error {
+	nbGlobal, err := c.GetNbGlobal()
+	if err != nil {
+		return fmt.Errorf("get nb global: %v", err)
+	}
+
+	nbGlobal.Options["ls_dnat_mod_dl_dst"] = strconv.FormatBool(enabled)
+
+	if err := c.UpdateNbGlobal(nbGlobal, &nbGlobal.Options); err != nil {
+		return fmt.Errorf("set NB_Global option ls_dnat_mod_dl_dst to %v: %v", enabled, err)
 	}
 
 	return nil

@@ -107,6 +107,47 @@ func (c *ovnClient) DeleteLogicalRouterPolicy(lrName string, priority int, match
 	return nil
 }
 
+// DeleteLogicalRouterPolicy delete some policies from logical router once
+func (c *ovnClient) DeleteLogicalRouterPolicies(lrName string, priority int, externalIDs map[string]string) error {
+	if externalIDs == nil {
+		externalIDs = make(map[string]string)
+	}
+
+	externalIDs[logicalRouterKey] = lrName
+
+	// remove policies from logical router
+	policies, err := c.ListLogicalRouterPolicies(priority, externalIDs)
+	if err != nil {
+		return err
+	}
+
+	policiesUUIDs := make([]string, 0, len(policies))
+	for _, policy := range policies {
+		policiesUUIDs = append(policiesUUIDs, policy.UUID)
+	}
+
+	policiesRemoveOp, err := c.LogicalRouterUpdatePolicyOp(lrName, policiesUUIDs, ovsdb.MutateOperationDelete)
+	if err != nil {
+		return fmt.Errorf("generate operations for removing policy %v from logical router %s: %v", policiesUUIDs, lrName, err)
+	}
+
+	// delete policies
+	delPoliciesOp, err := c.WhereCache(policyFilter(priority, externalIDs)).Delete()
+	if err != nil {
+		return fmt.Errorf("generate operation for deleting nats: %v", err)
+	}
+
+	ops := make([]ovsdb.Operation, 0, len(policiesRemoveOp)+len(delPoliciesOp))
+	ops = append(ops, policiesRemoveOp...)
+
+	ops = append(ops, delPoliciesOp...)
+
+	if err = c.Transact("lr-policies-del", ops); err != nil {
+		return fmt.Errorf("delete logical router policy %v from logical router %s: %v", policiesUUIDs, lrName, err)
+	}
+	return nil
+}
+
 func (c *ovnClient) DeleteLogicalRouterPolicyByUUID(lrName string, uuid string) error {
 	// remove policy from logical router
 	policyRemoveOp, err := c.LogicalRouterUpdatePolicyOp(lrName, []string{uuid}, ovsdb.MutateOperationDelete)
@@ -114,6 +155,7 @@ func (c *ovnClient) DeleteLogicalRouterPolicyByUUID(lrName string, uuid string) 
 		return fmt.Errorf("generate operations for removing policy '%s' from logical router %s: %v", uuid, lrName, err)
 	}
 
+	// delete policy
 	deleteOps, err := c.ovnNbClient.Where(&ovnnb.LogicalRouterPolicy{
 		UUID: uuid,
 	}).Delete()
@@ -196,10 +238,10 @@ func (c *ovnClient) GetLogicalRouterPolicy(lrName string, priority int, match st
 }
 
 // ListLogicalRouterPolicies list route policy which match the given externalIDs
-func (c *ovnClient) ListLogicalRouterPolicies(externalIDs map[string]string) ([]ovnnb.LogicalRouterPolicy, error) {
+func (c *ovnClient) ListLogicalRouterPolicies(priority int, externalIDs map[string]string) ([]ovnnb.LogicalRouterPolicy, error) {
 	policyList := make([]ovnnb.LogicalRouterPolicy, 0)
 
-	if err := c.WhereCache(policyFilter(externalIDs)).List(context.TODO(), &policyList); err != nil {
+	if err := c.WhereCache(policyFilter(priority, externalIDs)).List(context.TODO(), &policyList); err != nil {
 		return nil, fmt.Errorf("list logical router policies: %v", err)
 	}
 
@@ -207,8 +249,8 @@ func (c *ovnClient) ListLogicalRouterPolicies(externalIDs map[string]string) ([]
 }
 
 func (c *ovnClient) LogicalRouterPolicyExists(lrName string, priority int, match string) (bool, error) {
-	acl, err := c.GetLogicalRouterPolicy(lrName, priority, match, true)
-	return acl != nil, err
+	policy, err := c.GetLogicalRouterPolicy(lrName, priority, match, true)
+	return policy != nil, err
 }
 
 // newLogicalRouterPolicy return logical router policy with basic information
@@ -250,7 +292,7 @@ func (c *ovnClient) newLogicalRouterPolicy(lrName string, priority int, match, a
 }
 
 // policyFilter filter policies which match the given externalIDs
-func policyFilter(externalIDs map[string]string) func(policy *ovnnb.LogicalRouterPolicy) bool {
+func policyFilter(priority int, externalIDs map[string]string) func(policy *ovnnb.LogicalRouterPolicy) bool {
 	return func(policy *ovnnb.LogicalRouterPolicy) bool {
 		if len(policy.ExternalIDs) < len(externalIDs) {
 			return false
@@ -271,6 +313,11 @@ func policyFilter(externalIDs map[string]string) func(policy *ovnnb.LogicalRoute
 				}
 			}
 		}
+
+		if priority != -1 && priority != policy.Priority {
+			return false
+		}
+
 		return true
 	}
 }

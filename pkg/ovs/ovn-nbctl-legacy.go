@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/exp/slices"
 	netv1 "k8s.io/api/networking/v1"
 	"k8s.io/klog/v2"
 
@@ -79,13 +78,6 @@ func (c LegacyClient) GetVersion() (string, error) {
 		c.Version = strings.Split(lines[0], " ")[1]
 	}
 	return c.Version, nil
-}
-
-func (c LegacyClient) SetLsDnatModDlDst(enabled bool) error {
-	if _, err := c.ovnNbCommand("set", "NB_Global", ".", fmt.Sprintf("options:ls_dnat_mod_dl_dst=%v", enabled)); err != nil {
-		return fmt.Errorf("failed to set NB_Global option ls_dnat_mod_dl_dst to %v: %v", enabled, err)
-	}
-	return nil
 }
 
 func (c LegacyClient) SetLogicalSwitchConfig(ls, lr, protocol, subnet, gateway string, excludeIps []string, needRouter bool) error {
@@ -308,58 +300,6 @@ func (c LegacyClient) createRouterPort(ls, lr string) error {
 		klog.Errorf("failed to create switch router port %s: %v", lsTolr, err)
 		return err
 	}
-	return nil
-}
-
-func (c LegacyClient) AddSnatRule(router, eip, ipCidr string) error {
-	// failed if logicalIP externalIP(eip) is different protocol.
-	if util.CheckProtocol(ipCidr) != util.CheckProtocol(eip) {
-		return nil
-	}
-	snat := "snat"
-	if eip != "" && ipCidr != "" {
-		_, err := c.ovnNbCommand(MayExist, "lr-nat-add", router, snat, eip, ipCidr)
-		return err
-	} else {
-		return fmt.Errorf("logical ip, external ip and logical mac must be provided to add snat rule")
-	}
-}
-
-func (c LegacyClient) DeleteSnatRule(router, eip, ipCidr string) error {
-	snat := "snat"
-	output, err := c.ovnNbCommand("--format=csv", "--no-heading", "--data=bare", "--columns=type,external_ip", "find", "NAT", fmt.Sprintf("logical_ip=%s", ipCidr))
-	if err != nil {
-		klog.Errorf("failed to list nat rules, %v", err)
-		return err
-	}
-	rules := strings.Split(output, "\n")
-	for _, rule := range rules {
-		if len(strings.Split(rule, ",")) != 2 {
-			continue
-		}
-		policy, externalIP := strings.Split(rule, ",")[0], strings.Split(rule, ",")[1]
-		if externalIP == eip && policy == snat {
-			if _, err := c.ovnNbCommand(IfExists, "lr-nat-del", router, snat, ipCidr); err != nil {
-				klog.Errorf("failed to delete snat rule, %v", err)
-				return err
-			}
-		}
-	}
-	return err
-}
-
-// DeleteStaticRoute delete a static route rule in ovn
-func (c LegacyClient) DeleteStaticRoute(cidr, router string) error {
-	if cidr == "" {
-		return nil
-	}
-	for _, cidrBlock := range strings.Split(cidr, ",") {
-		if _, err := c.ovnNbCommand(IfExists, "lr-route-del", router, cidrBlock); err != nil {
-			klog.Errorf("fail to delete static route %s from %s, %v", cidrBlock, router, err)
-			return err
-		}
-	}
-
 	return nil
 }
 
@@ -1023,63 +963,6 @@ func CheckAlive() error {
 	return nil
 }
 
-// GetLogicalSwitchExcludeIPS get a logical switch exclude ips
-// ovn-nbctl get logical_switch ovn-default other_config:exclude_ips => "10.17.0.1 10.17.0.2 10.17.0.3..10.17.0.5"
-func (c LegacyClient) GetLogicalSwitchExcludeIPS(logicalSwitch string) ([]string, error) {
-	output, err := c.ovnNbCommand(IfExists, "get", "logical_switch", logicalSwitch, "other_config:exclude_ips")
-	if err != nil {
-		return nil, err
-	}
-	output = strings.Trim(output, `"`)
-	if output == "" {
-		return nil, ErrNoAddr
-	}
-	return strings.Fields(output), nil
-}
-
-// SetLogicalSwitchExcludeIPS set a logical switch exclude ips
-// ovn-nbctl set logical_switch ovn-default other_config:exclude_ips="10.17.0.2 10.17.0.1"
-func (c LegacyClient) SetLogicalSwitchExcludeIPS(logicalSwitch string, excludeIPS []string) error {
-	_, err := c.ovnNbCommand("set", "logical_switch", logicalSwitch,
-		fmt.Sprintf(`other_config:exclude_ips="%s"`, strings.Join(excludeIPS, " ")))
-	return err
-}
-
-func (c LegacyClient) GetLogicalSwitchPortByLogicalSwitch(logicalSwitch string) ([]string, error) {
-	output, err := c.ovnNbCommand("lsp-list", logicalSwitch)
-	if err != nil {
-		return nil, err
-	}
-	var rv []string
-	lines := strings.Split(output, "\n")
-	for _, line := range lines {
-		lsp := strings.Fields(line)[0]
-		rv = append(rv, lsp)
-	}
-	return rv, nil
-}
-
-func (c LegacyClient) CreateLocalnetPort(ls, port, provider string, vlanID int) error {
-	cmdArg := []string{
-		MayExist, "lsp-add", ls, port, "--",
-		"lsp-set-addresses", port, "unknown", "--",
-		"lsp-set-type", port, "localnet", "--",
-		"lsp-set-options", port, fmt.Sprintf("network_name=%s", provider), "--",
-		"set", "logical_switch_port", port, fmt.Sprintf("external_ids:vendor=%s", util.CniTypeName),
-	}
-	if vlanID > 0 && vlanID < 4096 {
-		cmdArg = append(cmdArg,
-			"--", "set", "logical_switch_port", port, fmt.Sprintf("tag=%d", vlanID))
-	}
-
-	if _, err := c.ovnNbCommand(cmdArg...); err != nil {
-		klog.Errorf("create localnet port %s failed, %v", port, err)
-		return err
-	}
-
-	return nil
-}
-
 func (c LegacyClient) CreateSgPortGroup(sgName string) error {
 	sgPortGroupName := GetSgPortGroupName(sgName)
 	output, err := c.ovnNbCommand(
@@ -1160,148 +1043,6 @@ func (c *LegacyClient) PortGroupExists(pgName string) (bool, error) {
 		return false, nil
 	}
 	return true, nil
-}
-
-func (c *LegacyClient) VpcHasPolicyRoute(vpc string, nextHops []string, priority int32) (bool, error) {
-	// get all policies by vpc
-	outPolicies, err := c.ovnNbCommand("--data=bare", "--no-heading",
-		"--columns=policies", "find", "Logical_Router", fmt.Sprintf("name=%s", vpc))
-	if err != nil {
-		klog.Errorf("failed to find Logical_Router_Policy %s: %v, %q", vpc, err, outPolicies)
-		return false, err
-	}
-	if outPolicies == "" {
-		klog.V(3).Infof("vpc %s has no policy routes", vpc)
-		return false, nil
-	}
-
-	strRoutes := strings.Split(outPolicies, "\n")[0]
-	strPriority := fmt.Sprint(priority)
-	routes := strings.Fields(strRoutes)
-	// check if policie already exist
-	for _, r := range routes {
-		outPriorityNexthops, err := c.ovnNbCommand("--data=bare", "--no-heading", "--format=csv", "--columns=priority,nexthops", "list", "Logical_Router_Policy", r)
-		if err != nil {
-			klog.Errorf("failed to show Logical_Router_Policy %s: %v, %q", r, err, outPriorityNexthops)
-			return false, err
-		}
-		if outPriorityNexthops == "" {
-			return false, nil
-		}
-		priorityNexthops := strings.Split(outPriorityNexthops, "\n")[0]
-		result := strings.Split(priorityNexthops, ",")
-		if len(result) == 2 {
-			routePriority := result[0]
-			strNodeIPs := result[1]
-			nodeIPs := strings.Fields(strNodeIPs)
-			sort.Strings(nodeIPs)
-			if routePriority == strPriority && slices.Equal(nextHops, nodeIPs) {
-				// make sure priority, nexthops is just the same
-				return true, nil
-			}
-		}
-	}
-	return false, nil
-}
-
-func (c *LegacyClient) PolicyRouteExists(priority int32, match string) (bool, error) {
-	results, err := c.CustomFindEntity("Logical_Router_Policy", []string{"_uuid"}, fmt.Sprintf("priority=%d", priority), fmt.Sprintf("match=\"%s\"", match))
-	if err != nil {
-		klog.Errorf("customFindEntity failed, %v", err)
-		return false, err
-	}
-	if len(results) == 0 {
-		return false, nil
-	}
-	return true, nil
-}
-
-func (c *LegacyClient) DeletePolicyRouteByUUID(router string, uuids []string) error {
-	if len(uuids) == 0 {
-		return nil
-	}
-	for _, uuid := range uuids {
-		var args []string
-		args = append(args, []string{"lr-policy-del", router, uuid}...)
-		if _, err := c.ovnNbCommand(args...); err != nil {
-			klog.Errorf("failed to delete router %s policy route: %v", router, err)
-			return err
-		}
-	}
-	return nil
-}
-
-func (c *LegacyClient) GetPolicyRouteParas(priority int32, match string) ([]string, map[string]string, error) {
-	result, err := c.CustomFindEntity("Logical_Router_Policy", []string{"nexthops", "external_ids"}, fmt.Sprintf("priority=%d", priority), fmt.Sprintf(`match="%s"`, match))
-	if err != nil {
-		klog.Errorf("customFindEntity failed, %v", err)
-		return nil, nil, err
-	}
-	if len(result) == 0 {
-		return nil, nil, nil
-	}
-
-	nameIpMap := make(map[string]string, len(result[0]["external_ids"]))
-	for _, l := range result[0]["external_ids"] {
-		if len(strings.TrimSpace(l)) == 0 {
-			continue
-		}
-		parts := strings.Split(strings.TrimSpace(l), "=")
-		if len(parts) != 2 {
-			continue
-		}
-		name := strings.TrimSpace(parts[0])
-		ip := strings.TrimSpace(parts[1])
-		nameIpMap[name] = ip
-	}
-
-	return result[0]["nexthops"], nameIpMap, nil
-}
-
-func (c LegacyClient) SetPolicyRouteExternalIds(priority int32, match string, nameIpMaps map[string]string) error {
-	result, err := c.CustomFindEntity("Logical_Router_Policy", []string{"_uuid"}, fmt.Sprintf("priority=%d", priority), fmt.Sprintf("match=\"%s\"", match))
-	if err != nil {
-		klog.Errorf("customFindEntity failed, %v", err)
-		return err
-	}
-	if len(result) == 0 {
-		return nil
-	}
-
-	uuid := result[0]["_uuid"][0]
-	ovnCmd := []string{"set", "logical-router-policy", uuid}
-	for nodeName, nodeIP := range nameIpMaps {
-		ovnCmd = append(ovnCmd, fmt.Sprintf("external_ids:%s=\"%s\"", nodeName, nodeIP))
-	}
-
-	if _, err := c.ovnNbCommand(ovnCmd...); err != nil {
-		return fmt.Errorf("failed to set logical-router-policy externalIds, %v", err)
-	}
-	return nil
-}
-
-func (c LegacyClient) CheckPolicyRouteNexthopConsistent(router, match, nexthop string, priority int32) (bool, error) {
-	exist, err := c.PolicyRouteExists(priority, match)
-	if err != nil {
-		return false, err
-	}
-	if !exist {
-		return false, nil
-	}
-
-	dbNextHops, _, err := c.GetPolicyRouteParas(priority, match)
-	if err != nil {
-		klog.Errorf("failed to get policy route paras, %v", err)
-		return false, err
-	}
-	cfgNextHops := strings.Split(nexthop, ",")
-
-	sort.Strings(dbNextHops)
-	sort.Strings(cfgNextHops)
-	if slices.Equal(dbNextHops, cfgNextHops) {
-		return true, nil
-	}
-	return false, nil
 }
 
 type dhcpOptions struct {
@@ -1703,34 +1444,4 @@ func (c LegacyClient) SetAclLog(pgName string, logEnable, isIngress bool) error 
 	}
 
 	return nil
-}
-
-func (c *LegacyClient) GetRouterNat(routerName string) ([]string, error) {
-	var nat []string
-	results, err := c.CustomFindEntity("logical-router", []string{"nat"}, fmt.Sprintf("name=%s", routerName))
-	if err != nil {
-		klog.Errorf("customFindEntity failed, %v", err)
-		return nat, err
-	}
-	if len(results) == 0 {
-		return nat, nil
-	}
-
-	return results[0]["nat"], nil
-}
-
-func (c *LegacyClient) GetNatIPInfo(uuid string) (string, error) {
-	var logical_ip string
-
-	output, err := c.ovnNbCommand("--data=bare", "--format=csv", "--no-heading", "--columns=logical_ip", "list", "nat", uuid)
-	if err != nil {
-		klog.Errorf("failed to list nat, %v", err)
-		return logical_ip, err
-	}
-	lines := strings.Split(output, "\n")
-
-	if len(lines) > 0 {
-		logical_ip = strings.TrimSpace(lines[0])
-	}
-	return logical_ip, nil
 }

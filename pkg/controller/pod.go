@@ -1004,7 +1004,7 @@ func (c *Controller) handleUpdatePod(key string) error {
 						return err
 					}
 				} else if c.config.EnableEipSnat {
-					if err := c.ovnLegacyClient.DeleteStaticRoute(podIP, c.config.ClusterRouter); err != nil {
+					if err := c.ovnClient.DeleteLogicalRouterStaticRoute(c.config.ClusterRouter, ovnnb.LogicalRouterStaticRoutePolicySrcIP, podIP, "", util.NormalRouteType); err != nil {
 						return err
 					}
 				}
