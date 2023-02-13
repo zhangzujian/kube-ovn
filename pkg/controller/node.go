@@ -1182,7 +1182,7 @@ func (c *Controller) addPolicyRouteForCentralizedSubnetOnNode(nodeName, nodeIP s
 	return nil
 }
 func (c *Controller) deletePolicyRouteByNexthop(addresses []*ipam.SubnetAddress) error {
-	policies, err := c.ovnClient.ListLogicalRouterPolicies(map[string]string{logicalRouterKey: c.config.ClusterRouter})
+	policies, err := c.ovnClient.ListLogicalRouterPolicies(util.NodeRouterPolicyPriority, map[string]string{logicalRouterKey: c.config.ClusterRouter})
 	if err != nil {
 		return fmt.Errorf("list logical router %s policies: %v", c.config.ClusterRouter, err)
 	}
@@ -1193,10 +1193,6 @@ func (c *Controller) deletePolicyRouteByNexthop(addresses []*ipam.SubnetAddress)
 		}
 
 		for _, policy := range policies {
-			if policy.Priority != util.NodeRouterPolicyPriority {
-				continue
-			}
-
 			if !util.ContainsString(policy.Nexthops, addr.Ip) {
 				continue
 			}

@@ -193,7 +193,7 @@ func (suite *OvnClientTestSuite) testDeleteNat() {
 	t.Parallel()
 
 	ovnClient := suite.ovnClient
-	lrName := "test-del-nats-lr"
+	lrName := "test-del-nat-lr"
 	externalIP := "192.168.30.254"
 	logicalIP := "10.250.0.4"
 

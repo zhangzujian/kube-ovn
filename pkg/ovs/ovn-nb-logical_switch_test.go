@@ -41,7 +41,7 @@ func (suite *OvnClientTestSuite) testCreateLogicalSwitch() {
 	require.NoError(t, err)
 
 	t.Run("create logical switch and router type port when logical switch does't exist and needRouter is true", func(t *testing.T) {
-		err = ovnClient.CreateLogicalSwitch(lsName, lrName, "192.168.2.0/24,fd00::c0a8:6400/120", "192.168.2.1,fd00::c0a8:6401", true)
+		err = ovnClient.CreateLogicalSwitch(lsName, lrName, "192.168.2.0/24,fd00::c0a8:6400/120", "192.168.2.1,fd00::c0a8:6401", true, false)
 		require.NoError(t, err)
 
 		_, err := ovnClient.GetLogicalSwitch(lsName, false)
@@ -55,7 +55,7 @@ func (suite *OvnClientTestSuite) testCreateLogicalSwitch() {
 	})
 
 	t.Run("only update networks when logical switch exist and router type port exist and needRouter is true", func(t *testing.T) {
-		err = ovnClient.CreateLogicalSwitch(lsName, lrName, "192.168.2.0/24,fd00::c0a8:9900/120", "192.168.2.1,fd00::c0a8:9901", true)
+		err = ovnClient.CreateLogicalSwitch(lsName, lrName, "192.168.2.0/24,fd00::c0a8:9900/120", "192.168.2.1,fd00::c0a8:9901", true, false)
 		require.NoError(t, err)
 
 		lrp, err := ovnClient.GetLogicalRouterPort(lrpName, false)
@@ -64,7 +64,7 @@ func (suite *OvnClientTestSuite) testCreateLogicalSwitch() {
 	})
 
 	t.Run("remove router type port when needRouter is false", func(t *testing.T) {
-		err = ovnClient.CreateLogicalSwitch(lsName, lrName, "192.168.2.0/24,fd00::c0a8:9900/120", "192.168.2.1,fd00::c0a8:9901", false)
+		err = ovnClient.CreateLogicalSwitch(lsName, lrName, "192.168.2.0/24,fd00::c0a8:9900/120", "192.168.2.1,fd00::c0a8:9901", false, false)
 		require.NoError(t, err)
 
 		_, err = ovnClient.GetLogicalSwitchPort(lspName, false)
@@ -75,7 +75,7 @@ func (suite *OvnClientTestSuite) testCreateLogicalSwitch() {
 	})
 
 	t.Run("should no err when router type port doest't exist", func(t *testing.T) {
-		err = ovnClient.CreateLogicalSwitch(lsName+"-1", lrName+"-1", "192.168.2.0/24,fd00::c0a8:9900/120", "192.168.2.1,fd00::c0a8:9901", false)
+		err = ovnClient.CreateLogicalSwitch(lsName+"-1", lrName+"-1", "192.168.2.0/24,fd00::c0a8:9900/120", "192.168.2.1,fd00::c0a8:9901", false, false)
 		require.NoError(t, err)
 	})
 }

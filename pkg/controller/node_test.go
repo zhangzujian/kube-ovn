@@ -55,7 +55,7 @@ func Test_deletePolicyRouteByNexthop(t *testing.T) {
 		},
 	}
 
-	mockOvnClient.EXPECT().ListLogicalRouterPolicies(gomock.Any()).Return(policies, nil)
+	mockOvnClient.EXPECT().ListLogicalRouterPolicies(util.NodeRouterPolicyPriority, gomock.Any()).Return(policies, nil)
 	mockOvnClient.EXPECT().DeleteLogicalRouterPolicy("ovn-cluster", util.NodeRouterPolicyPriority, "ip4.dst == 192.168.20.5").Return(nil)
 	mockOvnClient.EXPECT().DeleteLogicalRouterPolicy("ovn-cluster", util.NodeRouterPolicyPriority, "ip6.dst == fc00::af4:5").Return(nil)
 

@@ -13,7 +13,7 @@ import (
 )
 
 // CreateLogicalSwitch create logical switch
-func (c *ovnClient) CreateLogicalSwitch(lsName, lrName, cidrBlock, gateway string, needRouter bool) error {
+func (c *ovnClient) CreateLogicalSwitch(lsName, lrName, cidrBlock, gateway string, needRouter, randomAllocateGW bool) error {
 	lspName := fmt.Sprintf("%s-%s", lsName, lrName)
 	lrpName := fmt.Sprintf("%s-%s", lrName, lsName)
 
@@ -26,6 +26,10 @@ func (c *ovnClient) CreateLogicalSwitch(lsName, lrName, cidrBlock, gateway strin
 
 	// only update logical router port networks when logical switch exist
 	if exist {
+		if randomAllocateGW {
+			return nil
+		}
+
 		lrp := &ovnnb.LogicalRouterPort{
 			Name:     lrpName,
 			Networks: strings.Split(networks, ","),
@@ -44,6 +48,10 @@ func (c *ovnClient) CreateLogicalSwitch(lsName, lrName, cidrBlock, gateway strin
 			return err
 		}
 	} else {
+		if randomAllocateGW {
+			return nil
+		}
+
 		if err := c.RemoveLogicalPatchPort(lspName, lrpName); err != nil {
 			return fmt.Errorf("remove router type port %s and %s: %v", lspName, lrpName, err)
 		}

@@ -208,39 +208,6 @@ func (c *Controller) reconcileRouterPorts(vpc *kubeovnv1.Vpc) error {
 	return nil
 }
 
-func (c *Controller) reconcileRouterPortBySubnet(vpc *kubeovnv1.Vpc, subnet *kubeovnv1.Subnet) error {
-	router := vpc.Name
-	routerPortName := ovs.LogicalRouterPortName(router, subnet.Name)
-	exists, err := c.ovnClient.LogicalRouterPortExists(routerPortName)
-	if err != nil {
-		return err
-	}
-
-	if !exists {
-		subnet, err := c.subnetsLister.Get(subnet.Name)
-		if err != nil {
-			if k8serrors.IsNotFound(err) {
-				return nil
-			}
-			klog.Errorf("failed to get subnet %s, err %v", subnet.Name, err)
-			return err
-		}
-
-		gateway := subnet.Spec.Gateway
-		if subnet.Spec.U2OInterconnection && subnet.Status.U2OInterconnectionIP != "" {
-			gateway = subnet.Status.U2OInterconnectionIP
-		}
-		networks := util.GetIpAddrWithMask(gateway, subnet.Spec.CIDRBlock)
-		klog.Infof("router port does not exist, trying to create %s with ip %s", routerPortName, networks)
-
-		if err := c.ovnClient.CreateLogicalRouterPort(router, routerPortName, util.GenerateMac(), strings.Split(networks, ",")); err != nil {
-			klog.Errorf("create logical router port %s, err %v", routerPortName, err)
-			return err
-		}
-	}
-	return nil
-}
-
 type VpcLoadBalancer struct {
 	TcpLoadBalancer     string
 	TcpSessLoadBalancer string
@@ -846,10 +813,14 @@ func (c *Controller) handleAddVpcExternal(key string) error {
 		return err
 	}
 	v4ipCidr := util.GetIpAddrWithMask(v4ip, cachedSubnet.Spec.CIDRBlock)
-	if err := c.ovnLegacyClient.ConnectRouterToExternal(c.config.ExternalGatewaySwitch, key, v4ipCidr, mac, chassises); err != nil {
-		klog.Errorf("failed to connect router '%s' to external, %v", key, err)
+	lspName := fmt.Sprintf("%s-%s", c.config.ExternalGatewaySwitch, key)
+	lrpName := fmt.Sprintf("%s-%s", key, c.config.ExternalGatewaySwitch)
+
+	if err := c.ovnClient.CreateLogicalPatchPort(c.config.ExternalGatewaySwitch, key, lspName, lrpName, v4ipCidr, mac, chassises...); err != nil {
+		klog.Errorf("failed to connect router '%s' to external: %v", key, err)
 		return err
 	}
+
 	cachedVpc, err := c.vpcsLister.Get(key)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
@@ -886,12 +857,16 @@ func (c *Controller) handleDelVpcExternal(key string) error {
 		}
 		return err
 	}
-	lrpEipName := fmt.Sprintf("%s-%s", key, c.config.ExternalGatewaySwitch)
-	klog.V(3).Infof("delete vpc lrp %s", lrpEipName)
-	if err := c.ovnLegacyClient.DisconnectRouterToExternal(c.config.ExternalGatewaySwitch, key); err != nil {
+
+	lspName := fmt.Sprintf("%s-%s", c.config.ExternalGatewaySwitch, key)
+	lrpName := fmt.Sprintf("%s-%s", key, c.config.ExternalGatewaySwitch)
+	klog.V(3).Infof("delete vpc lrp %s", lrpName)
+
+	if err := c.ovnClient.RemoveLogicalPatchPort(lspName, lrpName); err != nil {
 		klog.Errorf("failed to disconnect router '%s' to external, %v", key, err)
 		return err
 	}
+
 	vpc := cachedVpc.DeepCopy()
 	vpc.Status.EnableExternal = cachedVpc.Spec.EnableExternal
 	bytes, err := vpc.Status.Bytes()
@@ -902,7 +877,7 @@ func (c *Controller) handleDelVpcExternal(key string) error {
 		vpc.Name, types.MergePatchType, bytes, metav1.PatchOptions{}, "status"); err != nil {
 		return err
 	}
-	cachedEip, err := c.ovnEipsLister.Get(lrpEipName)
+	cachedEip, err := c.ovnEipsLister.Get(lrpName)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
 			return nil
@@ -913,9 +888,9 @@ func (c *Controller) handleDelVpcExternal(key string) error {
 		klog.Errorf("failed to del finalizer for ovn eip, %v", err)
 		return err
 	}
-	if err = c.config.KubeOvnClient.KubeovnV1().OvnEips().Delete(context.Background(), lrpEipName, metav1.DeleteOptions{}); err != nil {
+	if err = c.config.KubeOvnClient.KubeovnV1().OvnEips().Delete(context.Background(), lrpName, metav1.DeleteOptions{}); err != nil {
 		if !k8serrors.IsNotFound(err) {
-			klog.Errorf("failed to delete ovn eip %s, %v", lrpEipName, err)
+			klog.Errorf("failed to delete ovn eip %s, %v", lrpName, err)
 			return err
 		}
 	}

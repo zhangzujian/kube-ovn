@@ -414,17 +414,17 @@ func (mr *MockLogicalSwitchMockRecorder) CreateBareLogicalSwitch(lsName interfac
 }
 
 // CreateLogicalSwitch mocks base method.
-func (m *MockLogicalSwitch) CreateLogicalSwitch(lsName, lrName, cidrBlock, gateway string, needRouter bool) error {
+func (m *MockLogicalSwitch) CreateLogicalSwitch(lsName, lrName, cidrBlock, gateway string, needRouter, randomAllocateGW bool) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateLogicalSwitch", lsName, lrName, cidrBlock, gateway, needRouter)
+	ret := m.ctrl.Call(m, "CreateLogicalSwitch", lsName, lrName, cidrBlock, gateway, needRouter, randomAllocateGW)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // CreateLogicalSwitch indicates an expected call of CreateLogicalSwitch.
-func (mr *MockLogicalSwitchMockRecorder) CreateLogicalSwitch(lsName, lrName, cidrBlock, gateway, needRouter interface{}) *gomock.Call {
+func (mr *MockLogicalSwitchMockRecorder) CreateLogicalSwitch(lsName, lrName, cidrBlock, gateway, needRouter, randomAllocateGW interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateLogicalSwitch", reflect.TypeOf((*MockLogicalSwitch)(nil).CreateLogicalSwitch), lsName, lrName, cidrBlock, gateway, needRouter)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateLogicalSwitch", reflect.TypeOf((*MockLogicalSwitch)(nil).CreateLogicalSwitch), lsName, lrName, cidrBlock, gateway, needRouter, randomAllocateGW)
 }
 
 // DeleteLogicalSwitch mocks base method.
@@ -1961,17 +1961,17 @@ func (mr *MockOvnClientMockRecorder) CreateLogicalRouterPort(lrName, lrpName, ma
 }
 
 // CreateLogicalSwitch mocks base method.
-func (m *MockOvnClient) CreateLogicalSwitch(lsName, lrName, cidrBlock, gateway string, needRouter bool) error {
+func (m *MockOvnClient) CreateLogicalSwitch(lsName, lrName, cidrBlock, gateway string, needRouter, randomAllocateGW bool) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateLogicalSwitch", lsName, lrName, cidrBlock, gateway, needRouter)
+	ret := m.ctrl.Call(m, "CreateLogicalSwitch", lsName, lrName, cidrBlock, gateway, needRouter, randomAllocateGW)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // CreateLogicalSwitch indicates an expected call of CreateLogicalSwitch.
-func (mr *MockOvnClientMockRecorder) CreateLogicalSwitch(lsName, lrName, cidrBlock, gateway, needRouter interface{}) *gomock.Call {
+func (mr *MockOvnClientMockRecorder) CreateLogicalSwitch(lsName, lrName, cidrBlock, gateway, needRouter, randomAllocateGW interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateLogicalSwitch", reflect.TypeOf((*MockOvnClient)(nil).CreateLogicalSwitch), lsName, lrName, cidrBlock, gateway, needRouter)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateLogicalSwitch", reflect.TypeOf((*MockOvnClient)(nil).CreateLogicalSwitch), lsName, lrName, cidrBlock, gateway, needRouter, randomAllocateGW)
 }
 
 // CreateLogicalSwitchPort mocks base method.

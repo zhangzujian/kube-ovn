@@ -640,12 +640,6 @@ func (c *Controller) handleAddOrUpdateSubnet(key string) error {
 		}
 	}
 
-	exist, err := c.ovnClient.LogicalSwitchExists(subnet.Name)
-	if err != nil {
-		klog.Errorf("failed to list logical switch, %v", err)
-		c.patchSubnetStatus(subnet, "ListLogicalSwitchFailed", err.Error())
-		return err
-	}
 	needRouter := subnet.Spec.Vlan == "" || subnet.Spec.LogicalGateway ||
 		(subnet.Status.U2OInterconnectionIP != "" && subnet.Spec.U2OInterconnection)
 	// 1. overlay subnet, should add lrp, lrp ip is subnet gw
@@ -653,38 +647,15 @@ func (c *Controller) handleAddOrUpdateSubnet(key string) error {
 	randomAllocateGW := !subnet.Spec.LogicalGateway && vpc.Spec.EnableExternal && subnet.Name == c.config.ExternalGatewaySwitch
 	// 3. underlay subnet use physical gw, vpc has eip, lrp managed in vpc process, lrp ip is random allocation, not subnet gw
 
-	if !exist {
-		subnet.Status.EnsureStandardConditions()
-		// If multiple namespace use same ls name, only first one will success
-		if err := c.ovnLegacyClient.CreateLogicalSwitch(subnet.Name, vpc.Status.Router, subnet.Spec.CIDRBlock, subnet.Spec.Gateway, needRouter); err != nil {
-			c.patchSubnetStatus(subnet, "CreateLogicalSwitchFailed", err.Error())
-			return err
-		}
-		if needRouter {
-			if err := c.reconcileRouterPortBySubnet(vpc, subnet); err != nil {
-				klog.Errorf("failed to connect switch %s to router %s, %v", subnet.Name, vpc.Name, err)
-				return err
-			}
-		}
-	} else {
-		// logical switch exists, only update other_config
-		if !randomAllocateGW {
-			gateway := subnet.Spec.Gateway
-			if subnet.Status.U2OInterconnectionIP != "" && subnet.Spec.U2OInterconnection {
-				gateway = subnet.Status.U2OInterconnectionIP
-			}
-			if err := c.ovnLegacyClient.SetLogicalSwitchConfig(subnet.Name, vpc.Status.Router, subnet.Spec.Protocol, subnet.Spec.CIDRBlock, gateway, subnet.Spec.ExcludeIps, needRouter); err != nil {
-				c.patchSubnetStatus(subnet, "SetLogicalSwitchConfigFailed", err.Error())
-				return err
-			}
-		}
-		if !needRouter && !randomAllocateGW {
-			klog.Infof("remove connection from router %s to switch %s", vpc.Status.Router, subnet.Name)
-			if err := c.ovnLegacyClient.RemoveRouterPort(subnet.Name, vpc.Status.Router); err != nil {
-				klog.Errorf("failed to remove router port from %s, %v", subnet.Name, err)
-				return err
-			}
-		}
+	gateway := subnet.Spec.Gateway
+	if subnet.Status.U2OInterconnectionIP != "" && subnet.Spec.U2OInterconnection {
+		gateway = subnet.Status.U2OInterconnectionIP
+	}
+
+	// create or update logical switch
+	if err := c.ovnClient.CreateLogicalSwitch(subnet.Name, vpc.Status.Router, subnet.Spec.CIDRBlock, gateway, needRouter, randomAllocateGW); err != nil {
+		klog.Errorf("create logical switch %s: %v", subnet.Name, err)
+		return err
 	}
 
 	subnet.Status.EnsureStandardConditions()
@@ -867,10 +838,9 @@ func (c *Controller) handleDeleteSubnet(subnet *kubeovnv1.Subnet) error {
 
 	var router string
 	vpc, err := c.vpcsLister.Get(subnet.Spec.Vpc)
-	if err == nil && vpc.Status.Router != "" {
-		klog.Infof("remove connection from router %s to switch %s", vpc.Status.Router, subnet.Name)
-		if err = c.ovnLegacyClient.RemoveRouterPort(subnet.Name, vpc.Status.Router); err != nil {
-			klog.Errorf("failed to delete router port %s %v", subnet.Name, err)
+	if err != nil {
+		if !k8serrors.IsNotFound(err) {
+			klog.Errorf("get vpc %s: %v", vpc.Name, err)
 			return err
 		}
 		router = util.DefaultVpc
