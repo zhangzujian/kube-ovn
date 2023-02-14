@@ -261,6 +261,24 @@ func (c *ovnClient) UpdateLogicalSwitchAcl(lsName string, subnetAcls []kubeovnv1
 	return nil
 }
 
+// UpdateAcl update acl
+func (c *ovnClient) UpdateAcl(acl *ovnnb.ACL, fields ...interface{}) error {
+	if acl == nil {
+		return fmt.Errorf("address_set is nil")
+	}
+
+	op, err := c.Where(acl).Update(acl, fields...)
+	if err != nil {
+		return fmt.Errorf("generate operations for updating acl with 'direction %s priority %d match %s': %v", acl.Direction, acl.Priority, acl.Match, err)
+	}
+
+	if err = c.Transact("acl-update", op); err != nil {
+		return fmt.Errorf("update acl with 'direction %s priority %d match %s': %v", acl.Direction, acl.Priority, acl.Match, err)
+	}
+
+	return nil
+}
+
 // SetLogicalSwitchPrivate will drop all ingress traffic except allow subnets, same subnet and node subnet
 func (c *ovnClient) SetLogicalSwitchPrivate(lsName, cidrBlock string, allowSubnets []string) error {
 	// clear acls
@@ -376,6 +394,35 @@ func (c *ovnClient) SetLogicalSwitchPrivate(lsName, cidrBlock string, allowSubne
 
 	if err := c.CreateAcls(lsName, logicalSwitchKey, acls...); err != nil {
 		return fmt.Errorf("add ingress acls to logical switch %s: %v", lsName, err)
+	}
+
+	return nil
+}
+
+func (c *ovnClient) SetAclLog(pgName string, logEnable, isIngress bool) error {
+	direction := ovnnb.ACLDirectionToLport
+	portDirection := "outport"
+	if !isIngress {
+		direction = ovnnb.ACLDirectionFromLport
+		portDirection = "inport"
+	}
+
+	// match all traffic to or from pgName
+	AllIpMatch := NewAndAclMatch(
+		NewAclMatch(portDirection, "==", "@"+pgName, ""),
+		NewAclMatch("ip", "", "", ""),
+	)
+
+	acl, err := c.GetAcl(pgName, direction, util.IngressDefaultDrop, AllIpMatch.String(), false)
+	if err != nil {
+		return err
+	}
+
+	acl.Log = logEnable
+
+	err = c.UpdateAcl(acl, &acl.Log)
+	if err != nil {
+		return fmt.Errorf("update acl: %v", err)
 	}
 
 	return nil

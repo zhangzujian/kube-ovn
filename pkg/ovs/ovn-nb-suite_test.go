@@ -417,6 +417,10 @@ func (suite *OvnClientTestSuite) Test_UpdateLogicalSwitchAcl() {
 	suite.testUpdateLogicalSwitchAcl()
 }
 
+func (suite *OvnClientTestSuite) Test_SetAclLog() {
+	suite.testSetAclLog()
+}
+
 func (suite *OvnClientTestSuite) Test_SetLogicalSwitchPrivate() {
 	suite.testSetLogicalSwitchPrivate()
 }

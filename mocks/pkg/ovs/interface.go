@@ -1130,6 +1130,20 @@ func (mr *MockACLMockRecorder) DeleteAcls(parentName, parentType, direction inte
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteAcls", reflect.TypeOf((*MockACL)(nil).DeleteAcls), parentName, parentType, direction)
 }
 
+// SetAclLog mocks base method.
+func (m *MockACL) SetAclLog(pgName string, logEnable, isIngress bool) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetAclLog", pgName, logEnable, isIngress)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetAclLog indicates an expected call of SetAclLog.
+func (mr *MockACLMockRecorder) SetAclLog(pgName, logEnable, isIngress interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetAclLog", reflect.TypeOf((*MockACL)(nil).SetAclLog), pgName, logEnable, isIngress)
+}
+
 // SetLogicalSwitchPrivate mocks base method.
 func (m *MockACL) SetLogicalSwitchPrivate(lsName, cidrBlock string, allowSubnets []string) error {
 	m.ctrl.T.Helper()
@@ -2906,6 +2920,20 @@ func (m *MockOvnClient) RemoveLogicalPatchPort(lspName, lrpName string) error {
 func (mr *MockOvnClientMockRecorder) RemoveLogicalPatchPort(lspName, lrpName interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveLogicalPatchPort", reflect.TypeOf((*MockOvnClient)(nil).RemoveLogicalPatchPort), lspName, lrpName)
+}
+
+// SetAclLog mocks base method.
+func (m *MockOvnClient) SetAclLog(pgName string, logEnable, isIngress bool) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetAclLog", pgName, logEnable, isIngress)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetAclLog indicates an expected call of SetAclLog.
+func (mr *MockOvnClientMockRecorder) SetAclLog(pgName, logEnable, isIngress interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetAclLog", reflect.TypeOf((*MockOvnClient)(nil).SetAclLog), pgName, logEnable, isIngress)
 }
 
 // SetAzName mocks base method.

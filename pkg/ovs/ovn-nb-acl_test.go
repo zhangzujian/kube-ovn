@@ -538,6 +538,56 @@ func (suite *OvnClientTestSuite) testUpdateLogicalSwitchAcl() {
 	}
 }
 
+func (suite *OvnClientTestSuite) testSetAclLog() {
+	t := suite.T()
+	t.Parallel()
+
+	ovnClient := suite.ovnClient
+	pgName := GetSgPortGroupName("test_set_acl_log")
+
+	err := ovnClient.CreatePortGroup(pgName, nil)
+	require.NoError(t, err)
+
+	t.Run("set ingress acl log to false", func(t *testing.T) {
+		match := fmt.Sprintf("outport == @%s && ip", pgName)
+		acl := newAcl(pgName, ovnnb.ACLDirectionToLport, util.IngressDefaultDrop, match, ovnnb.ACLActionDrop, func(acl *ovnnb.ACL) {
+			acl.Name = &pgName
+			acl.Log = true
+			acl.Severity = &ovnnb.ACLSeverityWarning
+		})
+
+		err = ovnClient.CreateAcls(pgName, portGroupKey, acl)
+		require.NoError(t, err)
+
+		err = ovnClient.SetAclLog(pgName, false, true)
+		require.NoError(t, err)
+
+		acl, err = ovnClient.GetAcl(pgName, ovnnb.ACLDirectionToLport, util.IngressDefaultDrop, match, false)
+		require.NoError(t, err)
+		require.False(t, acl.Log)
+	})
+
+	t.Run("set egress acl log to false", func(t *testing.T) {
+		match := fmt.Sprintf("inport == @%s && ip", pgName)
+		acl := newAcl(pgName, ovnnb.ACLDirectionFromLport, util.IngressDefaultDrop, match, ovnnb.ACLActionDrop, func(acl *ovnnb.ACL) {
+			acl.Name = &pgName
+			acl.Log = false
+			acl.Severity = &ovnnb.ACLSeverityWarning
+		})
+
+		err = ovnClient.CreateAcls(pgName, portGroupKey, acl)
+		require.NoError(t, err)
+
+		err = ovnClient.SetAclLog(pgName, true, false)
+		require.NoError(t, err)
+
+		acl, err = ovnClient.GetAcl(pgName, ovnnb.ACLDirectionFromLport, util.IngressDefaultDrop, match, false)
+		require.NoError(t, err)
+		require.True(t, acl.Log)
+	})
+
+}
+
 func (suite *OvnClientTestSuite) testSetLogicalSwitchPrivate() {
 	t := suite.T()
 	t.Parallel()
@@ -618,72 +668,72 @@ func (suite *OvnClientTestSuite) testSetLogicalSwitchPrivate() {
 		}
 	})
 
-	// t.Run("subnet protocol is ipv4", func(t *testing.T) {
-	// 	cidrBlock := "10.244.0.0/16"
-	// 	err = ovnClient.SetLogicalSwitchPrivate(lsName, cidrBlock, allowSubnets)
-	// 	require.NoError(t, err)
+	t.Run("subnet protocol is ipv4", func(t *testing.T) {
+		cidrBlock := "10.244.0.0/16"
+		err = ovnClient.SetLogicalSwitchPrivate(lsName, cidrBlock, allowSubnets)
+		require.NoError(t, err)
 
-	// 	ls, err := ovnClient.GetLogicalSwitch(lsName, false)
-	// 	require.NoError(t, err)
-	// 	require.Len(t, ls.ACLs, 5)
+		ls, err := ovnClient.GetLogicalSwitch(lsName, false)
+		require.NoError(t, err)
+		require.Len(t, ls.ACLs, 5)
 
-	// 	// default drop acl
-	// 	match := "ip"
-	// 	acl, err := ovnClient.GetAcl(lsName, direction, util.DefaultDropPriority, match, false)
-	// 	require.NoError(t, err)
-	// 	require.Contains(t, ls.ACLs, acl.UUID)
+		// default drop acl
+		match := "ip"
+		acl, err := ovnClient.GetAcl(lsName, direction, util.DefaultDropPriority, match, false)
+		require.NoError(t, err)
+		require.Contains(t, ls.ACLs, acl.UUID)
 
-	// 	// same subnet acl
-	// 	for _, cidr := range strings.Split(cidrBlock, ",") {
-	// 		protocol := util.CheckProtocol(cidr)
+		// same subnet acl
+		for _, cidr := range strings.Split(cidrBlock, ",") {
+			protocol := util.CheckProtocol(cidr)
 
-	// 		match := fmt.Sprintf(`ip4.src == %s && ip4.dst == %s`, cidr, cidr)
-	// 		if protocol == kubeovnv1.ProtocolIPv6 {
-	// 			match = fmt.Sprintf(`ip6.src == %s && ip6.dst == %s`, cidr, cidr)
-	// 		}
+			match := fmt.Sprintf(`ip4.src == %s && ip4.dst == %s`, cidr, cidr)
+			if protocol == kubeovnv1.ProtocolIPv6 {
+				match = fmt.Sprintf(`ip6.src == %s && ip6.dst == %s`, cidr, cidr)
+			}
 
-	// 		acl, err = ovnClient.GetAcl(lsName, direction, util.SubnetAllowPriority, match, false)
-	// 		require.NoError(t, err)
-	// 		require.Contains(t, ls.ACLs, acl.UUID)
+			acl, err = ovnClient.GetAcl(lsName, direction, util.SubnetAllowPriority, match, false)
+			require.NoError(t, err)
+			require.Contains(t, ls.ACLs, acl.UUID)
 
-	// 		// allow subnet acl
-	// 		for _, subnet := range allowSubnets {
-	// 			protocol := util.CheckProtocol(cidr)
+			// allow subnet acl
+			for _, subnet := range allowSubnets {
+				protocol := util.CheckProtocol(cidr)
 
-	// 			allowProtocol := util.CheckProtocol(subnet)
-	// 			if allowProtocol != protocol {
-	// 				continue
-	// 			}
+				allowProtocol := util.CheckProtocol(subnet)
+				if allowProtocol != protocol {
+					continue
+				}
 
-	// 			match = fmt.Sprintf("(ip4.src == %s && ip4.dst == %s) || (ip4.src == %s && ip4.dst == %s)", cidr, subnet, subnet, cidr)
-	// 			if protocol == kubeovnv1.ProtocolIPv6 {
-	// 				match = fmt.Sprintf("(ip6.src == %s && ip6.dst == %s) || (ip6.src == %s && ip6.dst == %s)", cidr, subnet, subnet, cidr)
-	// 			}
+				match = fmt.Sprintf("(ip4.src == %s && ip4.dst == %s) || (ip4.src == %s && ip4.dst == %s)", cidr, subnet, subnet, cidr)
+				if protocol == kubeovnv1.ProtocolIPv6 {
+					match = fmt.Sprintf("(ip6.src == %s && ip6.dst == %s) || (ip6.src == %s && ip6.dst == %s)", cidr, subnet, subnet, cidr)
+				}
 
-	// 			acl, err = ovnClient.GetAcl(lsName, direction, util.SubnetAllowPriority, match, false)
-	// 			require.NoError(t, err)
-	// 			require.Contains(t, ls.ACLs, acl.UUID)
-	// 		}
-	// 	}
+				acl, err = ovnClient.GetAcl(lsName, direction, util.SubnetAllowPriority, match, false)
+				require.NoError(t, err)
+				require.Contains(t, ls.ACLs, acl.UUID)
+			}
+		}
 
-	// 	// node subnet acl
-	// 	for _, cidr := range strings.Split(ovnClient.NodeSwitchCIDR, ",") {
-	// 		protocol := util.CheckProtocol(cidr)
+		// node subnet acl
+		for _, cidr := range strings.Split(ovnClient.NodeSwitchCIDR, ",") {
+			protocol := util.CheckProtocol(cidr)
 
-	// 		match := fmt.Sprintf(`ip4.src == %s`, cidr)
-	// 		if protocol == kubeovnv1.ProtocolIPv6 {
-	// 			match = fmt.Sprintf(`ip6.src == %s`, cidr)
-	// 		}
+			match := fmt.Sprintf(`ip4.src == %s`, cidr)
+			if protocol == kubeovnv1.ProtocolIPv6 {
+				match = fmt.Sprintf(`ip6.src == %s`, cidr)
+			}
 
-	// 		acl, err = ovnClient.GetAcl(lsName, direction, util.NodeAllowPriority, match, false)
-	// 		if protocol == kubeovnv1.ProtocolIPv4 {
-	// 			require.NoError(t, err)
-	// 			require.Contains(t, ls.ACLs, acl.UUID)
-	// 		} else {
-	// 			require.ErrorContains(t, err, "not found acl")
-	// 		}
-	// 	}
-	// })
+			acl, err = ovnClient.GetAcl(lsName, direction, util.NodeAllowPriority, match, false)
+			if protocol == kubeovnv1.ProtocolIPv4 {
+				require.NoError(t, err)
+				require.Contains(t, ls.ACLs, acl.UUID)
+			} else {
+				require.ErrorContains(t, err, "not found acl")
+			}
+		}
+	})
 }
 
 func (suite *OvnClientTestSuite) test_newSgRuleACL() {

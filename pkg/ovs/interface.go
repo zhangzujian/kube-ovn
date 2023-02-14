@@ -94,6 +94,7 @@ type ACL interface {
 	CreateNodeAcl(pgName, nodeIp string) error
 	CreateSgDenyAllAcl(sgName string) error
 	UpdateSgAcl(sg *kubeovnv1.SecurityGroup, direction string) error
+	SetAclLog(pgName string, logEnable, isIngress bool) error
 	SetLogicalSwitchPrivate(lsName, cidrBlock string, allowSubnets []string) error
 	DeleteAcls(parentName, parentType string, direction string) error
 }

@@ -314,16 +314,14 @@ func (c *Controller) handleUpdateNp(key string) error {
 					return err
 				}
 
+				npp := []netv1.NetworkPolicyPort{}
 				if len(allows) != 0 || len(excepts) != 0 {
-					if err = c.ovnClient.CreateIngressAcl(pgName, ingressAllowAsName, ingressExceptAsName, protocol, npr.Ports); err != nil {
-						klog.Errorf("create ingress acls for np %s: %v", key, err)
-						return err
-					}
-				} else {
-					if err = c.ovnClient.CreateIngressAcl(pgName, ingressAllowAsName, ingressExceptAsName, protocol, []netv1.NetworkPolicyPort{}); err != nil {
-						klog.Errorf("failed to create default deny all ingress acls for np %s, %v", key, err)
-						return err
-					}
+					npp = npr.Ports
+				}
+
+				if err = c.ovnClient.CreateIngressAcl(pgName, ingressAllowAsName, ingressExceptAsName, protocol, npp); err != nil {
+					klog.Errorf("create ingress acls for np %s: %v", key, err)
+					return err
 				}
 			}
 			if len(np.Spec.Ingress) == 0 {
@@ -351,7 +349,7 @@ func (c *Controller) handleUpdateNp(key string) error {
 				}
 			}
 
-			if err = c.ovnLegacyClient.SetAclLog(pgName, logEnable, true); err != nil {
+			if err = c.ovnClient.SetAclLog(pgName, logEnable, true); err != nil {
 				// just log and do not return err here
 				klog.Errorf("failed to set ingress acl log for np %s, %v", key, err)
 			}
@@ -483,7 +481,7 @@ func (c *Controller) handleUpdateNp(key string) error {
 				}
 			}
 
-			if err = c.ovnLegacyClient.SetAclLog(pgName, logEnable, false); err != nil {
+			if err = c.ovnClient.SetAclLog(pgName, logEnable, false); err != nil {
 				// just log and do not return err here
 				klog.Errorf("failed to set egress acl log for np %s, %v", key, err)
 			}
