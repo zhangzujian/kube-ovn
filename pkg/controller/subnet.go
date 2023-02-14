@@ -1820,6 +1820,7 @@ func (c *Controller) addCommonRoutesForSubnet(subnet *kubeovnv1.Subnet) error {
 		match := fmt.Sprintf("ip%d.dst == %s", af, cidr)
 		externalIDs := map[string]string{"vendor": util.CniTypeName, "subnet": subnet.Name}
 
+		klog.Infof("add policy route for router: %s, match %s, action %s, nexthop %s, extrenalID %v", c.config.ClusterRouter, match, ovnnb.LogicalRouterPolicyActionAllow, "", externalIDs)
 		if err := c.ovnClient.AddLogicalRouterPolicy(c.config.ClusterRouter, util.SubnetRouterPolicyPriority, match, ovnnb.LogicalRouterPolicyActionAllow, nil, externalIDs); err != nil {
 			klog.Errorf("add logical router policy for CIDR %s of subnet %s: %v", cidr, subnet.Name, err)
 			return err

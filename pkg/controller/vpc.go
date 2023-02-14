@@ -16,7 +16,6 @@ import (
 	"k8s.io/klog/v2"
 
 	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
-	"github.com/kubeovn/kube-ovn/pkg/ovs"
 	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
@@ -160,54 +159,6 @@ func (c *Controller) handleUpdateVpcStatus(key string) error {
 	return nil
 }
 
-func (c *Controller) reconcileRouterPorts(vpc *kubeovnv1.Vpc) error {
-	subnets, _, err := c.getVpcSubnets(vpc)
-	if err != nil {
-		klog.ErrorS(err, "unable to get related subnets", "vpc", vpc.Name)
-		return err
-	}
-
-	router := vpc.Name
-	for _, subnetName := range subnets {
-		routerPortName := ovs.LogicalRouterPortName(router, subnetName)
-		exists, err := c.ovnClient.LogicalRouterPortExists(routerPortName)
-		if err != nil {
-			return err
-		}
-
-		if !exists {
-			subnet, err := c.subnetsLister.Get(subnetName)
-			if err != nil {
-				if k8serrors.IsNotFound(err) {
-					continue
-				}
-				klog.ErrorS(err, "unable to get subnet", "subnet", subnetName)
-				return err
-			}
-
-			if subnet.Spec.Vlan != "" && !subnet.Spec.LogicalGateway {
-				// skip vlan subnet which use underlay gw
-				// vpc connect to external vlan subnet is controlled by vpc spec enableExternal
-				klog.Infof("no need to connect vpc '%s' to vlan subnet %s", router, subnet.Name)
-				return nil
-			}
-
-			gateway := subnet.Spec.Gateway
-			if subnet.Spec.U2OInterconnection && subnet.Status.U2OInterconnectionIP != "" {
-				gateway = subnet.Status.U2OInterconnectionIP
-			}
-			networks := util.GetIpAddrWithMask(gateway, subnet.Spec.CIDRBlock)
-			klog.Infof("add vpc lrp %s, networks %s", routerPortName, networks)
-
-			if err := c.ovnClient.CreateLogicalRouterPort(router, routerPortName, util.GenerateMac(), []string{networks}); err != nil {
-				klog.ErrorS(err, "unable to create router port", "vpc", vpc.Name, "subnet", subnetName)
-				return err
-			}
-		}
-	}
-	return nil
-}
-
 type VpcLoadBalancer struct {
 	TcpLoadBalancer     string
 	TcpSessLoadBalancer string
@@ -321,11 +272,6 @@ func (c *Controller) handleAddOrUpdateVpc(key string) error {
 		return err
 	}
 	if err = c.createVpcRouter(key); err != nil {
-		return err
-	}
-
-	if err := c.reconcileRouterPorts(vpc); err != nil {
-		klog.ErrorS(err, "unable to reconcileRouterPorts")
 		return err
 	}
 
