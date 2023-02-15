@@ -25,9 +25,11 @@ env:
   GOSEC_VERSION: '2.14.0'
 
 jobs:
-  check-file-changes:
+  check:
     name: Check File Changes
     runs-on: ubuntu-22.04
+    outputs:
+      output1: ${{ steps.check.outputs.skip }}
     steps:
       - uses: actions/checkout@v3
         with:
@@ -39,6 +41,7 @@ jobs:
         id: go
 
       - name: Check
+        id: check
         env:
           GOOS: windows
         run: |
@@ -52,7 +55,7 @@ jobs:
           $dir
           go.mod
           go.sum
-          $(echo ${{ github.workflow_ref }} | awk -F@ '{print $1}' | sed 's@^${{ github.repository }}@@')
+          $(echo ${{ github.workflow_ref }} | awk -F@ '{print $1}' | sed 's@^${{ github.repository }}/@@')
           EOF
 
           skip=1
@@ -70,14 +73,14 @@ jobs:
               break
             fi
           done
-          echo skip="$skip" >> $GITHUB_OUTPUT
+          echo skip="$skip" >> "$GITHUB_OUTPUT"
 
   build-ovs-and-ovn:
     name: Build OVS and OVN
     needs:
       - check-file-changes
     runs-on: windows-2019
-    if: ${{ needs.check-file-changes.outputs.skip == '0' }}
+    if: ${{ needs.check.outputs.output1 == '0' }}
     steps:
       - name: Check out PTHREADS4W
         run: |
@@ -181,7 +184,7 @@ jobs:
     needs:
       - check-file-changes
     runs-on: windows-2019
-    if: ${{ needs.check-file-changes.outputs.skip == '0' }}
+    if: ${{ needs.check.outputs.output1 == '0' }}
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
