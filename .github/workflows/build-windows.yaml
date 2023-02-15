@@ -182,7 +182,7 @@ jobs:
   build-kube-ovn:
     name: Build Kube-OVN
     needs:
-      - check-file-changes
+      - check
     runs-on: windows-2019
     if: ${{ needs.check.outputs.output1 == '0' }}
     steps:
