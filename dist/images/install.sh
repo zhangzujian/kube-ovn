@@ -3582,7 +3582,7 @@ done
 
 sleep 5
 kubectl rollout status daemonset/kube-ovn-pinger -n kube-system --timeout 300s
-kubectl rollout status deployment/coredns -n kube-system --timeout 600s
+kubectl rollout status deployment/coredns -n kube-system --timeout 300s
 echo "-------------------------------"
 echo ""
 

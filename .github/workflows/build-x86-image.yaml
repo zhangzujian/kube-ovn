@@ -196,6 +196,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - run: sudo touch /continue
+      - uses: lhotari/action-upterm@v1
+
       - name: Create the default branch directory
         run: mkdir -p test/e2e/source
 
@@ -264,7 +267,7 @@ jobs:
           sudo chown -R $(id -un). ~/.kube/
 
       - name: Install Kube-OVN
-        run: make kind-install-${{ matrix.mode }}-${{ matrix.ip-family }}
+        run: make kind-install-${{ matrix.mode }}-${{ matrix.ip-family }} || sleep infinity
 
       - name: Run E2E
         working-directory: ${{ env.E2E_DIR }}
@@ -289,6 +292,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - run: sudo touch /continue
+      - uses: lhotari/action-upterm@v1
+
       - name: Create the default branch directory
         run: mkdir -p test/e2e/source
 
@@ -357,7 +363,7 @@ jobs:
           sudo chown -R $(id -un). ~/.kube/
 
       - name: Install Kube-OVN
-        run: make kind-install-${{ matrix.ip-family }}
+        run: make kind-install-${{ matrix.ip-family }} || sleep infinity
 
       - name: Run E2E
         working-directory: ${{ env.E2E_DIR }}
@@ -377,6 +383,9 @@ jobs:
           - dual
     steps:
       - uses: actions/checkout@v3
+
+      - run: sudo touch /continue
+      - uses: lhotari/action-upterm@v1
 
       - name: Create the default branch directory
         run: mkdir -p test/e2e/source
@@ -446,7 +455,7 @@ jobs:
           sudo chown -R $(id -un). ~/.kube/
 
       - name: Install Kube-OVN
-        run: make kind-install-${{ matrix.ip-family }}
+        run: make kind-install-${{ matrix.ip-family }} || sleep infinity
 
       - name: Run E2E
         working-directory: ${{ env.E2E_DIR }}
@@ -466,6 +475,9 @@ jobs:
           - dual
     steps:
       - uses: actions/checkout@v3
+
+      - run: sudo touch /continue
+      - uses: lhotari/action-upterm@v1
 
       - name: Create the default branch directory
         run: mkdir -p test/e2e/source
@@ -508,7 +520,7 @@ jobs:
           sudo chown -R $(id -un). ~/.kube/
 
       - name: Install Kube-OVN
-        run: make kind-install-${{ matrix.ip-family }}
+        run: make kind-install-${{ matrix.ip-family }} || sleep infinity
 
       - name: Run E2E
         working-directory: ${{ env.E2E_DIR }}
@@ -531,6 +543,9 @@ jobs:
           - underlay
     steps:
       - uses: actions/checkout@v3
+
+      - run: sudo touch /continue
+      - uses: lhotari/action-upterm@v1
 
       - name: Create the default branch directory
         run: mkdir -p test/e2e/source
@@ -595,7 +610,7 @@ jobs:
           sudo chown -R $(id -un). ~/.kube/
 
       - name: Install Kube-OVN
-        run: make kind-install-${{ matrix.mode }}-${{ matrix.ip-family }}
+        run: make kind-install-${{ matrix.mode }}-${{ matrix.ip-family }} || sleep infinity
 
       - name: Run E2E
         working-directory: ${{ env.E2E_DIR }}
@@ -615,6 +630,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v3
+
+      - run: sudo touch /continue
+      - uses: lhotari/action-upterm@v1
 
       - name: Create the default branch directory
         run: mkdir -p test/e2e/source
@@ -679,7 +697,7 @@ jobs:
           sudo chown -R $(id -un). ~/.kube/
 
       - name: Install Kube-OVN
-        run: make kind-install-ovn-ic
+        run: make kind-install-ovn-ic || sleep infinity
 
       - name: Run E2E
         working-directory: ${{ env.E2E_DIR }}
@@ -1071,6 +1089,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - run: sudo touch /continue
+      - uses: lhotari/action-upterm@v1
+
       - name: Create the default branch directory
         run: mkdir -p test/e2e/source
 
@@ -1136,7 +1157,7 @@ jobs:
       - name: Install Kube-OVN
         run: |
           sudo ENABLE_SSL=${{ matrix.ssl }} ENABLE_BIND_LOCAL_IP=${{ matrix.bind-local }} \
-            make kind-install-${{ matrix.ip-family }}
+            make kind-install-${{ matrix.ip-family }} || sleep infinity
 
       - name: Run E2E
         working-directory: ${{ env.E2E_DIR }}
