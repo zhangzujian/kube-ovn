@@ -187,7 +187,7 @@ func (c *Controller) handleUpdateEndpoint(key string) error {
 	handleLoadBalancerVips := func(lbName, oldLBName, vip, backends string) error {
 		// for performance reason delete lb with no backends
 		if len(backends) != 0 {
-			klog.Infof("adding vip %s with backends to LB %s", vip, backends, lbName)
+			klog.Infof("adding vip %s with backends %s to LB %s", vip, backends, lbName)
 			if err = c.ovnClient.LoadBalancerAddVips(lbName, map[string]string{vip: backends}); err != nil {
 				return fmt.Errorf("add vip %s to lb %s: %v", vip, lbName, err)
 			}

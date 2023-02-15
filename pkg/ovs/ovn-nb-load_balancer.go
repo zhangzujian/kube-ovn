@@ -7,6 +7,7 @@ import (
 
 	"github.com/ovn-org/libovsdb/model"
 	"github.com/ovn-org/libovsdb/ovsdb"
+	"k8s.io/klog/v2"
 
 	ovsclient "github.com/kubeovn/kube-ovn/pkg/ovsdb/client"
 	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
@@ -53,6 +54,7 @@ func (c *ovnClient) UpdateLoadBalancer(lb *ovnnb.LoadBalancer, fields ...interfa
 		return fmt.Errorf("generate operations for updating load balancer %s: %v", lb.Name, err)
 	}
 
+	klog.Infof("ops for updating load balancer %s: %v", lb.Name, op)
 	if err = c.Transact("lb-update", op); err != nil {
 		return fmt.Errorf("update load balancer %s: %v", lb.Name, err)
 	}
@@ -71,6 +73,9 @@ func (c *ovnClient) LoadBalancerAddVips(lbName string, vips map[string]string) e
 		return err
 	}
 
+	klog.Infof("vips to be added: %v", vips)
+	klog.Infof("vips before: %v", lb.Vips)
+
 	if lb.Vips == nil {
 		lb.Vips = make(map[string]string)
 	}
@@ -82,6 +87,11 @@ func (c *ovnClient) LoadBalancerAddVips(lbName string, vips map[string]string) e
 	if err := c.UpdateLoadBalancer(lb, &lb.Vips); err != nil {
 		return fmt.Errorf("add vips %v to lb %s: %v", vips, lbName, err)
 	}
+
+	if lb, err = c.GetLoadBalancer(lbName, false); err != nil {
+		return err
+	}
+	klog.Infof("vips after: %v", lb.Vips)
 
 	return nil
 }
