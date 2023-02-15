@@ -616,10 +616,11 @@ func Test_scratch(t *testing.T) {
 	ovnClient, err := newOvnClient(t, endpoint, 10, "")
 	require.NoError(t, err)
 
-	policies, err := ovnClient.ListLogicalRouterPolicies(29000, map[string]string{logicalRouterKey: "ovn-cluster"})
+	err = ovnClient.CreateLoadBalancer("test-lb", "tcp", "ip_src")
 	require.NoError(t, err)
 
-	fmt.Println(policies)
+	err = ovnClient.SetLoadBalancerAffinityTimeout("test-lb", 300)
+	require.NoError(t, err)
 }
 
 func newOVSDBServer(t *testing.T, dbModel model.ClientDBModel, schema ovsdb.DatabaseSchema) (*server.OvsdbServer, string) {

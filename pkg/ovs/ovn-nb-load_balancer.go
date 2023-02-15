@@ -3,6 +3,7 @@ package ovs
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/ovn-org/libovsdb/model"
 	"github.com/ovn-org/libovsdb/ovsdb"
@@ -80,6 +81,28 @@ func (c *ovnClient) LoadBalancerAddVips(lbName string, vips map[string]string) e
 
 	if err := c.UpdateLoadBalancer(lb, &lb.Vips); err != nil {
 		return fmt.Errorf("add vips %v to lb %s: %v", vips, lbName, err)
+	}
+
+	return nil
+}
+
+// SetLoadBalancerAffinityTimeout sets the LB's affinity timeout in seconds
+func (c *ovnClient) SetLoadBalancerAffinityTimeout(lbName string, timeout int) error {
+	lb, err := c.GetLoadBalancer(lbName, false)
+	if err != nil {
+		return err
+	}
+
+	if lb.Options == nil {
+		lb.Options = make(map[string]string)
+	}
+
+	lb.Options["affinity_timeout"] = strconv.Itoa(timeout)
+
+	if err := c.UpdateLoadBalancer(lb, &lb.Options); err != nil {
+		if err != nil {
+			return fmt.Errorf("set affinity timeout of lb %s to %d, err: %v", lbName, timeout, err)
+		}
 	}
 
 	return nil

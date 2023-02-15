@@ -875,6 +875,20 @@ func (mr *MockLoadBalancerMockRecorder) LoadBalancerExists(lbName interface{}) *
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LoadBalancerExists", reflect.TypeOf((*MockLoadBalancer)(nil).LoadBalancerExists), lbName)
 }
 
+// SetLoadBalancerAffinityTimeout mocks base method.
+func (m *MockLoadBalancer) SetLoadBalancerAffinityTimeout(lbName string, timeout int) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetLoadBalancerAffinityTimeout", lbName, timeout)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetLoadBalancerAffinityTimeout indicates an expected call of SetLoadBalancerAffinityTimeout.
+func (mr *MockLoadBalancerMockRecorder) SetLoadBalancerAffinityTimeout(lbName, timeout interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetLoadBalancerAffinityTimeout", reflect.TypeOf((*MockLoadBalancer)(nil).SetLoadBalancerAffinityTimeout), lbName, timeout)
+}
+
 // MockPortGroup is a mock of PortGroup interface.
 type MockPortGroup struct {
 	ctrl     *gomock.Controller
@@ -2976,6 +2990,20 @@ func (m *MockOvnClient) SetLBCIDR(serviceCIDR string) error {
 func (mr *MockOvnClientMockRecorder) SetLBCIDR(serviceCIDR interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetLBCIDR", reflect.TypeOf((*MockOvnClient)(nil).SetLBCIDR), serviceCIDR)
+}
+
+// SetLoadBalancerAffinityTimeout mocks base method.
+func (m *MockOvnClient) SetLoadBalancerAffinityTimeout(lbName string, timeout int) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SetLoadBalancerAffinityTimeout", lbName, timeout)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SetLoadBalancerAffinityTimeout indicates an expected call of SetLoadBalancerAffinityTimeout.
+func (mr *MockOvnClientMockRecorder) SetLoadBalancerAffinityTimeout(lbName, timeout interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetLoadBalancerAffinityTimeout", reflect.TypeOf((*MockOvnClient)(nil).SetLoadBalancerAffinityTimeout), lbName, timeout)
 }
 
 // SetLogicalSwitchPortExternalIds mocks base method.

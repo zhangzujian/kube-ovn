@@ -197,7 +197,6 @@ func (c *Controller) handleUpdateNp(key string) error {
 		return err
 	}
 
-	namedPortMap := c.namedPort.GetNamedPortByNs(np.Namespace)
 	ports, err := c.fetchSelectedPorts(np.Namespace, &np.Spec.PodSelector)
 	if err != nil {
 		klog.Errorf("failed to fetch ports, %v", err)

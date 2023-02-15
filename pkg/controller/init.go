@@ -230,12 +230,12 @@ func (c *Controller) initLoadBalancer() error {
 			return err
 		}
 
-		if err = c.ovnLegacyClient.SetLoadBalancerAffinityTimeout(vpcLb.TcpSessLoadBalancer, util.DefaultServiceSessionStickinessTimeout); err != nil {
+		if err = c.ovnClient.SetLoadBalancerAffinityTimeout(vpcLb.TcpSessLoadBalancer, util.DefaultServiceSessionStickinessTimeout); err != nil {
 			klog.Errorf("failed to set service session stickiness timeout of cluster tcp session load balancer: %v", err)
 			return err
 		}
 
-		if err = c.ovnLegacyClient.SetLoadBalancerAffinityTimeout(vpcLb.UdpSessLoadBalancer, util.DefaultServiceSessionStickinessTimeout); err != nil {
+		if err = c.ovnClient.SetLoadBalancerAffinityTimeout(vpcLb.UdpSessLoadBalancer, util.DefaultServiceSessionStickinessTimeout); err != nil {
 			klog.Errorf("failed to set service session stickiness timeout of cluster udp session load balancer: %v", err)
 			return err
 		}
