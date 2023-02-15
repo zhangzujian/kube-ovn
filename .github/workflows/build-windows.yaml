@@ -63,17 +63,18 @@ jobs:
             git diff --name-only HEAD^ HEAD | while read f; do
               while read v; do
                 if [ $f = $v ]; then
-                  echo 0;
+                  echo 0
                   return
                 fi
                 if echo $f | grep -q ^$v; then
-                  echo 0;
+                  echo 0
                   return
                 fi
               done < $tmp_file
             done
+            echo 1
           }
-          do_check $tmp_file >> "$GITHUB_OUTPUT"
+          echo "skip=$(do_check $tmp_file)" >> "$GITHUB_OUTPUT"
           rm -f $tmp_file
 
   build-ovs-and-ovn:
