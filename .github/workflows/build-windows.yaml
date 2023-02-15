@@ -73,7 +73,7 @@ jobs:
               done < $tmp_file
             done
           }
-          do_check >> "$GITHUB_OUTPUT"
+          do_check $tmp_file >> "$GITHUB_OUTPUT"
           rm -f $tmp_file
 
   build-ovs-and-ovn:
