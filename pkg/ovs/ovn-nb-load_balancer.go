@@ -163,9 +163,13 @@ func (c *ovnClient) LoadBalancerDeleteVips(lbName string, vips map[string]struct
 		return err
 	}
 
-	for vip := range vips {
-		delete(lb.Vips, vip)
+	updatedVips := make(map[string]string, len(lb.Vips))
+	for vip, backends := range lb.Vips {
+		if _, ok := vips[vip]; !ok {
+			updatedVips[vip] = backends
+		}
 	}
+	lb.Vips = updatedVips
 
 	if err := c.UpdateLoadBalancer(lb, &lb.Vips); err != nil {
 		return fmt.Errorf("delete vips %v from lb %s: %v", vips, lbName, err)
