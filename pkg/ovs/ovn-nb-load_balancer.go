@@ -76,14 +76,15 @@ func (c *ovnClient) LoadBalancerAddVips(lbName string, vips map[string]string) e
 	klog.Infof("vips to be added: %v", vips)
 	klog.Infof("vips before: %v", lb.Vips)
 
-	if lb.Vips == nil {
-		lb.Vips = make(map[string]string)
+	updatedVips := make(map[string]string, len(lb.Vips)+1)
+	for vip, backends := range lb.Vips {
+		updatedVips[vip] = backends
 	}
-
 	for vip, backends := range vips {
 		lb.Vips[vip] = backends
 	}
 
+	lb.Vips = updatedVips
 	if err := c.UpdateLoadBalancer(lb, &lb.Vips); err != nil {
 		return fmt.Errorf("add vips %v to lb %s: %v", vips, lbName, err)
 	}

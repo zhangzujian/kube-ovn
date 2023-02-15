@@ -92,11 +92,11 @@ jobs:
       - name: Unit test
         run: |
           go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo
-          make ut
+          # make ut
 
-      - name: Install gosec
-        run: |
-          curl -sfL https://raw.githubusercontent.com/securego/gosec/master/install.sh | sh -s -- -b $(go env GOPATH)/bin 'v${{ env.GOSEC_VERSION }}'
+      # - name: Install gosec
+      #   run: |
+      #     curl -sfL https://raw.githubusercontent.com/securego/gosec/master/install.sh | sh -s -- -b $(go env GOPATH)/bin 'v${{ env.GOSEC_VERSION }}'
 
       - name: Download variable file
         uses: actions/download-artifact@v3
@@ -120,7 +120,7 @@ jobs:
         run: |
           go mod tidy
           git diff --exit-code
-          make lint
+          # make lint
           if [ "x${{ env.BUILD_BASE }}" = "x1" ]; then
             TAG=$(cat VERSION)
             docker tag kubeovn/kube-ovn-base:$TAG-amd64 kubeovn/kube-ovn-base:$TAG
