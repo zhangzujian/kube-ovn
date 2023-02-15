@@ -64,7 +64,7 @@ jobs:
               if [ $f = $v ]; then
                 skip=0
                 break
-              elif echo $f | grep -q ^$d; then
+              elif echo $f | grep -q ^$v; then
                 skip=0
                 break
               fi
