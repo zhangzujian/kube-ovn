@@ -181,7 +181,7 @@ func (c *Controller) handleUpdateEndpoint(key string) error {
 		tcpLb, udpLb, oldTcpLb, oldUdpLb = oldTcpLb, oldUdpLb, tcpLb, udpLb
 	}
 
-	handleLoadBalancerVips := func(lbName, vip, backends string) error {
+	handleLoadBalancerVips := func(lbName, oldLBName, vip, backends string) error {
 		// for performance reason delete lb with no backends
 		if len(backends) != 0 {
 			if err = c.ovnClient.LoadBalancerAddVips(lbName, map[string]string{vip: backends}); err != nil {
@@ -189,6 +189,10 @@ func (c *Controller) handleUpdateEndpoint(key string) error {
 			}
 		} else {
 			if err := c.ovnClient.LoadBalancerDeleteVips(lbName, map[string]struct{}{vip: {}}); err != nil {
+				return fmt.Errorf("remove vip %v from lb %s: %v", vip, lbName, err)
+			}
+
+			if err := c.ovnClient.LoadBalancerDeleteVips(oldLBName, map[string]struct{}{vip: {}}); err != nil {
 				return fmt.Errorf("remove vip %v from lb %s: %v", vip, lbName, err)
 			}
 		}
@@ -201,12 +205,12 @@ func (c *Controller) handleUpdateEndpoint(key string) error {
 			vip := util.JoinHostPort(settingIP, port.Port)
 			backends := getServicePortBackends(ep, pods, port, settingIP)
 			if port.Protocol == v1.ProtocolTCP {
-				if err := handleLoadBalancerVips(tcpLb, vip, backends); err != nil {
+				if err := handleLoadBalancerVips(tcpLb, oldTcpLb, vip, backends); err != nil {
 					klog.Errorf("handle load balancer vips: %v", err)
 					return err
 				}
 			} else {
-				if err := handleLoadBalancerVips(udpLb, vip, backends); err != nil {
+				if err := handleLoadBalancerVips(udpLb, oldUdpLb, vip, backends); err != nil {
 					klog.Errorf("handle load balancer vips: %v", err)
 					return err
 				}

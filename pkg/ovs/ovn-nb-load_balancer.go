@@ -100,9 +100,7 @@ func (c *ovnClient) SetLoadBalancerAffinityTimeout(lbName string, timeout int) e
 	lb.Options["affinity_timeout"] = strconv.Itoa(timeout)
 
 	if err := c.UpdateLoadBalancer(lb, &lb.Options); err != nil {
-		if err != nil {
-			return fmt.Errorf("set affinity timeout of lb %s to %d, err: %v", lbName, timeout, err)
-		}
+		return fmt.Errorf("set affinity timeout of lb %s to %d, err: %v", lbName, timeout, err)
 	}
 
 	return nil

@@ -485,21 +485,6 @@ func (c *Controller) syncOneRouteToPolicy(key, value string) {
 	}
 }
 
-func (c *Controller) setAzName(azName string) error {
-	nbGlobal, err := c.ovnClient.GetNbGlobal()
-	if err != nil {
-		return fmt.Errorf("get nb global: %v", err)
-	}
-
-	nbGlobal.Name = azName
-
-	if err := c.ovnClient.UpdateNbGlobal(nbGlobal, &nbGlobal.Name); err != nil {
-		return fmt.Errorf("set nb_global az name %s: %v", azName, err)
-	}
-
-	return nil
-}
-
 func (c *Controller) listRemoteLogicalSwitchPortAddress() (map[string]struct{}, error) {
 	lsps, err := c.ovnClient.ListLogicalSwitchPorts(true, nil, func(lsp *ovnnb.LogicalSwitchPort) bool {
 		return lsp.Type == "remote"

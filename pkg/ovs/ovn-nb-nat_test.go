@@ -228,7 +228,7 @@ func (suite *OvnClientTestSuite) testDeleteNat() {
 		require.Len(t, lr.Nat, 1)
 
 		nat := &ovnnb.NAT{UUID: lr.Nat[0]}
-		ovnClient.GetEntityInfo(nat)
+		err = ovnClient.GetEntityInfo(nat)
 		require.NoError(t, err)
 		require.Equal(t, "dnat_and_snat", nat.Type)
 	})
