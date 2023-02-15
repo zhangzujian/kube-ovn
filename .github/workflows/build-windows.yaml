@@ -52,7 +52,7 @@ jobs:
           $dir
           go.mod
           go.sum
-          $(echo ${{ github.workflow_ref }} | awk -F@ '{print $1}' | sed 's/^${{ github.repository }}//')
+          $(echo ${{ github.workflow_ref }} | awk -F@ '{print $1}' | sed 's@^${{ github.repository }}@@')
           EOF
 
           skip=1
