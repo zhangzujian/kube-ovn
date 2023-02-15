@@ -96,6 +96,7 @@ func (c *Controller) handleUpdateEndpoint(key string) error {
 	ep, err := c.endpointsLister.Endpoints(namespace).Get(name)
 	if err != nil {
 		if errors.IsNotFound(err) {
+			klog.Infof("endpoint %s not found", key)
 			return nil
 		}
 		return err
@@ -104,6 +105,7 @@ func (c *Controller) handleUpdateEndpoint(key string) error {
 	cachedService, err := c.servicesLister.Services(namespace).Get(name)
 	if err != nil {
 		if errors.IsNotFound(err) {
+			klog.Infof("service %s not found", key)
 			return nil
 		}
 		return err
@@ -119,6 +121,7 @@ func (c *Controller) handleUpdateEndpoint(key string) error {
 			LbIPs = []string{svc.Spec.ClusterIP}
 		}
 		if len(LbIPs) == 0 || LbIPs[0] == v1.ClusterIPNone {
+			klog.Infof("cluster ip of %s is empty", key)
 			return nil
 		}
 	}
@@ -184,16 +187,19 @@ func (c *Controller) handleUpdateEndpoint(key string) error {
 	handleLoadBalancerVips := func(lbName, oldLBName, vip, backends string) error {
 		// for performance reason delete lb with no backends
 		if len(backends) != 0 {
+			klog.Infof("adding vip %s with backends to LB %s", vip, backends, lbName)
 			if err = c.ovnClient.LoadBalancerAddVips(lbName, map[string]string{vip: backends}); err != nil {
 				return fmt.Errorf("add vip %s to lb %s: %v", vip, lbName, err)
 			}
 		} else {
+			klog.Infof("removing vip %s from LB %s", vip, lbName)
 			if err := c.ovnClient.LoadBalancerDeleteVips(lbName, map[string]struct{}{vip: {}}); err != nil {
 				return fmt.Errorf("remove vip %v from lb %s: %v", vip, lbName, err)
 			}
 
+			klog.Infof("removing vip %s from LB %s", vip, oldLBName)
 			if err := c.ovnClient.LoadBalancerDeleteVips(oldLBName, map[string]struct{}{vip: {}}); err != nil {
-				return fmt.Errorf("remove vip %v from lb %s: %v", vip, lbName, err)
+				return fmt.Errorf("remove vip %v from lb %s: %v", vip, oldLBName, err)
 			}
 		}
 
@@ -201,9 +207,11 @@ func (c *Controller) handleUpdateEndpoint(key string) error {
 	}
 
 	for _, settingIP := range LbIPs {
+		klog.Infof("cluster ip: %s", settingIP)
 		for _, port := range svc.Spec.Ports {
 			vip := util.JoinHostPort(settingIP, port.Port)
 			backends := getServicePortBackends(ep, pods, port, settingIP)
+			klog.Infof("vip backends: %s = %s", vip, backends)
 			if port.Protocol == v1.ProtocolTCP {
 				if err := handleLoadBalancerVips(tcpLb, oldTcpLb, vip, backends); err != nil {
 					klog.Errorf("handle load balancer vips: %v", err)
