@@ -37,6 +37,8 @@ jobs:
         id: go
 
       - name: Check
+        env:
+          GOOS: windows
         run: |
           set -x
           dir=cmd/windows
