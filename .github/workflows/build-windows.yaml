@@ -29,7 +29,7 @@ jobs:
     name: Check File Changes
     runs-on: ubuntu-22.04
     outputs:
-      output1: ${{ steps.check.outputs.skip }}
+      skip: ${{ steps.check.outputs.skip }}
     steps:
       - uses: actions/checkout@v3
         with:
@@ -46,41 +46,42 @@ jobs:
           GOOS: windows
         run: |
           set -x
-          dir=cmd/windows
-          module=$(grep ^module go.mod | awk '{print $2}')
-          go list -f '{{ join .Deps "\n" }}' ./$dir/... | grep ^$module/ | while read pkg; do
-            echo ${pkg#${module}/}
-          done > dependencies.txt
-          cat >> dependencies.txt <<EOF
-          $dir
-          go.mod
-          go.sum
-          $(echo ${{ github.workflow_ref }} | awk -F@ '{print $1}' | sed 's@^${{ github.repository }}/@@')
+          tmp_file=$(mktemp)
+          function do_check() {
+            local tmp_file=$1
+            local dir=cmd/windows
+            local module=$(grep ^module go.mod | awk '{print $2}')
+            go list -f '{{ join .Deps "\n" }}' ./$dir/... | grep ^$module/ | while read pkg; do
+              echo ${pkg#${module}/}
+            done > $tmp_file
+            cat >> $tmp_file <<EOF
+            $dir
+            go.mod
+            go.sum
+            .github/workflows/build-windows.yaml
           EOF
-
-          skip=1
-          git diff --name-only HEAD^ HEAD | while read f; do
-            while read v; do
-              if [ $f = $v ]; then
-                skip=0
-                break
-              elif echo $f | grep -q ^$v; then
-                skip=0
-                break
-              fi
-            done < dependencies.txt
-            if [ $skip -eq 0 ]; then
-              break
-            fi
-          done
-          echo skip="$skip" >> "$GITHUB_OUTPUT"
+            git diff --name-only HEAD^ HEAD | while read f; do
+              while read v; do
+                if [ $f = $v ]; then
+                  echo 0;
+                  return
+                fi
+                if echo $f | grep -q ^$v; then
+                  echo 0;
+                  return
+                fi
+              done < $tmp_file
+            done
+          }
+          do_check >> "$GITHUB_OUTPUT"
+          rm -f $tmp_file
 
   build-ovs-and-ovn:
     name: Build OVS and OVN
     needs:
       - check
     runs-on: windows-2019
-    if: ${{ needs.check.outputs.output1 == '0' }}
+    if: ${{ needs.check.outputs.skip == 0 }}
     steps:
       - name: Check out PTHREADS4W
         run: |
@@ -184,7 +185,7 @@ jobs:
     needs:
       - check
     runs-on: windows-2019
-    if: ${{ needs.check.outputs.output1 == '0' }}
+    if: ${{ needs.check.outputs.skip == 0 }}
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
