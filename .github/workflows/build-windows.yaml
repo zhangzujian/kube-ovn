@@ -58,6 +58,7 @@ jobs:
           $dir
           go.mod
           go.sum
+          VERSION
           .github/workflows/build-windows.yaml
           EOF
             git diff --name-only HEAD^ HEAD | while read f; do
@@ -72,9 +73,9 @@ jobs:
                 fi
               done < $tmp_file
             done
-            echo 1
           }
-          echo "skip=$(do_check $tmp_file)" >> "$GITHUB_OUTPUT"
+          skip=$(do_check $tmp_file)
+          echo "skip=${skip:-1}" >> "$GITHUB_OUTPUT"
           rm -f $tmp_file
 
   build-ovs-and-ovn:
