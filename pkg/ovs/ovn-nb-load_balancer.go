@@ -81,7 +81,7 @@ func (c *ovnClient) LoadBalancerAddVips(lbName string, vips map[string]string) e
 		updatedVips[vip] = backends
 	}
 	for vip, backends := range vips {
-		lb.Vips[vip] = backends
+		updatedVips[vip] = backends
 	}
 
 	lb.Vips = updatedVips
