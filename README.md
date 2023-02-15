@@ -106,5 +106,3 @@ We are looking forward to your PR!
 <a href="https://trackgit.com">
 <img src="https://us-central1-trackgit-analytics.cloudfunctions.net/token/ping/l57vf80m7ckk59iv8ll5" alt="trackgit-views" />
 </a>
-
-abc
