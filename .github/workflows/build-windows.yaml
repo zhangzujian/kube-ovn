@@ -55,10 +55,10 @@ jobs:
               echo ${pkg#${module}/}
             done > $tmp_file
             cat >> $tmp_file <<EOF
-            $dir
-            go.mod
-            go.sum
-            .github/workflows/build-windows.yaml
+          $dir
+          go.mod
+          go.sum
+          .github/workflows/build-windows.yaml
           EOF
             git diff --name-only HEAD^ HEAD | while read f; do
               while read v; do
