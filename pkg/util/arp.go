@@ -17,6 +17,7 @@ import (
 
 func init() {
 	rand.Seed(int64(time.Now().Nanosecond()))
+	_ = time.Now().Nanosecond()
 }
 
 func ArpResolve(nic, srcIP, dstIP string, timeout time.Duration, maxRetry int) (net.HardwareAddr, int, error) {
