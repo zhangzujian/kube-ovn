@@ -78,7 +78,7 @@ jobs:
   build-ovs-and-ovn:
     name: Build OVS and OVN
     needs:
-      - check-file-changes
+      - check
     runs-on: windows-2019
     if: ${{ needs.check.outputs.output1 == '0' }}
     steps:
