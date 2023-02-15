@@ -11,6 +11,7 @@ on:
     branches:
     - master
     - release-*
+    - ci/skip-windows
     paths-ignore:
     - 'docs/**'
     - '**.md'
@@ -24,9 +25,53 @@ env:
   GOSEC_VERSION: '2.14.0'
 
 jobs:
+  check-file-changes:
+    name: Check File Changes
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v3
+        with:
+          go-version: '${{ env.GO_VERSION }}'
+          check-latest: true
+        id: go
+
+      - name: Check
+        run: |
+          set -x
+          dir=cmd/windows
+          module=$(grep ^module go.mod | awk '{print $2}')
+          go list -f '{{ join .Deps "\n" }}' ./$dir/... | grep ^$module/ | while read pkg; do
+            echo ${pkg#${module}/}
+          done > dependencies.txt
+          cat >> dependencies.txt <<EOF
+          $dir
+          go.mod
+          go.sum
+          $(echo ${{ github.workflow_ref }} | awk -F@ '{print $1}' | sed 's/^${{ github.repository }}//')
+          EOF
+
+          skip=1
+          git diff --name-only HEAD^ HEAD | while read f; do
+            while read v; do
+              if [ $f = $v ]; then
+                skip=0
+                break
+              elif echo $f | grep -q ^$d; then
+                skip=0
+                break
+              fi
+            done < dependencies.txt
+            if [ $skip -eq 0 ]; then
+              break
+            fi
+          done
+          echo skip="$skip" >> $GITHUB_OUTPUT
+
   build-ovs-and-ovn:
     name: Build OVS and OVN
     runs-on: windows-2019
+    if: ${{ needs.check-file-changes.outputs.skip == '0' }}
     steps:
       - name: Check out PTHREADS4W
         run: |
