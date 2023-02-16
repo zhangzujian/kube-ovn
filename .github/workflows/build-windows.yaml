@@ -97,7 +97,7 @@ jobs:
     needs:
       - check
     runs-on: windows-2019
-    if: ${{ needs.check.outputs.skip-ovs-ovn == 0 }}
+    if: needs.check.outputs.skip-ovs-ovn == 0
     steps:
       - name: Check out PTHREADS4W
         run: |
@@ -201,7 +201,7 @@ jobs:
     needs:
       - check
     runs-on: windows-2019
-    if: ${{ needs.check.outputs. skip-ovs-ovn == 0 }}
+    if: needs.check.outputs.skip-ovs-ovn == 0
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
