@@ -48,7 +48,7 @@ jobs:
         run: |
           set -x
 
-          if [ ${{ github.event_name }} = 'pull_request' ]; then
+          if [ ${{ github.event_name }} != 'pull_request' ]; then
             echo skip-ovs-ovn=0 >> "$GITHUB_OUTPUT"
             echo skip-kube-ovn=0 >> "$GITHUB_OUTPUT"
             exit
