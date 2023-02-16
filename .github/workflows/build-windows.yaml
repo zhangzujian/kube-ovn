@@ -56,6 +56,7 @@ jobs:
           go list -f '{{ join .Deps "\n" }}' ./$dir/... | grep ^$module/ | while read pkg; do
             echo "- ${pkg#${module}/}/*" >> $filter
           done
+          cat $filter
           
       - uses: dorny/paths-filter@v2
         id: filter
