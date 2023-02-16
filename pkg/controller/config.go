@@ -165,6 +165,7 @@ func ParseFlags() (*Configuration, error) {
 
 	klogFlags := flag.NewFlagSet("klog", flag.ExitOnError)
 	klog.InitFlags(klogFlags)
+	_ = klogFlags
 
 	// Sync the glog and klog flags.
 	pflag.CommandLine.VisitAll(func(f1 *pflag.Flag) {
