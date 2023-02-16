@@ -54,7 +54,7 @@ jobs:
             exit
           fi
 
-          workflow=$(echo ${{ github.workflow_ref }} | awk -F@ '{print $1}' | sed 's@^${{ github.repository }}@@')
+          workflow=$(echo ${{ github.workflow_ref }} | awk -F@ '{print $1}' | sed 's@^${{ github.repository }}/@@')
           if git diff --name-only HEAD^ HEAD | grep -q ^$workflow$; then
             echo "skip-ovs-ovn=0" >> "$GITHUB_OUTPUT"
           else
@@ -81,7 +81,7 @@ jobs:
                   echo 0
                   return
                 fi
-                if echo $f | grep -q ^$v; then
+                if echo $f | grep -q ^$v/; then
                   echo 0
                   return
                 fi
