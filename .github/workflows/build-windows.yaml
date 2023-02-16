@@ -53,7 +53,7 @@ jobs:
           - go.sum
           EOF
           module=$(grep ^module go.mod | awk '{print $2}')
-          go list -f '{{ join .Deps "\n" }}' ./$dir/... | grep ^$module/ | while read pkg; do
+          go list -f '{{ join .Deps "\n" }}' cmd/windows | grep ^$module/ | while read pkg; do
             echo "- ${pkg#${module}/}/*" >> $filter
           done
           cat $filter
