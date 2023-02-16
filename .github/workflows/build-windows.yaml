@@ -1,6 +1,8 @@
 name: Build Windows
 
 on:
+  workflow_dispatch:
+  release:
   pull_request:
     branches:
     - master
@@ -24,9 +26,79 @@ env:
   GOSEC_VERSION: '2.14.0'
 
 jobs:
+  check:
+    name: Check File Changes
+    runs-on: ubuntu-22.04
+    outputs:
+      skip-ovs-ovn: ${{ steps.check.outputs.skip-ovs-ovn }}
+      skip-kube-ovn: ${{ steps.check.outputs.skip-kube-ovn }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-go@v3
+        with:
+          go-version: '${{ env.GO_VERSION }}'
+          check-latest: true
+        id: go
+
+      - name: Check
+        id: check
+        env:
+          GOOS: windows
+        run: |
+          set -x
+
+          if [ ${{ github.event_name }} = 'pull_request' ]; then
+            echo skip-ovs-ovn=0 >> "$GITHUB_OUTPUT"
+            echo skip-kube-ovn=0 >> "$GITHUB_OUTPUT"
+            exit
+          fi
+
+          workflow=$(echo ${{ github.workflow_ref }} | awk -F@ '{print $1}' | sed 's@^${{ github.repository }}@@')
+          if git diff --name-only HEAD^ HEAD | grep -q ^$workflow$; then
+            echo "skip-ovs-ovn=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip-ovs-ovn=1" >> "$GITHUB_OUTPUT"
+          fi
+
+          tmp_file=$(mktemp)
+          function check_kube_ovn() {
+            local tmp_file=$1
+            local dir=cmd/windows
+            local module=$(grep ^module go.mod | awk '{print $2}')
+            go list -f '{{ join .Deps "\n" }}' ./$dir/... | grep ^$module/ | while read pkg; do
+              echo ${pkg#${module}/}
+            done > $tmp_file
+            cat >> $tmp_file <<EOF
+          $dir
+          go.mod
+          go.sum
+          $workflow
+          EOF
+            git diff --name-only HEAD^ HEAD | while read f; do
+              while read v; do
+                if [ $f = $v ]; then
+                  echo 0
+                  return
+                fi
+                if echo $f | grep -q ^$v; then
+                  echo 0
+                  return
+                fi
+              done < $tmp_file
+            done
+          }
+          skip_kube_ovn=$(check_kube_ovn $tmp_file)
+          echo "skip-kube-ovn=${skip_kube_ovn:-1}" >> "$GITHUB_OUTPUT"
+          rm -f $tmp_file
+
   build-ovs-and-ovn:
     name: Build OVS and OVN
+    needs:
+      - check
     runs-on: windows-2019
+    if: ${{ needs.check.outputs.skip-ovs-ovn == 0 }}
     steps:
       - name: Check out PTHREADS4W
         run: |
@@ -127,7 +199,10 @@ jobs:
 
   build-kube-ovn:
     name: Build Kube-OVN
+    needs:
+      - check
     runs-on: windows-2019
+    if: ${{ needs.check.outputs. skip-ovs-ovn == 0 }}
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
