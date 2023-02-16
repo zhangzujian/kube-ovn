@@ -25,79 +25,49 @@ env:
   GOSEC_VERSION: '2.14.0'
 
 jobs:
-  check:
-    name: Check File Changes
+  filter:
+    name: Path Filter
     runs-on: ubuntu-22.04
     outputs:
-      skip-ovs-ovn: ${{ steps.check.outputs.skip-ovs-ovn }}
-      skip-kube-ovn: ${{ steps.check.outputs.skip-kube-ovn }}
+      build-ovs-ovn: ${{ steps.filter.outputs.windows-ovs-ovn }}
+      build-kube-ovn: ${{ steps.filter.outputs.windows-kube-ovn }}
     steps:
       - uses: actions/checkout@v3
-        with:
-          fetch-depth: 2
       - uses: actions/setup-go@v3
         with:
-          go-version: '${{ env.GO_VERSION }}'
+          go-version-file: go.mod
           check-latest: true
-        id: go
 
-      - name: Check
-        id: check
+      - name: Generate path filter
         env:
           GOOS: windows
         run: |
-          set -x
-
-          if [ ${{ github.event_name }} != 'pull_request' ]; then
-            echo skip-ovs-ovn=0 >> "$GITHUB_OUTPUT"
-            echo skip-kube-ovn=0 >> "$GITHUB_OUTPUT"
-            exit
-          fi
-
+          filter=".github/path-filters.yaml"
           workflow=$(echo ${{ github.workflow_ref }} | awk -F@ '{print $1}' | sed 's@^${{ github.repository }}/@@')
-          if git diff --name-only HEAD^ HEAD | grep -q ^$workflow$; then
-            echo "skip-ovs-ovn=0" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip-ovs-ovn=1" >> "$GITHUB_OUTPUT"
-          fi
-
-          tmp_file=$(mktemp)
-          function check_kube_ovn() {
-            local tmp_file=$1
-            local dir=cmd/windows
-            local module=$(grep ^module go.mod | awk '{print $2}')
-            go list -f '{{ join .Deps "\n" }}' ./$dir/... | grep ^$module/ | while read pkg; do
-              echo ${pkg#${module}/}
-            done > $tmp_file
-            cat >> $tmp_file <<EOF
-          $dir
-          go.mod
-          go.sum
-          $workflow
+          cat > $filter <<EOF
+          windows-ovs-ovn:
+          - $workflow
+          windows-kube-ovn:
+          - $workflow
+          - go.mod
+          - go.sum
           EOF
-            git diff --name-only HEAD^ HEAD | while read f; do
-              while read v; do
-                if [ $f = $v ]; then
-                  echo 0
-                  return
-                fi
-                if echo $f | grep -q ^$v/; then
-                  echo 0
-                  return
-                fi
-              done < $tmp_file
-            done
-          }
-          skip_kube_ovn=$(check_kube_ovn $tmp_file)
-          echo "skip-kube-ovn=${skip_kube_ovn:-1}" >> "$GITHUB_OUTPUT"
-          rm -f $tmp_file
+          module=$(grep ^module go.mod | awk '{print $2}')
+          go list -f '{{ join .Deps "\n" }}' ./$dir/... | grep ^$module/ | while read pkg; do
+            echo "- ${pkg#${module}/}/*" >> $filter
+          done
+          
+      - uses: dorny/paths-filter@v2
+        id: filter
+        with:
+          filters: .github/filters.yaml
 
   build-ovs-and-ovn:
     name: Build OVS and OVN
     needs:
-      - check
+      - filter
     runs-on: windows-2019
-    if: needs.check.outputs.skip-ovs-ovn == 0
+    if: github.event_name != 'pull_request' || needs.filter.outputs.build-ovs-ovn == 'true'
     steps:
       - name: Check out PTHREADS4W
         run: |
@@ -199,9 +169,9 @@ jobs:
   build-kube-ovn:
     name: Build Kube-OVN
     needs:
-      - check
+      - filter
     runs-on: windows-2019
-    if: needs.check.outputs.skip-ovs-ovn == 0
+    if: github.event_name != 'pull_request' || needs.filter.outputs.build-kube-ovn == 'true'
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
