@@ -2,6 +2,11 @@ name: Build x86 Image
 
 on:
   pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - labeled
     branches:
     - master
     - release-*
@@ -275,6 +280,7 @@ jobs:
 
   k8s-netpol-e2e:
     name: Kubernetes Network Policy E2E
+    if: ${{ github.event_name != 'pull_request' || github.event.label.name == 'network policy' }}
     needs: build-kube-ovn
     runs-on: ubuntu-22.04
     timeout-minutes: 60
@@ -364,6 +370,7 @@ jobs:
 
   k8s-netpol-legacy-e2e:
     name: Kubernetes Network Policy Legacy E2E
+    if: ${{ github.event_name != 'pull_request' || github.event.label.name == 'network policy' }}
     needs: build-kube-ovn
     runs-on: ubuntu-22.04
     timeout-minutes: 60
@@ -453,6 +460,7 @@ jobs:
 
   cyclonus-netpol-e2e:
     name: Cyclonus Network Policy E2E
+    if: ${{ github.event_name != 'pull_request' || github.event.label.name == 'network policy' }}
     needs: build-kube-ovn
     runs-on: ubuntu-22.04
     timeout-minutes: 30
