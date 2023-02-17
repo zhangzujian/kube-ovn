@@ -35,6 +35,8 @@ func (c *Controller) enqueueAddService(obj interface{}) {
 	}
 	c.updateEndpointQueue.Add(key)
 	svc := obj.(*v1.Service)
+	klog.Infof("added service %s", key)
+	c.updateEndpointQueue.Add(key)
 
 	if c.config.EnableNP {
 		var netpols []string
@@ -49,14 +51,13 @@ func (c *Controller) enqueueAddService(obj interface{}) {
 	}
 
 	if c.config.EnableLbSvc {
-		klog.V(3).Infof("enqueue add service %s", key)
+		klog.Infof("enqueue add service %s", key)
 		c.addServiceQueue.Add(key)
 	}
 }
 
 func (c *Controller) enqueueDeleteService(obj interface{}) {
 	svc := obj.(*v1.Service)
-	//klog.V(3).Infof("enqueue delete service %s/%s", svc.Namespace, svc.Name)
 	klog.Infof("enqueue delete service %s/%s", svc.Namespace, svc.Name)
 
 	vip, ok := svc.Annotations[util.SwitchLBRuleVipsAnnotation]
@@ -108,7 +109,7 @@ func (c *Controller) enqueueUpdateService(old, new interface{}) {
 		utilruntime.HandleError(err)
 		return
 	}
-	klog.V(3).Infof("enqueue update service %s", key)
+	klog.Infof("enqueue update service %s", key)
 	c.updateServiceQueue.Add(key)
 }
 
@@ -334,7 +335,7 @@ func (c *Controller) handleUpdateService(key string) error {
 				return err
 			}
 			if _, ok := vips[vip]; !ok {
-				klog.Infof("add vip %s to LB %s", vip, lb)
+				klog.Infof("add %s into endpoint update queue", key)
 				c.updateEndpointQueue.Add(key)
 				break
 			}

@@ -32,10 +32,12 @@ func (c *Controller) enqueueUpdateEndpoint(old, new interface{}) {
 	oldEp := old.(*v1.Endpoints)
 	newEp := new.(*v1.Endpoints)
 	if oldEp.ResourceVersion == newEp.ResourceVersion {
+		klog.Infof("ep not changed, skip %s/%s", newEp.Namespace, newEp.Name)
 		return
 	}
 
 	if len(oldEp.Subsets) == 0 && len(newEp.Subsets) == 0 {
+		klog.Infof("Subsets is empty, skip %s/%s", newEp.Namespace, newEp.Name)
 		return
 	}
 
@@ -45,7 +47,7 @@ func (c *Controller) enqueueUpdateEndpoint(old, new interface{}) {
 		utilruntime.HandleError(err)
 		return
 	}
-	klog.V(3).Infof("enqueue update endpoint %s", key)
+	klog.Infof("enqueue update endpoint %s", key)
 	c.updateEndpointQueue.Add(key)
 }
 
@@ -96,6 +98,7 @@ func (c *Controller) handleUpdateEndpoint(key string) error {
 	ep, err := c.endpointsLister.Endpoints(namespace).Get(name)
 	if err != nil {
 		if errors.IsNotFound(err) {
+			klog.Infof("ep %s not found, skip", key)
 			return nil
 		}
 		return err
@@ -104,6 +107,16 @@ func (c *Controller) handleUpdateEndpoint(key string) error {
 	cachedService, err := c.servicesLister.Services(namespace).Get(name)
 	if err != nil {
 		if errors.IsNotFound(err) {
+			klog.Infof("svc %s not found, skip", key)
+			services, err := c.servicesLister.Services(namespace).List(labels.Everything())
+			if err != nil {
+				klog.Infof("failed to list services in ns %s: %v", namespace, err)
+				return err
+			}
+			klog.Infof("service count in ns %s: %d", namespace, len(services))
+			for _, svc := range services {
+				klog.Infof("%s/%s: %s", svc.Namespace, svc.Name, svc.Spec.Type)
+			}
 			return nil
 		}
 		return err
@@ -114,6 +127,7 @@ func (c *Controller) handleUpdateEndpoint(key string) error {
 	if vip, ok := svc.Annotations[util.SwitchLBRuleVipsAnnotation]; ok {
 		LbIPs = []string{vip}
 	} else if LbIPs = util.ServiceClusterIPs(*svc); len(LbIPs) == 0 {
+		klog.Infof("LbIPs is empty, skip service %s/%s", namespace, name)
 		return nil
 	}
 
@@ -175,7 +189,9 @@ func (c *Controller) handleUpdateEndpoint(key string) error {
 		tcpLb, udpLb, sctpLb, oldTcpLb, oldUdpLb, oldSctpLb = oldTcpLb, oldUdpLb, oldSctpLb, tcpLb, udpLb, sctpLb
 	}
 
+	klog.Infof("%s,%s,%s, %s,%s,%s", tcpLb, udpLb, sctpLb, oldTcpLb, oldUdpLb, oldSctpLb)
 	for _, settingIP := range LbIPs {
+		klog.Infof("ip = %s", settingIP)
 		for _, port := range svc.Spec.Ports {
 			var lb, oldLb string
 			switch port.Protocol {
@@ -187,21 +203,27 @@ func (c *Controller) handleUpdateEndpoint(key string) error {
 				lb, oldLb = sctpLb, oldSctpLb
 			}
 
+			klog.Infof("lb = %s, old lb = %s", lb, oldLb)
 			vip := util.JoinHostPort(settingIP, port.Port)
+			klog.Infof("vip = %s", vip)
 			backends := getServicePortBackends(ep, pods, port, settingIP)
+			klog.Infof("backends = %s", backends)
 
 			// for performance reason delete lb with no backends
 			if len(backends) != 0 {
+				klog.Infof("add %s vip %s with backends %s to LB %s", string(port.Protocol), vip, backends, lb)
 				err = c.ovnLegacyClient.CreateLoadBalancerRule(lb, vip, backends, string(port.Protocol))
 				if err != nil {
 					klog.Errorf("failed to add vip %s with backends %s to LB %s: %v", vip, backends, lb, err)
 					return err
 				}
 			} else {
+				klog.Infof("remove vip %s from LB %s", vip, lb)
 				if err = c.ovnLegacyClient.DeleteLoadBalancerVip(vip, lb); err != nil {
 					klog.Errorf("failed to delete vip %s from LB %s: %v", vip, lb, err)
 					return err
 				}
+				klog.Infof("remove vip %s from LB %s", vip, oldLb)
 				if err = c.ovnLegacyClient.DeleteLoadBalancerVip(vip, oldLb); err != nil {
 					klog.Errorf("failed to delete vip %s from LB %s: %v", vip, oldLb, err)
 					return err

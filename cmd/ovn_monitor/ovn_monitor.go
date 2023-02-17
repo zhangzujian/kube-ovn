@@ -1,7 +1,6 @@
 package ovn_monitor
 
 import (
-	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -10,7 +9,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"k8s.io/klog/v2"
 
-	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
 	ovn "github.com/kubeovn/kube-ovn/pkg/ovnmonitor"
 	"github.com/kubeovn/kube-ovn/pkg/util"
 	"github.com/kubeovn/kube-ovn/versions"
@@ -47,10 +45,7 @@ func CmdMain() {
 		// when pod in dual mode, golang can't support bind v4 and v6 address in the same time,
 		// so not support bind local ip when in dual mode
 		if len(podIps) == 1 {
-			addr = fmt.Sprintf("%s:10661", podIps[0])
-			if util.CheckProtocol(podIps[0]) == kubeovnv1.ProtocolIPv6 {
-				addr = fmt.Sprintf("[%s]:10661", podIps[0])
-			}
+			addr = util.JoinHostPort(podIps[0], 10661)
 		}
 	}
 
