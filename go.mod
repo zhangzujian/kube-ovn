@@ -19,6 +19,7 @@ require (
 	github.com/evanphx/json-patch/v5 v5.6.0
 	github.com/go-logr/stdr v1.2.2
 	github.com/golang/mock v1.6.0
+	github.com/google/gopacket v1.1.19
 	github.com/greenpau/ovsdb v1.0.3
 	github.com/k8snetworkplumbingwg/network-attachment-definition-client v1.4.0
 	github.com/mdlayher/arp v0.0.0-20220512170110-6706a2966875
