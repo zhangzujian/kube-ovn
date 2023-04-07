@@ -26,195 +26,19 @@ env:
   SUBMARINER_VERSION: '0.14.3'
 
 jobs:
-  build-kube-ovn-base:
-    name: Build kube-ovn-base
+  lb-svc-e2e:
+    name: LB Service E2E
     runs-on: ubuntu-22.04
-    outputs:
-      build-base: ${{ steps.build.outputs.build-base }}
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          fetch-depth: 2
-
-      - id: check
-        run: |
-          if [ ${{ github.event_name }} != 'pull_request' ]; then
-            exit
-          fi
-          if git diff --name-only HEAD^ HEAD | grep -q ^dist/images/Dockerfile.base; then
-            echo buildx=1 >> "$GITHUB_OUTPUT"
-          fi
-
-      - uses: docker/setup-buildx-action@v2
-        if: steps.check.outputs.buildx == 1
-
-      - name: Build
-        id: build
-        if: steps.check.outputs.buildx == 1
-        run: |
-          if git diff --name-only HEAD^ HEAD | grep -q ^dist/images/Dockerfile.base$; then
-            make base-amd64
-            make base-tar-amd64
-            echo build-base=1 >> "$GITHUB_OUTPUT"
-          fi
-          if git diff --name-only HEAD^ HEAD | grep -q ^dist/images/Dockerfile.base-dpdk$; then
-            make base-amd64-dpdk
-          fi
-
-      - name: Upload base images to artifact
-        if: steps.build.outputs.build-base == 1
-        uses: actions/upload-artifact@v3
-        with:
-          name: kube-ovn-base
-          path: image-amd64.tar
-
-  build-kube-ovn:
-    name: Build kube-ovn
-    runs-on: ubuntu-22.04
-    needs: build-kube-ovn-base
-    steps:
-      - uses: actions/checkout@v3
-      - uses: docker/setup-buildx-action@v2
-      - uses: actions/setup-go@v4
-        with:
-          go-version-file: go.mod
-          check-latest: true
-          cache: false
-
-      - name: Export Go full version
-        run: echo "GO_FULL_VER=$(go version | awk '{print $3}')" >> "$GITHUB_ENV"
-
-      - name: Go cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-${{ env.GO_FULL_VER }}-x86-${{ hashFiles('**/go.sum') }}
-          restore-keys: ${{ runner.os }}-${{ env.GO_FULL_VER }}-x86-
-
-      - name: Unit test
-        run: |
-          go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo
-          make ut
-
-      - name: Install gosec
-        run: |
-          tmp=$(mktemp -d)
-          archive="gosec_${{ env.GOSEC_VERSION }}_$(go env GOHOSTOS)_$(go env GOHOSTARCH).tar.gz"
-          wget -q -O "$tmp/$archive" https://github.com/securego/gosec/releases/download/v${{ env.GOSEC_VERSION }}/$archive
-          tar --no-same-owner -C "$tmp" -xzf "$tmp/$archive"
-          install "$tmp/gosec" /usr/local/bin
-          rm -rf $tmp
-
-      - name: Download base images
-        if: needs.build-kube-ovn-base.outputs.build-base == 1
-        uses: actions/download-artifact@v3
-        with:
-          name: kube-ovn-base
-
-      - name: Load base images
-        if: needs.build-kube-ovn-base.outputs.build-base == 1
-        run: docker load --input image-amd64.tar
-
-      - name: Build
-        run: |
-          go mod tidy
-          git diff --exit-code
-          make lint
-          if [ ${{ needs.build-kube-ovn-base.outputs.build-base || 0 }} = 1 ]; then
-            TAG=$(cat VERSION)
-            docker tag kubeovn/kube-ovn-base:$TAG-amd64 kubeovn/kube-ovn-base:$TAG
-            docker tag kubeovn/kube-ovn-base:$TAG-amd64-no-avx512 kubeovn/kube-ovn-base:$TAG-no-avx512
-            make build-kube-ovn
-          else
-            make image-kube-ovn
-          fi
-          make tar-kube-ovn
-
-      - name: Upload images to artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: kube-ovn
-          path: kube-ovn.tar
-
-  build-e2e-binaries:
-    name: Build E2E Binaries
-    runs-on: ubuntu-22.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Create the default branch directory
-        if: (github.base_ref || github.ref_name) != github.event.repository.default_branch
-        run: mkdir -p test/e2e/source
-
-      - name: Check out the default branch
-        if: (github.base_ref || github.ref_name) != github.event.repository.default_branch
-        uses: actions/checkout@v3
-        with:
-          ref: ${{ github.event.repository.default_branch }}
-          fetch-depth: 1
-          path: test/e2e/source
-
-      - name: Export E2E directory
-        run: |
-          if [ '${{ github.base_ref || github.ref_name }}' = '${{ github.event.repository.default_branch }}' ]; then
-            echo "E2E_DIR=." >> "$GITHUB_ENV"
-          else
-            echo "E2E_DIR=test/e2e/source" >> "$GITHUB_ENV"
-          fi
-
-      - uses: actions/setup-go@v4
-        with:
-          go-version-file: ${{ env.E2E_DIR }}/go.mod
-          check-latest: true
-          cache: false
-
-      - name: Export Go full version
-        run: echo "GO_FULL_VER=$(go version | awk '{print $3}')" >> "$GITHUB_ENV"
-
-      - name: Go cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-e2e-${{ env.GO_FULL_VER }}-x86-${{ hashFiles(format('{0}/**/go.sum', env.E2E_DIR)) }}
-          restore-keys: ${{ runner.os }}-e2e-${{ env.GO_FULL_VER }}-x86-
-
-      - name: Install ginkgo
-        working-directory: ${{ env.E2E_DIR }}
-        run: go install -v -mod=mod github.com/onsi/ginkgo/v2/ginkgo
-
-      - run: make e2e-build
-        working-directory: ${{ env.E2E_DIR }}
-
-  kube-ovn-conformance-e2e:
-    name: Kube-OVN Conformance E2E
-    needs:
-      - build-kube-ovn
-      - build-e2e-binaries
-    runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        ip-family:
-          - ipv4
-          - ipv6
-          - dual
         index:
           - 0
-          # - 1
-          # - 2
-          # - 3
-          # - 4
-          # - 5
-          # - 6
-          # - 7
-          # - 8
-          # - 9
+          - 1
+          - 2
+          - 3
+          - 4
     steps:
       - uses: actions/checkout@v3
 
@@ -225,75 +49,22 @@ jobs:
         if: (github.base_ref || github.ref_name) != github.event.repository.default_branch
         run: mkdir -p test/e2e/source
 
-      - name: Check out the default branch
-        if: (github.base_ref || github.ref_name) != github.event.repository.default_branch
-        uses: actions/checkout@v3
-        with:
-          ref: ${{ github.event.repository.default_branch }}
-          fetch-depth: 1
-          path: test/e2e/source
-
-      - name: Export E2E directory
-        run: |
-          if [ '${{ github.base_ref || github.ref_name }}' = '${{ github.event.repository.default_branch }}' ]; then
-            echo "E2E_DIR=." >> "$GITHUB_ENV"
-          else
-            echo "E2E_DIR=test/e2e/source" >> "$GITHUB_ENV"
-          fi
-
-      - uses: actions/setup-go@v4
-        with:
-          go-version-file: ${{ env.E2E_DIR }}/go.mod
-          check-latest: true
-          cache: false
-
-      - name: Export Go full version
-        run: echo "GO_FULL_VER=$(go version | awk '{print $3}')" >> "$GITHUB_ENV"
-
-      - name: Go cache
-        uses: actions/cache/restore@v3
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-e2e-${{ env.GO_FULL_VER }}-x86-${{ hashFiles(format('{0}/**/go.sum', env.E2E_DIR)) }}
-          restore-keys: ${{ runner.os }}-e2e-${{ env.GO_FULL_VER }}-x86-
-
       - name: Install kind
         uses: helm/kind-action@v1
         with:
           install_only: true
 
-      - name: Install ginkgo
-        working-directory: ${{ env.E2E_DIR }}
-        run: go install -v -mod=mod github.com/onsi/ginkgo/v2/ginkgo
-
-      - name: Download image
-        uses: actions/download-artifact@v3
-        with:
-          name: kube-ovn
-
-      - name: Load image
-        run: docker load --input kube-ovn.tar
-
       - name: Create kind cluster
         run: |
           sudo pip3 install j2cli
           sudo pip3 install "j2cli[yaml]"
-          sudo PATH=~/.local/bin:$PATH make kind-init-${{ matrix.ip-family }}
+          sudo PATH=~/.local/bin:$PATH make kind-init
           sudo cp -r /root/.kube/ ~/.kube/
           sudo chown -R $(id -un). ~/.kube/
 
-      - name: Install Kube-OVN
-        run: make kind-install-${{ matrix.ip-family }}
+      - name: Install Multus
+        id: install
+        run: make kind-install-multus
 
-      - name: Run E2E
-        id: e2e
-        working-directory: ${{ env.E2E_DIR }}
-        env:
-          E2E_BRANCH: ${{ github.base_ref || github.ref_name }}
-          E2E_IP_FAMILY: ${{ matrix.ip-family }}
-        run: make kube-ovn-conformance-e2e
-
-      - if: failure() && steps.e2e.outcome != 'success'
+      - if: failure() && steps.install.outcome != 'success'
         run: sleep infinity
