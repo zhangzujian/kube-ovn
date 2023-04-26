@@ -483,6 +483,10 @@ kind-install-underlay-hairpin: kind-install-underlay-hairpin-ipv4
 .PHONY: kind-install-underlay-ipv4
 kind-install-underlay-ipv4: kind-disable-hairpin kind-load-image kind-untaint-control-plane
 	$(call docker_network_info,kind)
+	@set -e; kind -n kube-ovn get nodes | while read node; do \
+		addr=$$(docker inspect $$node -f "{{.NetworkSettings.Networks.kind.GlobalIPv6Address}}/{{.NetworkSettings.Networks.kind.GlobalIPv6PrefixLen}}"); \
+		docker exec $$node sh -ec "if ip addr show eth0 | grep -q $$addr; then ip addr del $$addr dev eth0; ip -6 route del default; fi"; \
+	done
 	@sed -e 's@^[[:space:]]*POD_CIDR=.*@POD_CIDR="$(KIND_IPV4_SUBNET)"@' \
 		-e 's@^[[:space:]]*POD_GATEWAY=.*@POD_GATEWAY="$(KIND_IPV4_GATEWAY)"@' \
 		-e 's@^[[:space:]]*EXCLUDE_IPS=.*@EXCLUDE_IPS="$(KIND_IPV4_EXCLUDE_IPS)"@' \

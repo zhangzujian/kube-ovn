@@ -8,14 +8,14 @@ import (
 	"strings"
 	"time"
 
-	"k8s.io/apimachinery/pkg/util/wait"
-
 	dockertypes "github.com/docker/docker/api/types"
-	"github.com/onsi/ginkgo/v2"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
 	e2enode "k8s.io/kubernetes/test/e2e/framework/node"
+
+	"github.com/onsi/ginkgo/v2"
 
 	apiv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
 	"github.com/kubeovn/kube-ovn/pkg/util"
@@ -25,8 +25,10 @@ import (
 	"github.com/kubeovn/kube-ovn/test/e2e/framework/kind"
 )
 
-const dockerNetworkName = "kube-ovn-vlan"
-const curlListenPort = 8081
+const (
+	dockerNetworkName = "kube-ovn-vlan"
+	curlListenPort    = 8081
+)
 
 func makeProviderNetwork(providerNetworkName string, exchangeLinkName bool, linkMap map[string]*iproute.Link) *apiv1.ProviderNetwork {
 	var defaultInterface string
@@ -142,6 +144,10 @@ var _ = framework.SerialDescribe("[group:underlay]", func() {
 			link := linkMap[node.ID]
 			for _, route := range routes {
 				if route.Dev == link.IfName {
+					if f.ClusterIpFamily == "ipv4" && util.CheckProtocol(route.Dst) == apiv1.ProtocolIPv6 {
+						// IPv6 addressess will be deleted later, skip this route
+						continue
+					}
 					r := iproute.Route{
 						Dst:     route.Dst,
 						Gateway: route.Gateway,
@@ -156,6 +162,24 @@ var _ = framework.SerialDescribe("[group:underlay]", func() {
 			linkMap[node.Name()] = linkMap[node.ID]
 			routeMap[node.Name()] = routeMap[node.ID]
 			nodeNames = append(nodeNames, node.Name())
+
+			if f.ClusterIpFamily == "ipv4" {
+				var addresses []iproute.AddrInfo
+				for _, info := range link.AddrInfo {
+					if util.CheckProtocol(info.Local) == apiv1.ProtocolIPv4 {
+						addresses = append(addresses, info)
+						continue
+					}
+					if net.ParseIP(info.Local).IsLinkLocalUnicast() {
+						continue
+					}
+					addr := fmt.Sprintf("%s/%d", info.Local, info.PrefixLen)
+					ginkgo.By(fmt.Sprintf("Deleting IPv6 address %s on interface %s in node %s", addr, link.IfName, node.Name()))
+					_, _, err = node.Exec("sh", "-c", fmt.Sprintf("ip address del %s dev %s", addr, link.IfName))
+					framework.ExpectNoError(err, "failed to delete address %s on interface %s: %v", addr, link.IfName, err)
+				}
+				link.AddrInfo = addresses
+			}
 		}
 
 		itFn = func(exchangeLinkName bool) {

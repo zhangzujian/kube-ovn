@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -12,7 +13,8 @@ import (
 	"time"
 
 	dockertypes "github.com/docker/docker/api/types"
-	"github.com/onsi/ginkgo/v2"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/test/e2e"
@@ -20,15 +22,14 @@ import (
 	"k8s.io/kubernetes/test/e2e/framework/config"
 	e2enode "k8s.io/kubernetes/test/e2e/framework/node"
 
+	"github.com/onsi/ginkgo/v2"
+
 	apiv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
 	"github.com/kubeovn/kube-ovn/pkg/util"
 	"github.com/kubeovn/kube-ovn/test/e2e/framework"
 	"github.com/kubeovn/kube-ovn/test/e2e/framework/docker"
 	"github.com/kubeovn/kube-ovn/test/e2e/framework/iproute"
 	"github.com/kubeovn/kube-ovn/test/e2e/framework/kind"
-
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const dockerNetworkName = "kube-ovn-vlan"
@@ -182,6 +183,25 @@ var _ = framework.Describe("[group:ovn-vpc-nat-gw]", func() {
 			framework.ExpectHaveKey(linkMap, node.ID)
 			linkMap[node.Name()] = linkMap[node.ID]
 			nodeNames = append(nodeNames, node.Name())
+
+			if f.ClusterIpFamily == "ipv4" {
+				link := linkMap[node.ID]
+				var addresses []iproute.AddrInfo
+				for _, info := range link.AddrInfo {
+					if util.CheckProtocol(info.Local) == apiv1.ProtocolIPv4 {
+						addresses = append(addresses, info)
+						continue
+					}
+					if net.ParseIP(info.Local).IsLinkLocalUnicast() {
+						continue
+					}
+					addr := fmt.Sprintf("%s/%d", info.Local, info.PrefixLen)
+					ginkgo.By(fmt.Sprintf("Deleting IPv6 address %s on interface %s in node %s", addr, link.IfName, node.Name()))
+					_, _, err = node.Exec("sh", "-c", fmt.Sprintf("ip address del %s dev %s", addr, link.IfName))
+					framework.ExpectNoError(err, "failed to delete address %s on interface %s: %v", addr, link.IfName, err)
+				}
+				link.AddrInfo = addresses
+			}
 		}
 
 		itFn = func(exchangeLinkName bool) {
