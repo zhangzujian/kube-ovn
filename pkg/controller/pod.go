@@ -365,7 +365,6 @@ func (c *Controller) processNextAddOrUpdatePodWorkItem() bool {
 			utilruntime.HandleError(fmt.Errorf("expected string in workqueue but got %#v", obj))
 			return nil
 		}
-		klog.Infof("handle sync pod %s", key)
 		if err := c.handleAddOrUpdatePod(key); err != nil {
 			c.addOrUpdatePodQueue.AddRateLimited(key)
 			return fmt.Errorf("error syncing '%s': %s, requeuing", key, err.Error())
@@ -475,7 +474,7 @@ func (c *Controller) getPodKubeovnNets(pod *v1.Pod) ([]*kubeovnNet, error) {
 
 func (c *Controller) changeVMSubnet(vmName, namespace, providerName, subnetName string, pod *v1.Pod) error {
 	ipName := ovs.PodNameToPortName(vmName, namespace, providerName)
-	ipCr, err := c.config.KubeOvnClient.KubeovnV1().IPs().Get(context.Background(), ipName, metav1.GetOptions{})
+	ipCr, err := c.ipsLister.Get(ipName)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
 			errMsg := fmt.Errorf("failed to get ip CR %s: %v", ipName, err)
@@ -513,8 +512,9 @@ func (c *Controller) handleAddOrUpdatePod(key string) (err error) {
 		return nil
 	}
 
-	c.podKeyMutex.Lock(key)
-	defer c.podKeyMutex.Unlock(key)
+	c.podKeyMutex.LockKey(key)
+	defer c.podKeyMutex.UnlockKey(key)
+	klog.Infof("handle add/update pod %s", key)
 
 	cachedPod, err := c.podsLister.Pods(namespace).Get(name)
 	if err != nil {
@@ -832,13 +832,10 @@ func (c *Controller) reconcileRouteSubnets(cachedPod, pod *v1.Pod, needRoutePodN
 }
 
 func (c *Controller) handleDeletePod(pod *v1.Pod) error {
-	var key string
-	var err error
-
 	podName := c.getNameByPod(pod)
-	key = fmt.Sprintf("%s/%s", pod.Namespace, podName)
-	c.podKeyMutex.Lock(key)
-	defer c.podKeyMutex.Unlock(key)
+	key := fmt.Sprintf("%s/%s", pod.Namespace, podName)
+	c.podKeyMutex.LockKey(key)
+	defer c.podKeyMutex.UnlockKey(key)
 
 	p, _ := c.podsLister.Pods(pod.Namespace).Get(pod.Name)
 	if p != nil && p.UID != pod.UID {
@@ -949,8 +946,8 @@ func (c *Controller) handleUpdatePodSecurity(key string) error {
 		return nil
 	}
 
-	c.podKeyMutex.Lock(key)
-	defer c.podKeyMutex.Unlock(key)
+	c.podKeyMutex.LockKey(key)
+	defer c.podKeyMutex.UnlockKey(key)
 
 	pod, err := c.podsLister.Pods(namespace).Get(name)
 	if err != nil {

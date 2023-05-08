@@ -13,7 +13,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -202,8 +201,8 @@ func (c *Controller) processNextWorkItem(processName string, queue workqueue.Rat
 }
 
 func (c *Controller) handleDelVpcNatGw(key string) error {
-	c.vpcNatGwKeyMutex.Lock(key)
-	defer c.vpcNatGwKeyMutex.Unlock(key)
+	c.vpcNatGwKeyMutex.LockKey(key)
+	defer c.vpcNatGwKeyMutex.UnlockKey(key)
 	name := genNatGwStsName(key)
 	klog.Infof("delete vpc nat gw %s", name)
 	if err := c.config.KubeClient.AppsV1().StatefulSets(c.config.PodNamespace).Delete(context.Background(),
@@ -218,8 +217,10 @@ func (c *Controller) handleDelVpcNatGw(key string) error {
 
 func (c *Controller) handleAddOrUpdateVpcNatGw(key string) error {
 	// create nat gw statefulset
-	c.vpcNatGwKeyMutex.Lock(key)
-	defer c.vpcNatGwKeyMutex.Unlock(key)
+	c.vpcNatGwKeyMutex.LockKey(key)
+	defer c.vpcNatGwKeyMutex.UnlockKey(key)
+	klog.Infof("handle add/update vpc nat gateway %s", key)
+
 	if vpcNatEnabled != "true" {
 		return fmt.Errorf("iptables nat gw not enable")
 	}
@@ -280,8 +281,11 @@ func (c *Controller) handleInitVpcNatGw(key string) error {
 	if vpcNatEnabled != "true" {
 		return fmt.Errorf("iptables nat gw not enable")
 	}
-	c.vpcNatGwKeyMutex.Lock(key)
-	defer c.vpcNatGwKeyMutex.Unlock(key)
+
+	c.vpcNatGwKeyMutex.LockKey(key)
+	defer c.vpcNatGwKeyMutex.UnlockKey(key)
+	klog.Infof("handle init vpc nat gateway %s", key)
+
 	gw, err := c.vpcNatGatewayLister.Get(key)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
@@ -348,8 +352,11 @@ func (c *Controller) handleUpdateVpcFloatingIp(natGwKey string) error {
 	if vpcNatEnabled != "true" {
 		return fmt.Errorf("iptables nat gw not enable")
 	}
-	c.vpcNatGwKeyMutex.Lock(natGwKey)
-	defer c.vpcNatGwKeyMutex.Unlock(natGwKey)
+
+	c.vpcNatGwKeyMutex.LockKey(natGwKey)
+	defer c.vpcNatGwKeyMutex.UnlockKey(natGwKey)
+	klog.Infof("handle update vpc fip %s", natGwKey)
+
 	// refresh exist fips
 	if err := c.initCreateAt(natGwKey); err != nil {
 		err = fmt.Errorf("failed to init nat gw pod '%s' create at, %v", natGwKey, err)
@@ -357,17 +364,14 @@ func (c *Controller) handleUpdateVpcFloatingIp(natGwKey string) error {
 		return err
 	}
 
-	fips, err := c.config.KubeOvnClient.KubeovnV1().IptablesFIPRules().List(context.Background(), metav1.ListOptions{
-		LabelSelector: fields.OneTermEqualSelector(util.VpcNatGatewayNameLabel, natGwKey).String(),
-	})
-
+	fips, err := c.iptablesFipsLister.List(labels.SelectorFromSet(labels.Set{util.VpcNatGatewayNameLabel: natGwKey}))
 	if err != nil {
 		err := fmt.Errorf("failed to get all fips, %v", err)
 		klog.Error(err)
 		return err
 	}
 
-	for _, fip := range fips.Items {
+	for _, fip := range fips {
 		if fip.Status.Redo != NAT_GW_CREATED_AT {
 			klog.V(3).Infof("redo fip %s", fip.Name)
 			if err = c.redoFip(fip.Name, NAT_GW_CREATED_AT, false); err != nil {
@@ -383,8 +387,11 @@ func (c *Controller) handleUpdateVpcEip(natGwKey string) error {
 	if vpcNatEnabled != "true" {
 		return fmt.Errorf("iptables nat gw not enable")
 	}
-	c.vpcNatGwKeyMutex.Lock(natGwKey)
-	defer c.vpcNatGwKeyMutex.Unlock(natGwKey)
+
+	c.vpcNatGwKeyMutex.LockKey(natGwKey)
+	defer c.vpcNatGwKeyMutex.UnlockKey(natGwKey)
+	klog.Infof("handle update vpc eip %s", natGwKey)
+
 	// refresh exist fips
 	if err := c.initCreateAt(natGwKey); err != nil {
 		err = fmt.Errorf("failed to init nat gw pod '%s' create at, %v", natGwKey, err)
@@ -413,23 +420,24 @@ func (c *Controller) handleUpdateVpcSnat(natGwKey string) error {
 	if vpcNatEnabled != "true" {
 		return fmt.Errorf("iptables nat gw not enable")
 	}
-	c.vpcNatGwKeyMutex.Lock(natGwKey)
-	defer c.vpcNatGwKeyMutex.Unlock(natGwKey)
+
+	c.vpcNatGwKeyMutex.LockKey(natGwKey)
+	defer c.vpcNatGwKeyMutex.UnlockKey(natGwKey)
+	klog.Infof("handle update vpc snat %s", natGwKey)
+
 	// refresh exist snats
 	if err := c.initCreateAt(natGwKey); err != nil {
 		err = fmt.Errorf("failed to init nat gw pod '%s' create at, %v", natGwKey, err)
 		klog.Error(err)
 		return err
 	}
-	snats, err := c.config.KubeOvnClient.KubeovnV1().IptablesSnatRules().List(context.Background(), metav1.ListOptions{
-		LabelSelector: fields.OneTermEqualSelector(util.VpcNatGatewayNameLabel, natGwKey).String(),
-	})
+	snats, err := c.iptablesSnatRulesLister.List(labels.SelectorFromSet(labels.Set{util.VpcNatGatewayNameLabel: natGwKey}))
 	if err != nil {
 		err = fmt.Errorf("failed to get all snats, %v", err)
 		klog.Error(err)
 		return err
 	}
-	for _, snat := range snats.Items {
+	for _, snat := range snats {
 		if snat.Status.Redo != NAT_GW_CREATED_AT {
 			klog.V(3).Infof("redo snat %s", snat.Name)
 			if err = c.redoSnat(snat.Name, NAT_GW_CREATED_AT, false); err != nil {
@@ -446,8 +454,11 @@ func (c *Controller) handleUpdateVpcDnat(natGwKey string) error {
 	if vpcNatEnabled != "true" {
 		return fmt.Errorf("iptables nat gw not enable")
 	}
-	c.vpcNatGwKeyMutex.Lock(natGwKey)
-	defer c.vpcNatGwKeyMutex.Unlock(natGwKey)
+
+	c.vpcNatGwKeyMutex.LockKey(natGwKey)
+	defer c.vpcNatGwKeyMutex.UnlockKey(natGwKey)
+	klog.Infof("handle update vpc dnat %s", natGwKey)
+
 	// refresh exist dnats
 	if err := c.initCreateAt(natGwKey); err != nil {
 		err = fmt.Errorf("failed to init nat gw pod '%s' create at, %v", natGwKey, err)
@@ -455,15 +466,13 @@ func (c *Controller) handleUpdateVpcDnat(natGwKey string) error {
 		return err
 	}
 
-	dnats, err := c.config.KubeOvnClient.KubeovnV1().IptablesDnatRules().List(context.Background(), metav1.ListOptions{
-		LabelSelector: fields.OneTermEqualSelector(util.VpcNatGatewayNameLabel, natGwKey).String(),
-	})
+	dnats, err := c.iptablesDnatRulesLister.List(labels.SelectorFromSet(labels.Set{util.VpcNatGatewayNameLabel: natGwKey}))
 	if err != nil {
 		err = fmt.Errorf("failed to get all dnats, %v", err)
 		klog.Error(err)
 		return err
 	}
-	for _, dnat := range dnats.Items {
+	for _, dnat := range dnats {
 		if dnat.Status.Redo != NAT_GW_CREATED_AT {
 			klog.V(3).Infof("redo dnat %s", dnat.Name)
 			if err = c.redoDnat(dnat.Name, NAT_GW_CREATED_AT, false); err != nil {
@@ -513,8 +522,11 @@ func (c *Controller) handleUpdateNatGwSubnetRoute(natGwKey string) error {
 	if vpcNatEnabled != "true" {
 		return fmt.Errorf("iptables nat gw not enable")
 	}
-	c.vpcNatGwKeyMutex.Lock(natGwKey)
-	defer c.vpcNatGwKeyMutex.Unlock(natGwKey)
+
+	c.vpcNatGwKeyMutex.LockKey(natGwKey)
+	defer c.vpcNatGwKeyMutex.UnlockKey(natGwKey)
+	klog.Infof("handle update subnet route for nat gateway %s", natGwKey)
+
 	gw, err := c.vpcNatGatewayLister.Get(natGwKey)
 	if err != nil {
 		return err
@@ -773,7 +785,7 @@ func (c *Controller) initCreateAt(key string) (err error) {
 }
 
 func (c *Controller) updateCrdNatGw(key string) error {
-	gw, err := c.config.KubeOvnClient.KubeovnV1().VpcNatGateways().Get(context.Background(), key, metav1.GetOptions{})
+	gw, err := c.vpcNatGatewayLister.Get(key)
 	if err != nil {
 		errMsg := fmt.Errorf("failed to get vpc nat gw '%s', %v", key, err)
 		klog.Error(errMsg)
