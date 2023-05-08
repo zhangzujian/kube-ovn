@@ -289,6 +289,9 @@ func Run(ctx context.Context, config *Configuration) {
 	ovnDnatRuleInformer := kubeovnInformerFactory.Kubeovn().V1().OvnDnatRules()
 
 	numKeyLocks := runtime.NumCPU() * 2
+	if numKeyLocks < config.WorkerNum*2 {
+		numKeyLocks = config.WorkerNum * 2
+	}
 	controller := &Controller{
 		config:          config,
 		vpcs:            &sync.Map{},
