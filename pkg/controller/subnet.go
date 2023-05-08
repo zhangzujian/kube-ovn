@@ -787,6 +787,7 @@ func (c *Controller) handleAddOrUpdateSubnet(key string) error {
 func (c *Controller) handleUpdateSubnetStatus(key string) error {
 	c.subnetStatusKeyMutex.LockKey(key)
 	defer c.subnetStatusKeyMutex.UnlockKey(key)
+	klog.Infof("handle status update for subnet %s", key)
 
 	cachedSubnet, err := c.subnetsLister.Get(key)
 	subnet := cachedSubnet.DeepCopy()
@@ -1869,6 +1870,10 @@ func calcDualSubnetStatusIP(subnet *kubeovnv1.Subnet, c *Controller) error {
 	podUsedIPs, err := c.ipsLister.List(labels.SelectorFromSet(labels.Set{subnet.Name: ""}))
 	if err != nil {
 		return err
+	}
+
+	for _, ips := range podUsedIPs {
+		klog.Infof("%s = %s", ips.Name, ips.Spec.IPAddress)
 	}
 
 	// subnet.Spec.ExcludeIps contains both v4 and v6 addresses

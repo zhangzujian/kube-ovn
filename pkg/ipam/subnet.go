@@ -513,14 +513,19 @@ func (subnet *Subnet) releaseAddr(podName, nicName string) {
 			if merged, newReleasedList := mergeIPRangeList(subnet.V4ReleasedIPList, ip); !changed && merged {
 				subnet.V4ReleasedIPList = newReleasedList
 				klog.Infof("release v4 %s mac %s for %s, add ip to released list", ip, mac, podName)
+				klog.Infof("v4 released ip list: %s", subnet.V4ReleasedIPList.IpRangetoString())
 			}
 
-			if merged, NewV4AvailIPRangeList := mergeIPRangeList(subnet.V4AvailIPList, ip); merged {
-				subnet.V4AvailIPList = NewV4AvailIPRangeList
+			klog.Infof("v4 available ip list before merging: %s", subnet.V4AvailIPList.IpRangetoString())
+			if merged, newList := mergeIPRangeList(subnet.V4AvailIPList, ip); merged {
+				subnet.V4AvailIPList = newList
+				klog.Infof("v4 available ip list after merging: %s", subnet.V4AvailIPList.IpRangetoString())
 			}
 
-			if split, NewV4UsingIPList := splitIPRangeList(subnet.V4UsingIPList, ip); split {
-				subnet.V4UsingIPList = NewV4UsingIPList
+			klog.Infof("v4 using ip list before merging: %s", subnet.V4UsingIPList.IpRangetoString())
+			if split, newList := splitIPRangeList(subnet.V4UsingIPList, ip); split {
+				subnet.V4UsingIPList = newList
+				klog.Infof("v4 using ip list after merging: %s", subnet.V4UsingIPList.IpRangetoString())
 			}
 		}
 	}
