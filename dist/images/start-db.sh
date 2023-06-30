@@ -1,6 +1,8 @@
 #!/bin/bash
 set -eo pipefail
 
+set -x
+
 DEBUG_WRAPPER=${DEBUG_WRAPPER:-}
 DEBUG_OPT="--ovn-northd-wrapper=$DEBUG_WRAPPER --ovsdb-nb-wrapper=$DEBUG_WRAPPER --ovsdb-sb-wrapper=$DEBUG_WRAPPER"
 
