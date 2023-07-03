@@ -243,6 +243,10 @@ jobs:
           sudo ENABLE_SSL=${{ matrix.ssl }} ENABLE_BIND_LOCAL_IP=${{ matrix.bind-local }} \
             make kind-install-${{ matrix.ip-family }}
 
+      - run: |
+          kubectl -n kube-system rollout restart deploy ovn-central
+          kubectl -n kube-system rollout status deploy ovn-central
+
       - name: kubectl ko log
         if: failure()
         run: sleep infinity
