@@ -116,18 +116,6 @@ jobs:
           version: v0.20.0
           install_only: true
 
-      - name: Install ginkgo
-        working-directory: ${{ env.E2E_DIR }}
-        run: go install -v -mod=mod github.com/onsi/ginkgo/v2/ginkgo
-
-      - name: Download image
-        uses: actions/download-artifact@v3
-        with:
-          name: kube-ovn
-
-      - name: Load image
-        run: docker load --input kube-ovn.tar
-
       - name: Create kind cluster
         run: |
           sudo pip3 install j2cli
