@@ -158,16 +158,26 @@ jobs:
           - 7
           - 8
           - 9
+          - 10
+          - 11
+          - 12
+          - 13
+          - 14
+          - 15
+          - 16
+          - 17
+          - 18
+          - 19
         ssl:
-          # - "true"
+          - "true"
           - "false"
         bind-local:
           - "true"
           - "false"
         ip-family:
           - ipv4
-          # - ipv6
-          # - dual
+          - ipv6
+          - dual
     steps:
       - uses: actions/checkout@v3
 
