@@ -34,6 +34,31 @@ import (
 
 var pciAddrRegexp = regexp.MustCompile(`\b([0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}.\d{1}\S*)`)
 
+func sysctlDisableIPv6Variable(ifName string) string {
+	return fmt.Sprintf("net/ipv6/conf/%s/disable_ipv6", ifName)
+}
+
+func sysctlEnableIPv6(ifName string) error {
+	for _, iface := range [2]string{"lo", ifName} {
+		variable := sysctlDisableIPv6Variable(iface)
+		value, err := sysctl.Sysctl(variable)
+		if err != nil {
+			klog.Errorf("failed to get sysctl variable %q: %v", variable)
+			return err
+		}
+		if value == "0" {
+			continue
+		}
+
+		if _, err = sysctl.Sysctl(variable, "0"); err != nil {
+			klog.Errorf("failed to set sysctl variable %q to 0: %v", variable, err)
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (csh cniServerHandler) configureDpdkNic(podName, podNamespace, provider, netns, containerID, ifName, mac string, mtu int, ip, gateway, ingress, egress, shortSharedDir, socketName string) error {
 	sharedDir := filepath.Join("/var", shortSharedDir)
 	hostNicName, _ := generateNicName(containerID, ifName)
@@ -229,24 +254,18 @@ func configureContainerNic(nicName, ifName string, ipAddr, gateway string, isDef
 	}
 
 	return ns.WithNetNSPath(netns.Path(), func(_ ns.NetNS) error {
-		if nicType != util.InternalType {
-			if err = netlink.LinkSetName(containerLink, ifName); err != nil {
-				return err
-			}
-		}
-
 		if util.CheckProtocol(ipAddr) == kubeovnv1.ProtocolDual || util.CheckProtocol(ipAddr) == kubeovnv1.ProtocolIPv6 {
 			// For docker version >=17.x the "none" network will disable ipv6 by default.
 			// We have to enable ipv6 here to add v6 address and gateway.
 			// See https://github.com/containernetworking/cni/issues/531
-			value, err := sysctl.Sysctl("net.ipv6.conf.all.disable_ipv6")
-			if err != nil {
-				return fmt.Errorf("failed to get sysctl net.ipv6.conf.all.disable_ipv6: %v", err)
+			if err = sysctlEnableIPv6(containerLink.Attrs().Name); err != nil {
+				return fmt.Errorf("failed to enable IPv6 for %s: %v", containerLink.Attrs().Name, err)
 			}
-			if value != "0" {
-				if _, err = sysctl.Sysctl("net.ipv6.conf.all.disable_ipv6", "0"); err != nil {
-					return fmt.Errorf("failed to enable ipv6 on all nic: %v", err)
-				}
+		}
+
+		if nicType != util.InternalType {
+			if err = netlink.LinkSetName(containerLink, ifName); err != nil {
+				return err
 			}
 		}
 
@@ -518,14 +537,8 @@ func configureNodeGwNic(portName, ip, gw string, macAddr net.HardwareAddr, mtu i
 			// For docker version >=17.x the "none" network will disable ipv6 by default.
 			// We have to enable ipv6 here to add v6 address and gateway.
 			// See https://github.com/containernetworking/cni/issues/531
-			value, err := sysctl.Sysctl("net.ipv6.conf.all.disable_ipv6")
-			if err != nil {
-				return fmt.Errorf("failed to get sysctl net.ipv6.conf.all.disable_ipv6: %v", err)
-			}
-			if value != "0" {
-				if _, err = sysctl.Sysctl("net.ipv6.conf.all.disable_ipv6", "0"); err != nil {
-					return fmt.Errorf("failed to enable ipv6 on all nic: %v", err)
-				}
+			if err = sysctlEnableIPv6(util.NodeGwNic); err != nil {
+				return fmt.Errorf("failed to enable IPv6 for %s: %v", util.NodeGwNic, err)
 			}
 		}
 
@@ -883,6 +896,18 @@ func configureLoNic() error {
 }
 
 func (c *Controller) transferAddrsAndRoutes(nicName, brName string, delNonExistent bool) (int, error) {
+	sysctlVariable := sysctlDisableIPv6Variable(nicName)
+	sysctlValue, err := sysctl.Sysctl(sysctlVariable)
+	if err != nil {
+		klog.Errorf("failed to get sysctl variable %q: %v", sysctlVariable, err)
+		return 0, err
+	}
+	if sysctlValue == "0" {
+		if err = sysctlEnableIPv6(brName); err != nil {
+			return 0, err
+		}
+	}
+
 	nic, err := netlink.LinkByName(nicName)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get nic by name %s: %v", nicName, err)
@@ -1046,17 +1071,6 @@ func (c *Controller) transferAddrsAndRoutes(nicName, brName string, delNonExiste
 // Add host nic to external bridge
 // Mac address, MTU, IP addresses & routes will be copied/transferred to the external bridge
 func (c *Controller) configProviderNic(nicName, brName string) (int, error) {
-	sysctlDisableIPv6 := fmt.Sprintf("net.ipv6.conf.%s.disable_ipv6", brName)
-	disableIPv6, err := sysctl.Sysctl(sysctlDisableIPv6)
-	if err != nil {
-		return 0, fmt.Errorf("failed to get sysctl %s: %v", sysctlDisableIPv6, err)
-	}
-	if disableIPv6 != "0" {
-		if _, err = sysctl.Sysctl(sysctlDisableIPv6, "0"); err != nil {
-			return 0, fmt.Errorf("failed to enable ipv6 on OVS bridge %s: %v", brName, err)
-		}
-	}
-
 	mtu, err := c.transferAddrsAndRoutes(nicName, brName, false)
 	if err != nil {
 		return 0, fmt.Errorf("failed to transfer addresess and routes from %s to %s: %v", nicName, brName, err)
