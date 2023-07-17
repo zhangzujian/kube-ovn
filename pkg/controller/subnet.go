@@ -89,6 +89,7 @@ func (c *Controller) enqueueUpdateSubnet(old, new interface{}) {
 		!reflect.DeepEqual(oldSubnet.Spec.ExcludeIps, newSubnet.Spec.ExcludeIps) ||
 		!reflect.DeepEqual(oldSubnet.Spec.Vips, newSubnet.Spec.Vips) ||
 		oldSubnet.Spec.Vlan != newSubnet.Spec.Vlan ||
+		oldSubnet.Spec.VlanPassthru != newSubnet.Spec.VlanPassthru ||
 		oldSubnet.Spec.EnableDHCP != newSubnet.Spec.EnableDHCP ||
 		oldSubnet.Spec.DHCPv4Options != newSubnet.Spec.DHCPv4Options ||
 		oldSubnet.Spec.DHCPv6Options != newSubnet.Spec.DHCPv6Options ||
@@ -746,7 +747,7 @@ func (c *Controller) handleAddOrUpdateSubnet(key string) error {
 	}
 
 	// create or update logical switch
-	if err := c.ovnClient.CreateLogicalSwitch(subnet.Name, vpc.Status.Router, subnet.Spec.CIDRBlock, gateway, needRouter, randomAllocateGW); err != nil {
+	if err := c.ovnClient.CreateLogicalSwitch(subnet.Name, vpc.Status.Router, subnet.Spec.CIDRBlock, gateway, needRouter, randomAllocateGW, subnet.Spec.VlanPassthru); err != nil {
 		klog.Errorf("create logical switch %s: %v", subnet.Name, err)
 		return err
 	}

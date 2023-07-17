@@ -2228,6 +2228,8 @@ spec:
                   type: boolean
                 vlan:
                   type: string
+                vlanPassthru:
+                  type: boolean
                 logicalGateway:
                   type: boolean
                 disableGatewayCheck:

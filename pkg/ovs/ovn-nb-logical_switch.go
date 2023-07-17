@@ -14,19 +14,22 @@ import (
 )
 
 // CreateLogicalSwitch create logical switch
-func (c *ovnClient) CreateLogicalSwitch(lsName, lrName, cidrBlock, gateway string, needRouter, randomAllocateGW bool) error {
+func (c *ovnClient) CreateLogicalSwitch(lsName, lrName, cidrBlock, gateway string, needRouter, randomAllocateGW, vlanPassthru bool) error {
 	lspName := fmt.Sprintf("%s-%s", lsName, lrName)
 	lrpName := fmt.Sprintf("%s-%s", lrName, lsName)
 
 	networks := util.GetIpAddrWithMask(gateway, cidrBlock)
 
-	exist, err := c.LogicalSwitchExists(lsName)
+	ls, err := c.GetLogicalSwitch(lsName, true)
 	if err != nil {
 		return err
 	}
 
 	// only update logical router port networks when logical switch exist
-	if exist {
+	if ls != nil {
+		if vlanPassthru != (len(ls.OtherConfig) != 0 && ls.OtherConfig["vlan-passthru"] == "true") {
+			// update
+		}
 		if randomAllocateGW {
 			return nil
 		}
