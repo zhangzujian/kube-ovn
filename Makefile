@@ -694,7 +694,7 @@ kind-install-multus:
 	kubectl -n kube-system rollout status ds kube-multus-ds
 
 .PHONY: kind-install-vpc-nat-gw
-kind-install-vpc-nat-gw: kind-load-image kind-untaint-control-plane
+kind-install-vpc-nat-gw:
 	$(call kind_load_image,kube-ovn,$(VPC_NAT_GW_IMG))
 	@$(MAKE) ENABLE_NAT_GW=true CNI_CONFIG_PRIORITY=10 kind-install
 	@$(MAKE) kind-install-multus
@@ -723,7 +723,7 @@ kind-install-kubevirt: kind-load-image kind-untaint-control-plane
 	kubectl patch vm testvm --type=merge --patch '{"spec":{"running":true}}'
 
 .PHONY: kind-install-lb-svc
-kind-install-lb-svc: kind-load-image kind-untaint-control-plane
+kind-install-lb-svc:
 	$(call kind_load_image,kube-ovn,$(VPC_NAT_GW_IMG))
 	@$(MAKE) ENABLE_LB_SVC=true CNI_CONFIG_PRIORITY=10 kind-install
 	@$(MAKE) kind-install-multus
