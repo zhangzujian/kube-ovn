@@ -106,7 +106,7 @@ while :; do
 done
 
 for pod in $(kubectl get pod -n kube-system -l app=ovs -o 'jsonpath={.items[?(@.status.phase=="Running")].metadata.name}'); do
-  kubectl exec -n kube-system "$pod" -- bash /kube-ovn/uninstall.sh
+  kubectl exec -n kube-system "$pod" -- bash -x /kube-ovn/uninstall.sh
 done
 
 kubectl delete --ignore-not-found svc ovn-nb ovn-sb ovn-northd -n kube-system

@@ -203,6 +203,7 @@ func (c *Controller) handleUpdateEndpoint(key string) error {
 				}
 			} else {
 				klog.V(3).Infof("delete vip %s from LB %s", vip, lb)
+				klog.Infof("endpoints %s/%s is empty, deleting vip %s", namespace, name, vip)
 				if err := c.ovnClient.LoadBalancerDeleteVip(lb, vip); err != nil {
 					klog.Errorf("failed to delete vip %s from LB %s: %v", vip, lb, err)
 					return err
