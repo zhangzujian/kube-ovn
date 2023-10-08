@@ -23,6 +23,8 @@ import (
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
 
+const envIPPoolStrictAllocation = "IPPOOL_STRICT_ALLOCATION"
+
 var (
 	deploymentGVK  = metav1.GroupVersionKind{Group: appsv1.SchemeGroupVersion.Group, Version: appsv1.SchemeGroupVersion.Version, Kind: "Deployment"}
 	statefulSetGVK = metav1.GroupVersionKind{Group: appsv1.SchemeGroupVersion.Group, Version: appsv1.SchemeGroupVersion.Version, Kind: "StatefulSet"}
@@ -34,15 +36,15 @@ var (
 	vpcGVK         = metav1.GroupVersionKind{Group: ovnv1.SchemeGroupVersion.Group, Version: ovnv1.SchemeGroupVersion.Version, Kind: "Vpc"}
 )
 
-var ipamStrictAllocation bool
+var ippoolStrictAllocation bool
 
 func init() {
-	if env := os.Getenv("IPAM_STRICT_ALLOCATION"); env != "" {
+	if env := os.Getenv(envIPPoolStrictAllocation); env != "" {
 		v, err := strconv.ParseBool(env)
 		if err != nil {
-			klog.Errorf("invalid environment variable IPAM_STRICT_ALLOCATION=%s", env)
+			klog.Errorf("invalid environment variable %s=%s", envIPPoolStrictAllocation, env)
 		} else {
-			ipamStrictAllocation = v
+			ippoolStrictAllocation = v
 		}
 	}
 }
@@ -174,8 +176,8 @@ func (v *ValidatingHook) validateIP(ctx context.Context, annotations map[string]
 		return ctrlwebhook.Errored(http.StatusBadRequest, err)
 	}
 
-	if ipamStrictAllocation {
-
+	if ippoolStrictAllocation {
+		// TODO
 	}
 
 	ipList := &ovnv1.IPList{}

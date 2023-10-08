@@ -47,7 +47,7 @@ spec:
                 fieldRef:
                   apiVersion: v1
                   fieldPath: status.podIP
-            - name: IPAM_STRICT_ALLOCATION
+            - name: IPPOOL_STRICT_ALLOCATION
               value: "false"
           volumeMounts:
             - mountPath: /tmp/k8s-webhook-server/serving-certs
