@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 
 	multustypes "gopkg.in/k8snetworkplumbingwg/multus-cni.v4/pkg/types"
@@ -31,6 +33,19 @@ var (
 	subnetGVK      = metav1.GroupVersionKind{Group: ovnv1.SchemeGroupVersion.Group, Version: ovnv1.SchemeGroupVersion.Version, Kind: "Subnet"}
 	vpcGVK         = metav1.GroupVersionKind{Group: ovnv1.SchemeGroupVersion.Group, Version: ovnv1.SchemeGroupVersion.Version, Kind: "Vpc"}
 )
+
+var ipamStrictAllocation bool
+
+func init() {
+	if env := os.Getenv("IPAM_STRICT_ALLOCATION"); env != "" {
+		v, err := strconv.ParseBool(env)
+		if err != nil {
+			klog.Errorf("invalid environment variable IPAM_STRICT_ALLOCATION=%s", env)
+		} else {
+			ipamStrictAllocation = v
+		}
+	}
+}
 
 func (v *ValidatingHook) DeploymentCreateHook(ctx context.Context, req admission.Request) admission.Response {
 	o := appsv1.Deployment{}
@@ -157,6 +172,10 @@ func (v *ValidatingHook) validateIP(ctx context.Context, annotations map[string]
 	if err := util.ValidatePodNetwork(annotations); err != nil {
 		klog.Errorf("validate %s %s/%s failed: %v", kind, namespace, name, err)
 		return ctrlwebhook.Errored(http.StatusBadRequest, err)
+	}
+
+	if ipamStrictAllocation {
+
 	}
 
 	ipList := &ovnv1.IPList{}

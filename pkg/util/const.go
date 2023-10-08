@@ -23,6 +23,8 @@ const (
 	VipAnnotation        = "ovn.kubernetes.io/vip"
 	ChassisAnnotation    = "ovn.kubernetes.io/chassis"
 
+	IPAMStrictAllocationAnnotation = "ovn.kubernetes.io/ipam_strict_allocation"
+
 	ExternalIPAnnotation         = "ovn.kubernetes.io/external_ip"
 	ExternalMacAnnotation        = "ovn.kubernetes.io/external_mac"
 	ExternalCidrAnnotation       = "ovn.kubernetes.io/external_cidr"

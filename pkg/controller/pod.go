@@ -1320,8 +1320,18 @@ func needRouteSubnets(pod *v1.Pod, nets []*kubeovnNet) []*kubeovnNet {
 }
 
 func (c *Controller) getPodDefaultSubnet(pod *v1.Pod) (*kubeovnv1.Subnet, error) {
+	ns, err := c.namespacesLister.Get(pod.Namespace)
+	if err != nil {
+		klog.Errorf("failed to get namespace %s: %v", pod.Namespace, err)
+		return nil, err
+	}
+
+	var subnetNames []string
+	if len(ns.Annotations) != 0 {
+		subnetNames = strings.Split(ns.Annotations[util.LogicalSwitchAnnotation], ",")
+	}
+
 	var subnet *kubeovnv1.Subnet
-	var err error
 	// 1. check annotation subnet
 	lsName, lsExist := pod.Annotations[util.LogicalSwitchAnnotation]
 	if lsExist {
@@ -1330,20 +1340,21 @@ func (c *Controller) getPodDefaultSubnet(pod *v1.Pod) (*kubeovnv1.Subnet, error)
 			klog.Errorf("failed to get subnet %v", err)
 			return nil, err
 		}
-	} else {
-		ns, err := c.namespacesLister.Get(pod.Namespace)
-		if err != nil {
-			klog.Errorf("failed to get namespace %s, %v", pod.Namespace, err)
+
+		if len(ns.Annotations) != 0 && ns.Annotations[util.IPAMStrictAllocationAnnotation] == "true" &&
+			!util.ContainsString(subnetNames, lsName) {
+			err = fmt.Errorf("subnet %s configured for pod %s is not allowed in namespace %s", lsName, pod.Name, pod.Namespace)
+			klog.Error(err)
 			return nil, err
 		}
+	} else {
 		if ns.Annotations == nil {
 			err = fmt.Errorf("namespace %s network annotations is nil", pod.Namespace)
 			klog.Error(err)
 			return nil, err
 		}
 
-		subnetNames := ns.Annotations[util.LogicalSwitchAnnotation]
-		for _, subnetName := range strings.Split(subnetNames, ",") {
+		for _, subnetName := range subnetNames {
 			if subnetName == "" {
 				err = fmt.Errorf("namespace %s default logical switch is not found", pod.Namespace)
 				klog.Error(err)
@@ -1534,6 +1545,12 @@ func (c *Controller) validatePodIP(podName, subnetName, ipv4, ipv6 string) (bool
 }
 
 func (c *Controller) acquireAddress(pod *v1.Pod, podNet *kubeovnNet) (string, string, string, *kubeovnv1.Subnet, error) {
+	ns, err := c.namespacesLister.Get(pod.Namespace)
+	if err != nil {
+		klog.Errorf("failed to get namespace %s: %v", pod.Namespace, err)
+		return "", "", "", nil, err
+	}
+
 	podName := c.getNameByPod(pod)
 	key := fmt.Sprintf("%s/%s", pod.Namespace, podName)
 
@@ -1572,15 +1589,8 @@ func (c *Controller) acquireAddress(pod *v1.Pod, podNet *kubeovnNet) (string, st
 	}
 
 	ippoolStr := pod.Annotations[fmt.Sprintf(util.IPPoolAnnotationTemplate, podNet.ProviderName)]
-	if ippoolStr == "" {
-		ns, err := c.namespacesLister.Get(pod.Namespace)
-		if err != nil {
-			klog.Errorf("failed to get namespace %s: %v", pod.Namespace, err)
-			return "", "", "", podNet.Subnet, err
-		}
-		if len(ns.Annotations) != 0 {
-			ippoolStr = ns.Annotations[util.IPPoolAnnotation]
-		}
+	if ippoolStr == "" && len(ns.Annotations) != 0 {
+		ippoolStr = ns.Annotations[util.IPPoolAnnotation]
 	}
 
 	// Random allocate
@@ -1618,7 +1628,6 @@ func (c *Controller) acquireAddress(pod *v1.Pod, podNet *kubeovnNet) (string, st
 	// The static ip can be assigned from any subnet after ns supports multi subnets
 	nsNets, _ := c.getNsAvailableSubnets(pod, podNet)
 	var v4IP, v6IP, mac string
-	var err error
 
 	// Static allocate
 	if pod.Annotations[fmt.Sprintf(util.IPAddressAnnotationTemplate, podNet.ProviderName)] != "" {
