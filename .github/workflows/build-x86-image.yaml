@@ -22,6 +22,7 @@ concurrency:
 
 env:
   GO_VERSION: ''
+  KIND_VERSION: v0.22.0
   GOSEC_VERSION: '2.15.0'
   HELM_VERSION: v3.11.1
 
@@ -393,9 +394,9 @@ jobs:
           restore-keys: ${{ runner.os }}-e2e-${{ env.GO_FULL_VER }}-x86-
 
       - name: Install kind
-        uses: helm/kind-action@v1.7.0
+        uses: helm/kind-action@v1.9.0
         with:
-          version: v0.20.0
+          version: ${{ env.KIND_VERSION }}
           install_only: true
 
       - name: Install ginkgo
@@ -540,9 +541,9 @@ jobs:
           restore-keys: ${{ runner.os }}-e2e-${{ env.GO_FULL_VER }}-x86-
 
       - name: Install kind
-        uses: helm/kind-action@v1.7.0
+        uses: helm/kind-action@v1.9.0
         with:
-          version: v0.20.0
+          version: ${{ env.KIND_VERSION }}
           install_only: true
 
       - name: Install ginkgo
@@ -696,9 +697,9 @@ jobs:
           restore-keys: ${{ runner.os }}-e2e-${{ env.GO_FULL_VER }}-x86-
 
       - name: Install kind
-        uses: helm/kind-action@v1.7.0
+        uses: helm/kind-action@v1.9.0
         with:
-          version: v0.20.0
+          version: ${{ env.KIND_VERSION }}
           install_only: true
 
       - name: Install ginkgo
@@ -827,9 +828,9 @@ jobs:
           fi
 
       - name: Install kind
-        uses: helm/kind-action@v1.7.0
+        uses: helm/kind-action@v1.9.0
         with:
-          version: v0.20.0
+          version: ${{ env.KIND_VERSION }}
           install_only: true
 
       - name: Install ginkgo
@@ -977,9 +978,9 @@ jobs:
           restore-keys: ${{ runner.os }}-e2e-${{ env.GO_FULL_VER }}-x86-
 
       - name: Install kind
-        uses: helm/kind-action@v1.7.0
+        uses: helm/kind-action@v1.9.0
         with:
-          version: v0.20.0
+          version: ${{ env.KIND_VERSION }}
           install_only: true
 
       - name: Install ginkgo
@@ -1114,9 +1115,9 @@ jobs:
           restore-keys: ${{ runner.os }}-e2e-${{ env.GO_FULL_VER }}-x86-
 
       - name: Install kind
-        uses: helm/kind-action@v1.7.0
+        uses: helm/kind-action@v1.9.0
         with:
-          version: v0.20.0
+          version: ${{ env.KIND_VERSION }}
           install_only: true
 
       - name: Install ginkgo
@@ -1165,9 +1166,9 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Install kind
-        uses: helm/kind-action@v1.7.0
+        uses: helm/kind-action@v1.9.0
         with:
-          version: v0.20.0
+          version: ${{ env.KIND_VERSION }}
           install_only: true
 
       - name: Download image
@@ -1211,9 +1212,9 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Install kind
-        uses: helm/kind-action@v1.7.0
+        uses: helm/kind-action@v1.9.0
         with:
-          version: v0.20.0
+          version: ${{ env.KIND_VERSION }}
           install_only: true
 
       - name: Download image
@@ -1257,9 +1258,9 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Install kind
-        uses: helm/kind-action@v1.7.0
+        uses: helm/kind-action@v1.9.0
         with:
-          version: v0.20.0
+          version: ${{ env.KIND_VERSION }}
           install_only: true
 
       - name: Download image
@@ -1305,9 +1306,9 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Install kind
-        uses: helm/kind-action@v1.7.0
+        uses: helm/kind-action@v1.9.0
         with:
-          version: v0.20.0
+          version: ${{ env.KIND_VERSION }}
           install_only: true
 
       - name: Download image
@@ -1395,9 +1396,9 @@ jobs:
           restore-keys: ${{ runner.os }}-e2e-${{ env.GO_FULL_VER }}-x86-
 
       - name: Install kind
-        uses: helm/kind-action@v1.7.0
+        uses: helm/kind-action@v1.9.0
         with:
-          version: v0.20.0
+          version: ${{ env.KIND_VERSION }}
           install_only: true
 
       - name: Install ginkgo
@@ -1453,9 +1454,9 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Install kind
-        uses: helm/kind-action@v1.7.0
+        uses: helm/kind-action@v1.9.0
         with:
-          version: v0.20.0
+          version: ${{ env.KIND_VERSION }}
           install_only: true
 
       - name: Download image
@@ -1548,9 +1549,9 @@ jobs:
           restore-keys: ${{ runner.os }}-e2e-${{ env.GO_FULL_VER }}-x86-
 
       - name: Install kind
-        uses: helm/kind-action@v1.7.0
+        uses: helm/kind-action@v1.9.0
         with:
-          version: v0.20.0
+          version: ${{ env.KIND_VERSION }}
           install_only: true
 
       - name: Install ginkgo
@@ -1658,9 +1659,9 @@ jobs:
           restore-keys: ${{ runner.os }}-e2e-${{ env.GO_FULL_VER }}-x86-
 
       - name: Install kind
-        uses: helm/kind-action@v1.7.0
+        uses: helm/kind-action@v1.9.0
         with:
-          version: v0.20.0
+          version: ${{ env.KIND_VERSION }}
           install_only: true
 
       - name: Install ginkgo
