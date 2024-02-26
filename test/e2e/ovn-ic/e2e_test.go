@@ -8,6 +8,7 @@ import (
 	"math/rand/v2"
 	"net"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -51,6 +52,7 @@ func TestE2E(t *testing.T) {
 	if len(clusters) < 2 {
 		t.Fatal("no enough kind clusters to run ovn-ic e2e testing")
 	}
+	slices.Sort(clusters)
 
 	k8sframework.AfterReadingAllFlags(&k8sframework.TestContext)
 	e2e.RunE2ETests(t)
@@ -80,12 +82,14 @@ var _ = framework.SerialDescribe("[group:ovn-ic]", func() {
 
 	clientSets := make([]clientset.Interface, len(clusters))
 	podClients := make([]*framework.PodClient, len(clusters))
+	deployClients := make([]*framework.DeploymentClient, len(clusters))
 	namespaceNames := make([]string, len(clusters))
 	var kubectlConfig string
 	ginkgo.BeforeEach(func() {
 		for i := range clusters {
 			clientSets[i] = frameworks[i].ClientSet
 			podClients[i] = frameworks[i].PodClient()
+			deployClients[i] = frameworks[i].DeploymentClientNS(framework.KubeOvnNamespace)
 			namespaceNames[i] = frameworks[i].Namespace.Name
 		}
 		kubectlConfig = k8sframework.TestContext.KubeConfig
@@ -139,6 +143,11 @@ var _ = framework.SerialDescribe("[group:ovn-ic]", func() {
 				}
 			}
 		}
+
+		for i := range clusters {
+			ginkgo.By("Deleting pod " + podNames[i] + " in cluster " + clusters[i])
+			framework.ExpectNoError(podClients[i].Delete(podNames[i]))
+		}
 	}
 
 	framework.ConformanceIt("should create logical switch ts", func() {
@@ -165,11 +174,11 @@ var _ = framework.SerialDescribe("[group:ovn-ic]", func() {
 
 		ginkgo.By("case 2: Delete configmap ovn-ic-config and rebuild it")
 		execCmd := "kubectl get configmap ovn-ic-config -n kube-system -oyaml > temp-ovn-ic-config.yaml; kubectl delete configmap ovn-ic-config -n kube-system"
-		_, err := exec.Command("bash", "-c", execCmd).CombinedOutput()
+		_, err := exec.Command("bash", "-ec", execCmd).CombinedOutput()
 		framework.ExpectNoError(err)
 
 		execCmd = "kubectl apply -f temp-ovn-ic-config.yaml; rm -f temp-ovn-ic-config.yaml"
-		_, err = exec.Command("bash", "-c", execCmd).CombinedOutput()
+		_, err = exec.Command("bash", "-ec", execCmd).CombinedOutput()
 		framework.ExpectNoError(err)
 		fnCheckPodHTTP()
 	})
@@ -222,11 +231,7 @@ var _ = framework.SerialDescribe("[group:ovn-ic]", func() {
 	framework.ConformanceIt("Should Support ECMP OVN Interconnection", func() {
 		frameworks[0].SkipVersionPriorTo(1, 11, "This feature was introduced in v1.11")
 		ginkgo.By("case 1: ecmp gateway network test")
-		if frameworks[0].ClusterIPFamily == "dual" {
-			checkECMPCount(6)
-		} else {
-			checkECMPCount(3)
-		}
+		checkECMPCount(frameworks, 3)
 		fnCheckPodHTTP()
 
 		ginkgo.By("case 2: reduce two clusters from 3 gateway to 1 gateway")
@@ -267,96 +272,83 @@ var _ = framework.SerialDescribe("[group:ovn-ic]", func() {
 		fnCheckPodHTTP()
 
 		ginkgo.By("case 4: scale ecmp path from 3 to 5")
-		switchCmd := "kubectl config use-context kind-kube-ovn"
-		_, err := exec.Command("bash", "-c", switchCmd).CombinedOutput()
-		framework.ExpectNoError(err, "switch to kube-ovn cluster failed")
-
-		patchCmd := "kubectl patch deployment ovn-ic-server -n kube-system --type='json' -p=\"[{'op': 'replace', 'path': '/spec/template/spec/containers/0/env/1/value', 'value': '5'}]\""
-		_, _ = exec.Command("bash", "-c", patchCmd).CombinedOutput()
-		if frameworks[0].ClusterIPFamily == "dual" {
-			checkECMPCount(10)
-		} else {
-			checkECMPCount(5)
+		icServer := deployClients[0].Get("ovn-ic-server")
+		patchedICServer := icServer.DeepCopy()
+		for i, env := range patchedICServer.Spec.Template.Spec.Containers[0].Env {
+			if env.Name == "TS_NUM" {
+				patchedICServer.Spec.Template.Spec.Containers[0].Env[i].Value = "5"
+			}
 		}
+		icServer = deployClients[0].PatchSync(icServer, patchedICServer)
+		checkECMPCount(frameworks, 5)
 		fnCheckPodHTTP()
 
 		ginkgo.By("case 5: reduce ecmp path from 5 to 3")
-		patchCmd = "kubectl patch deployment ovn-ic-server -n kube-system --type='json' -p=\"[{'op': 'replace', 'path': '/spec/template/spec/containers/0/env/1/value', 'value': '3'}]\""
-		_, _ = exec.Command("bash", "-c", patchCmd).CombinedOutput()
-		if frameworks[0].ClusterIPFamily == "dual" {
-			checkECMPCount(6)
-		} else {
-			checkECMPCount(3)
+		patchedICServer = icServer.DeepCopy()
+		for i, env := range patchedICServer.Spec.Template.Spec.Containers[0].Env {
+			if env.Name == "TS_NUM" {
+				patchedICServer.Spec.Template.Spec.Containers[0].Env[i].Value = "3"
+			}
 		}
+		_ = deployClients[0].PatchSync(icServer, patchedICServer)
+		checkECMPCount(frameworks, 3)
 		fnCheckPodHTTP()
 
 		ginkgo.By("case 6: disable gateway kube-ovn1-worker gateway")
-		switchCmd = "kubectl config use-context kind-kube-ovn1"
-		_, err = exec.Command("bash", "-c", switchCmd).CombinedOutput()
-		framework.ExpectNoError(err, "switch to kube-ovn1 cluster failed")
-
 		disableNetworkCmd := "docker exec kube-ovn1-worker iptables -I INPUT -p udp --dport 6081 -j DROP"
-		_, err = exec.Command("bash", "-c", disableNetworkCmd).CombinedOutput()
+		_, err := exec.Command("bash", "-c", disableNetworkCmd).CombinedOutput()
 		framework.ExpectNoError(err, "disable kube-ovn1-worker gateway failed")
 
-		taintCmd := "kubectl taint nodes kube-ovn1-worker e2e=test:NoSchedule"
-		_, _ = exec.Command("bash", "-c", taintCmd).CombinedOutput()
+		taintCmd := "taint nodes kube-ovn1-worker e2e=test:NoSchedule"
+		execOrDie("kind-kube-ovn1", taintCmd)
 		fnCheckPodHTTP()
 
 		ginkgo.By("case 7: disable gateway kube-ovn1-worker2 gateway")
-		switchCmd = "kubectl config use-context kind-kube-ovn1"
-		_, err = exec.Command("bash", "-c", switchCmd).CombinedOutput()
-		framework.ExpectNoError(err, "switch to kube-ovn1 cluster failed")
-
 		disableNetworkCmd = "docker exec kube-ovn1-worker2 iptables -I INPUT -p udp --dport 6081 -j DROP"
 		_, err = exec.Command("bash", "-c", disableNetworkCmd).CombinedOutput()
 		framework.ExpectNoError(err, "disable kube-ovn1-worker2 gateway failed")
 
-		taintCmd = "kubectl taint nodes kube-ovn1-worker2 e2e=test:NoSchedule"
-		_, _ = exec.Command("bash", "-c", taintCmd).CombinedOutput()
+		taintCmd = "taint nodes kube-ovn1-worker2 e2e=test:NoSchedule"
+		execOrDie("kind-kube-ovn1", taintCmd)
 		fnCheckPodHTTP()
 
 		ginkgo.By("case 8: enable gateway kube-ovn1-worker gateway")
-		switchCmd = "kubectl config use-context kind-kube-ovn1"
-		_, err = exec.Command("bash", "-c", switchCmd).CombinedOutput()
-		framework.ExpectNoError(err, "switch to kube-ovn1 cluster failed")
-
 		disableNetworkCmd = "docker exec kube-ovn1-worker iptables -D INPUT -p udp --dport 6081 -j DROP"
 		_, err = exec.Command("bash", "-c", disableNetworkCmd).CombinedOutput()
 		framework.ExpectNoError(err, "enable kube-ovn1-worker gateway failed")
 
-		taintCmd = "kubectl taint nodes kube-ovn1-worker e2e=test:NoSchedule-"
-		_, _ = exec.Command("bash", "-c", taintCmd).CombinedOutput()
+		taintCmd = "taint nodes kube-ovn1-worker e2e=test:NoSchedule-"
+		execOrDie("kind-kube-ovn1", taintCmd)
 		fnCheckPodHTTP()
 
 		ginkgo.By("case 9: enable gateway kube-ovn1-worker2 gateway")
-		switchCmd = "kubectl config use-context kind-kube-ovn1"
-		_, err = exec.Command("bash", "-c", switchCmd).CombinedOutput()
-		framework.ExpectNoError(err, "switch to kube-ovn1 cluster failed")
-
 		disableNetworkCmd = "docker exec kube-ovn1-worker2 iptables -D INPUT -p udp --dport 6081 -j DROP"
 		_, err = exec.Command("bash", "-c", disableNetworkCmd).CombinedOutput()
 		framework.ExpectNoError(err, "enable kube-ovn1-worker2 gateway failed")
 
-		taintCmd = "kubectl taint nodes kube-ovn1-worker2 e2e=test:NoSchedule-"
-		_, _ = exec.Command("bash", "-c", taintCmd).CombinedOutput()
+		taintCmd = "taint nodes kube-ovn1-worker2 e2e=test:NoSchedule-"
+		execOrDie("kind-kube-ovn1", taintCmd)
 		fnCheckPodHTTP()
 	})
 })
 
-func checkECMPCount(expectCount int) {
-	ecmpCount := 0
-	maxRetryTimes := 30
-	for i := 0; i < maxRetryTimes; i++ {
-		time.Sleep(3 * time.Second)
-		execCmd := "kubectl ko nbctl lr-route-list ovn-cluster "
-		output, err := exec.Command("bash", "-c", execCmd).CombinedOutput()
-		framework.ExpectNoError(err)
-		ecmpCount = strings.Count(string(output), "ecmp")
-		if ecmpCount == expectCount {
-			break
-		}
+func checkECMPCount(frameworks []*framework.Framework, expectedCount int) {
+	if frameworks[0].ClusterIPFamily == framework.Dual {
+		expectedCount *= 2
 	}
 
-	framework.ExpectEqual(ecmpCount, expectCount)
+	ecmpCount := 0
+	maxRetryTimes := 30
+	var output string
+	for _, f := range frameworks {
+		for i := 0; i < maxRetryTimes; i++ {
+			time.Sleep(3 * time.Second)
+			output = execOrDie(f.KubeContext, "ko nbctl lr-route-list ovn-cluster")
+			ecmpCount = strings.Count(output, "ecmp")
+			if ecmpCount == expectedCount {
+				break
+			}
+		}
+		framework.ExpectEqual(ecmpCount, expectedCount, "logical router routes: %v", output)
+	}
 }
