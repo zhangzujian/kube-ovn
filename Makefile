@@ -359,7 +359,7 @@ kind-init-ovn-ic: kind-init-ovn-ic-ipv4
 
 .PHONY: kind-init-ovn-ic-%
 kind-init-ovn-ic-%: kind-clean-ovn-ic
-	@ha=true $(MAKE) kind-init-$*
+	@ovn_ic=true $(MAKE) kind-init-$*
 	@ovn_ic=true ip_family=$* $(MAKE) kind-generate-config
 	$(call kind_create_cluster,yamls/kind.yaml,kube-ovn1,1)
 
@@ -977,6 +977,8 @@ clean:
 	$(RM) yamls/kind.yaml
 	$(RM) yamls/clab-bgp.yaml yamls/clab-bgp-ha.yaml
 	$(RM) ovn.yaml kube-ovn.yaml kube-ovn-crd.yaml
+	$(RM) kube-ovn-app-sa.yaml kube-ovn-cni-sa.yaml kube-ovn-sa.yaml ovn-ovs-sa.yaml
+	$(RM) ovs-ovn-ds.yaml ovn-ic-controller.yaml ovn-ic-server.yaml
 	$(RM) ovn-ic-0.yaml ovn-ic-1.yaml
 	$(RM) kwok-node.yaml
 	$(RM) kube-ovn.tar kube-ovn-dpdk.tar vpc-nat-gateway.tar image-amd64.tar image-amd64-dpdk.tar image-arm64.tar
