@@ -2,7 +2,7 @@
 set -eo pipefail
 
 LOCAL_IP=${LOCAL_IP:-$POD_IP}
-TS_NUM=${TS_NUM:-ts}
+TS_NUM=${TS_NUM:-3}
 ENABLE_BIND_LOCAL_IP=${ENABLE_BIND_LOCAL_IP:-true}
 ENABLE_OVN_LEADER_CHECK=${ENABLE_OVN_LEADER_CHECK:-true}
 
@@ -213,7 +213,7 @@ fi
 
 if [[ $ENABLE_OVN_LEADER_CHECK == "true" ]]; then
     chmod 600 /etc/ovn/*
-    /kube-ovn/kube-ovn-leader-checker --probeInterval=${OVN_LEADER_PROBE_INTERVAL} --isICDBServer=true
+    TS_NUM=${TS_NUM} /kube-ovn/kube-ovn-leader-checker --probeInterval=${OVN_LEADER_PROBE_INTERVAL} --isICDBServer=true
 else
     # Compatible with controller deployment methods before kube-ovn 1.11.16
     TS_NAME=${TS_NAME:-ts}

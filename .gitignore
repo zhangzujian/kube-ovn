@@ -35,3 +35,5 @@ kube-ovn-cni-sa.yaml
 kube-ovn-sa.yaml
 ovn-ovs-sa.yaml
 ovs-ovn-ds.yaml
+ovn-ic-controller.yaml
+ovn-ic-server.yaml
