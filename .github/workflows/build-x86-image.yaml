@@ -205,7 +205,7 @@ jobs:
       - build-kube-ovn
       - build-e2e-binaries
     runs-on: ubuntu-22.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -228,7 +228,10 @@ jobs:
           - 0
           - 1
           - 2
-          - 3
+        n:
+          - 0
+          - 1
+          - 2
     steps:
       - uses: jlumbroso/free-disk-space@v1.3.1
         with:
