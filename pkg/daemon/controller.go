@@ -593,7 +593,7 @@ func (c *Controller) Run(stopCh <-chan struct{}) {
 	defer c.podQueue.ShutDown()
 
 	go wait.Until(ovs.CleanLostInterface, time.Minute, stopCh)
-	go wait.Until(recompute, 10*time.Minute, stopCh)
+	go wait.Until(recompute, time.Minute, stopCh)
 	go wait.Until(rotateLog, 1*time.Hour, stopCh)
 
 	if err := c.setIPSet(); err != nil {
