@@ -25,7 +25,7 @@ require (
 	github.com/kubeovn/gonetworkmanager/v2 v2.0.0-20230905082151-e28c4d73a589
 	github.com/mdlayher/arp v0.0.0-20220512170110-6706a2966875
 	github.com/moby/sys/mountinfo v0.7.1
-	github.com/onsi/ginkgo/v2 v2.17.0
+	github.com/onsi/ginkgo/v2 v2.17.1
 	github.com/onsi/gomega v1.32.0
 	github.com/osrg/gobgp/v3 v3.24.0
 	github.com/ovn-org/libovsdb v0.0.0-20230711201130-6785b52d4020
@@ -289,6 +289,7 @@ replace (
 	github.com/alauda/felix => github.com/kubeovn/felix v0.0.0-20220325073257-c8a0f705d139
 	github.com/greenpau/ovsdb => github.com/kubeovn/ovsdb v0.0.0-20221213053943-9372db56919f
 	github.com/mdlayher/arp => github.com/kubeovn/arp v0.0.0-20240218024213-d9612a263f68
+	github.com/onsi/ginkgo/v2 => github.com/zhangzujian/ginkgo/v2 v2.17.2
 	github.com/openshift/client-go => github.com/openshift/client-go v0.0.1
 	github.com/ovn-org/libovsdb => github.com/kubeovn/libovsdb v0.0.0-20240218023647-f0bc3ce57fcd
 	github.com/vishvananda/netlink => github.com/kubeovn/netlink v0.0.0-20240218024530-d3ada5dae96f
