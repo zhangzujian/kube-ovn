@@ -358,6 +358,11 @@ jobs:
               echo $f
               cat "$f"
               echo "::endgroup::"
+              echo "::group::ovn-controller log."
+              file="$(dirname $f)/ovn-controller.log"
+              echo $file
+              cat "$file"
+              echo "::endgroup::"
               exit 1
             fi;
           done
