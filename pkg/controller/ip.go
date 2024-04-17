@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/onsi/gomega/format"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -541,10 +542,17 @@ func (c *Controller) createOrUpdateIPCR(ipCRName, podName, ip, mac, subnetName, 
 			return nil
 		}
 
+		klog.Infof("old ip cr:\n%s", format.Object(ipCR, 2))
+		klog.Infof("new ip cr:\n%s", format.Object(newIPCR, 2))
 		ipCR, err = c.config.KubeOvnClient.KubeovnV1().IPs().Update(context.Background(), newIPCR, metav1.UpdateOptions{})
 		if err != nil {
 			err := fmt.Errorf("failed to update ip CR %s: %v", newIPCR.Name, err)
 			klog.Error(err)
+			if v, e := c.ipsLister.Get(ipName); err != nil {
+				klog.Errorf("failed to get ip %s: %v", ipName, e)
+			} else {
+				klog.Infof("existing ip cr:\n%s", format.Object(v, 2))
+			}
 			return err
 		}
 	}
