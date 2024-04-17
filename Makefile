@@ -66,8 +66,8 @@ SUBMARINER_LIGHTHOUSE_COREDNS = quay.io/submariner/lighthouse-coredns:$(SUBMARIN
 SUBMARINER_ROUTE_AGENT = quay.io/submariner/submariner-route-agent:$(SUBMARINER_VERSION)
 SUBMARINER_NETTEST = quay.io/submariner/nettest:$(SUBMARINER_VERSION)
 
-DEEPFLOW_VERSION = v6.4
-DEEPFLOW_CHART_VERSION = 6.4.013
+DEEPFLOW_VERSION = v6.5
+DEEPFLOW_CHART_VERSION = 6.5.007
 DEEPFLOW_CHART_REPO = https://deepflow-ce.oss-cn-beijing.aliyuncs.com/chart/stable
 DEEPFLOW_IMAGE_REPO = registry.cn-beijing.aliyuncs.com/deepflow-ce
 DEEPFLOW_SERVER_NODE_PORT = 30417
