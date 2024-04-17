@@ -880,6 +880,7 @@ kind-install-deepflow: kind-install
 		--set global.image.repository=$(DEEPFLOW_IMAGE_REPO) \
 		--set global.image.pullPolicy=IfNotPresent \
 		--set deepflow-agent.clusterNAME=kind-kube-ovn \
+		--set stella-agent-ce.enabled=false \
 		--set grafana.image.registry=$(DEEPFLOW_IMAGE_REPO) \
 		--set grafana.image.pullPolicy=IfNotPresent \
 		--set grafana.service.nodePort=$(DEEPFLOW_GRAFANA_NODE_PORT) \
