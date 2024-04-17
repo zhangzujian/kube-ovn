@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/onsi/gomega/format"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -21,7 +22,6 @@ import (
 	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
 	"github.com/kubeovn/kube-ovn/pkg/ovs"
 	"github.com/kubeovn/kube-ovn/pkg/util"
-	"github.com/onsi/gomega/format"
 )
 
 func (c *Controller) enqueueAddIP(obj interface{}) {
