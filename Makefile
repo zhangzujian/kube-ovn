@@ -133,8 +133,8 @@ build-dpdk:
 
 .PHONY: base-amd64
 base-amd64:
-	docker buildx build --platform linux/amd64 --build-arg ARCH=amd64 -t $(REGISTRY)/kube-ovn-base:$(RELEASE_TAG)-amd64 -o type=docker -f dist/images/Dockerfile.base dist/images/
-	docker buildx build --platform linux/amd64 --build-arg ARCH=amd64 --build-arg DEBUG=true -t $(REGISTRY)/kube-ovn-base:$(DEBUG_TAG)-amd64 -o type=docker -f dist/images/Dockerfile.base dist/images/
+	docker buildx build --platform linux/amd64 --progress plain --build-arg ARCH=amd64 -t $(REGISTRY)/kube-ovn-base:$(RELEASE_TAG)-amd64 -o type=docker -f dist/images/Dockerfile.base dist/images/
+	# docker buildx build --platform linux/amd64 --build-arg ARCH=amd64 --build-arg DEBUG=true -t $(REGISTRY)/kube-ovn-base:$(DEBUG_TAG)-amd64 -o type=docker -f dist/images/Dockerfile.base dist/images/
 
 .PHONY: base-amd64-dpdk
 base-amd64-dpdk:

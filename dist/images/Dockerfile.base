@@ -5,7 +5,28 @@ ARG ARCH
 ARG DEBIAN_FRONTEND=noninteractive
 ENV SRC_DIR='/usr/src'
 
-RUN apt update && apt install -y git curl
+# ENV https_proxy=http://192.168.73.1:8889
+# ENV http_proxy=http://192.168.73.1:8889
+
+RUN apt update
+RUN apt install -y curl
+RUN apt install -y git
+RUN apt install -y build-essential
+RUN apt install -y fakeroot
+RUN apt install -y autoconf automake
+RUN apt install -y bzip2 openssl
+RUN apt install -y debhelper-compat dh-exec
+RUN apt install -y dh-python dh-sequence-python3 dh-sequence-sphinxdoc
+RUN apt install -y graphviz
+RUN apt install -y iproute2 libtool
+RUN apt install -y libcap-ng-dev libdbus-1-dev libnuma-dev libpcap-dev libssl-dev libunbound-dev
+RUN apt install -y pkg-config procps
+RUN apt install -y python3-all-dev
+RUN apt install -y python3-setuptools
+RUN apt install -y python3-sortedcontainers
+RUN apt install -y python3-sphinx
+
+ENV https_proxy=http://192.168.73.1:8889
 
 RUN cd /usr/src/ && \
     git clone -b branch-3.1 --depth=1 https://github.com/openvswitch/ovs.git && \
@@ -31,32 +52,6 @@ RUN cd /usr/src/ && \
     # ovsdb-tool: add command fix-cluster
     curl -s https://github.com/kubeovn/ovs/commit/f52c239f5ded40b503e4d217f916b46ca413da4c.patch | git apply
 
-RUN cd /usr/src/ && git clone -b branch-22.12 --depth=1 https://github.com/ovn-org/ovn.git && \
-    cd ovn && \
-    # change hash type from dp_hash to hash with field src_ip
-    curl -s https://github.com/kubeovn/ovn/commit/4ad8763f707ff4088ae61396c7931e8735f71f22.patch | git apply && \
-    # set ether dst addr for dnat on logical switch
-    curl -s https://github.com/kubeovn/ovn/commit/44875725ad6ce3cb38e4d471d540fe69ed204bff.patch | git apply && \
-    # modify src route priority
-    curl -s https://github.com/kubeovn/ovn/commit/da1388ece89b27012d081c31310fd577b036b071.patch | git apply && \
-    # fix reaching resubmit limit in underlay
-    curl -s https://github.com/kubeovn/ovn/commit/6934f1a1eb5986a904eefb560c0d6d57811453d9.patch | git apply && \
-    # ovn-controller: do not send GARP on localnet for Kube-OVN ports
-    curl -s https://github.com/kubeovn/ovn/commit/8af8751cdb55f582c675db921f2526b06fd3d8c0.patch | git apply && \
-    # fix lr-lb dnat with multiple distributed gateway ports
-    curl -s https://github.com/kubeovn/ovn/commit/80f37c2debbf9f5230403691f791d11cc2b2e277.patch | git apply && \
-    # lflow: do not send direct traffic between lports to conntrack
-    curl -s https://github.com/kubeovn/ovn/commit/54cbe0d1ba2051e640dd3e53498f373362547691.patch | git apply && \
-    # northd: add nb option version_compatibility
-    curl -s https://github.com/kubeovn/ovn/commit/06f5a7c684a6030036e2663eecf934b37c3e666e.patch | git apply && \
-    # northd: skip conntrack when access node local dns ip
-    curl -s https://github.com/kubeovn/ovn/commit/1ea964886da774506962d6bf23f8f894d93a10eb.patch | git apply
-
-RUN apt install -y build-essential fakeroot \
-    autoconf automake bzip2 debhelper-compat dh-exec dh-python dh-sequence-python3 dh-sequence-sphinxdoc \
-    graphviz iproute2 libcap-ng-dev libdbus-1-dev libnuma-dev libpcap-dev libssl-dev libtool libunbound-dev \
-    openssl pkg-config procps python3-all-dev python3-setuptools python3-sortedcontainers python3-sphinx
-
 RUN cd /usr/src/ovs && \
     ./boot.sh && \
     ./configure && \
@@ -64,6 +59,31 @@ RUN cd /usr/src/ovs && \
     CONFIGURE_OPTS='CFLAGS="-fPIC"' && \
     if [ "$ARCH" = "amd64" ]; then CONFIGURE_OPTS='CFLAGS="-O2 -g -msse4.2 -mpopcnt -fPIC"'; fi && \
     DATAPATH_CONFIGURE_OPTS='--prefix=/usr' EXTRA_CONFIGURE_OPTS=$CONFIGURE_OPTS make debian-deb
+
+RUN cd /usr/src/ && git clone -b branch-22.12 --depth=1 https://github.com/ovn-org/ovn.git && \
+    cd ovn && \
+    # change hash type from dp_hash to hash with field src_ip
+    curl -s https://github.com/kubeovn/ovn/commit/d8b90d596575cf512cf673e41698690df4bf4590.patch | git apply && \
+    # set ether dst addr for dnat on logical switch
+    curl -s https://github.com/kubeovn/ovn/commit/e7ca61f0788075493a60689e10788a896920d4e3.patch | git apply && \
+    # modify src route priority
+    curl -s https://github.com/kubeovn/ovn/commit/9271e669a95388ff10d277496ff704b0ce77fb93.patch | git apply && \
+    # fix reaching resubmit limit in underlay
+    curl -s https://github.com/kubeovn/ovn/commit/afc222ca52aebfe94d446d34cbdc1b967ed45fc4.patch | git apply && \
+    # ovn-controller: do not send GARP on localnet for Kube-OVN ports
+    curl -s https://github.com/kubeovn/ovn/commit/72b4dd617af2dd54859711b8f2cfd2a60aaddb47.patch | git apply && \
+    # fix lr-lb dnat with multiple distributed gateway ports
+    curl -s https://github.com/kubeovn/ovn/commit/7d1a1926b7c5b8dd2b14b724cef261b69a5a0fd0.patch | git apply && \
+    # lflow: do not send direct traffic between lports to conntrack
+    curl -s https://github.com/kubeovn/ovn/commit/54cbe0d1ba2051e640dd3e53498f373362547691.patch | git apply && \
+    # northd: add nb option version_compatibility
+    curl -s https://github.com/kubeovn/ovn/commit/06f5a7c684a6030036e2663eecf934b37c3e666e.patch | git apply && \
+    # northd: skip conntrack when access node local dns ip
+    curl -s https://github.com/kubeovn/ovn/commit/1ea964886da774506962d6bf23f8f894d93a10eb.patch | git apply
+
+RUN cd /usr/src/ovn && \
+    curl -s https://github.com/kubeovn/ovn/commit/b05553d6385b77a9d3c9a35376ec343e7532193c.patch | git apply && \
+    curl -s https://github.com/kubeovn/ovn/commit/5a4a1a50737fa81cc14fef4736296f71f974b199.patch | git apply
 
 RUN cd /usr/src/ovn && \
     sed -i 's/OVN/ovn/g' debian/changelog && \
@@ -81,19 +101,35 @@ RUN mkdir /packages/ && \
 
 FROM ubuntu:22.04
 
+# ENV https_proxy=http://192.168.73.1:8889
+# ENV http_proxy=http://192.168.73.1:8889
+
 ARG DEBIAN_FRONTEND=noninteractive
-RUN apt update && apt upgrade -y && apt install ca-certificates python3 hostname libunwind8 netbase \
-        ethtool iproute2 ncat libunbound-dev procps libatomic1 kmod iptables python3-netifaces python3-sortedcontainers \
-        tcpdump ipset curl uuid-runtime openssl inetutils-ping arping ndisc6 conntrack iputils-tracepath \
-        logrotate dnsutils net-tools strongswan strongswan-pki libcharon-extra-plugins libmnl0 \
-        libcharon-extauth-plugins libstrongswan-extra-plugins libstrongswan-standard-plugins -y --no-install-recommends && \
-        rm -rf /var/lib/apt/lists/* && \
-        rm -rf /etc/localtime
+RUN apt update && apt upgrade -y
+RUN apt install -y ca-certificates
+RUN apt install -y python3
+RUN apt install -y hostname libunwind8 netbase
+RUN apt install -y ethtool iproute2 ncat
+RUN apt install -y libunbound8 procps libatomic1
+RUN apt install -y kmod iptables
+RUN apt install -y python3-netifaces python3-sortedcontainers
+RUN apt install -y tcpdump
+RUN apt install -y ipset curl
+RUN apt install -y uuid-runtime openssl
+RUN apt install -y inetutils-ping arping ndisc6
+RUN apt install -y conntrack iputils-tracepath
+RUN apt install -y logrotate dnsutils
+RUN apt install -y net-tools
+RUN apt install -y strongswan strongswan-pki
+RUN apt install -y libcharon-extra-plugins libmnl0
+RUN apt install -y libcharon-extauth-plugins libstrongswan-extra-plugins libstrongswan-standard-plugins
 
 RUN mkdir -p /var/run/openvswitch && \
     mkdir -p /var/run/ovn && \
     mkdir -p /etc/cni/net.d && \
     mkdir -p /opt/cni/bin
+
+ENV https_proxy=http://192.168.73.1:8889
 
 ARG ARCH
 ENV CNI_VERSION=v1.4.1

@@ -1,7 +1,10 @@
 # syntax = docker/dockerfile:experimental
 ARG VERSION
 ARG BASE_TAG=$VERSION
-FROM kubeovn/kube-ovn-base:$BASE_TAG
+FROM kubeovn/kube-ovn-base:$BASE_TAG-amd64
+
+ENV https_proxy=
+ENV http_proxy=
 
 COPY *.sh /kube-ovn/
 COPY kubectl-ko /kube-ovn/kubectl-ko
