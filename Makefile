@@ -400,6 +400,14 @@ kind-init-deepflow: kind-clean
 kind-init-iptables:
 	@kube_proxy_mode=iptables $(MAKE) kind-init
 
+.PHONY: kind-init-nftables
+kind-init-nftables:
+	@kube_proxy_mode=nftables $(MAKE) kind-init
+
+.PHONY: kind-init-nftables-%
+kind-init-nftables-%:
+	@kube_proxy_mode=nftables $(MAKE) kind-init-$*
+
 .PHONY: kind-init-ha
 kind-init-ha: kind-init-ha-ipv4
 
