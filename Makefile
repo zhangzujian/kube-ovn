@@ -467,8 +467,8 @@ kind-install-chart-%:
 kind-install-chart-underlay-ipv4: kind-disable-hairpin kind-load-image kind-untaint-control-plane
 	$(call docker_network_info,kind)
 	@NET_STACK=ipv4 NETWORK_TYPE=vlan VLAN_INTERFACE_NAME=eth0 VLAN_ID=0  \
-		POD_CIDR=$(KIND_IPV4_SUBNET) \
-		POD_GATEWAY=$(KIND_IPV4_GATEWAY) \
+		IPV4_POD_CIDR=$(KIND_IPV4_SUBNET) \
+		IPV4_POD_GATEWAY=$(KIND_IPV4_GATEWAY) \
 		EXCLUDE_IPS=$(KIND_IPV4_EXCLUDE_IPS) \
 		$(MAKE) kind-install-chart
 
@@ -476,8 +476,8 @@ kind-install-chart-underlay-ipv4: kind-disable-hairpin kind-load-image kind-unta
 kind-install-chart-underlay-ipv6: kind-disable-hairpin kind-load-image kind-untaint-control-plane
 	$(call docker_network_info,kind)
 	@NET_STACK=ipv6 NETWORK_TYPE=vlan VLAN_INTERFACE_NAME=eth0 VLAN_ID=0 \
-		POD_CIDR=$(KIND_IPV6_SUBNET) \
-		POD_GATEWAY=$(KIND_IPV6_GATEWAY) \
+		IPV6_POD_CIDR=$(KIND_IPV6_SUBNET) \
+		IPV6_POD_GATEWAY=$(KIND_IPV6_GATEWAY) \
 		EXCLUDE_IPS=$(KIND_IPV6_EXCLUDE_IPS) \
 		$(MAKE) kind-install-chart
 
@@ -485,8 +485,8 @@ kind-install-chart-underlay-ipv6: kind-disable-hairpin kind-load-image kind-unta
 kind-install-chart-underlay-dual: kind-disable-hairpin kind-load-image kind-untaint-control-plane
 	$(call docker_network_info,kind)
 	@NET_STACK=dual NETWORK_TYPE=vlan VLAN_INTERFACE_NAME=eth0 VLAN_ID=0 \
-		POD_CIDR=$(KIND_IPV4_SUBNET),$(KIND_IPV6_SUBNET) \
-		POD_GATEWAY=$(KIND_IPV4_GATEWAY),$(KIND_IPV6_GATEWAY) \
+		DUAL_POD_CIDR=$(KIND_IPV4_SUBNET),$(KIND_IPV6_SUBNET) \
+		DUAL_POD_GATEWAY=$(KIND_IPV4_GATEWAY),$(KIND_IPV6_GATEWAY) \
 		EXCLUDE_IPS=$(KIND_IPV4_EXCLUDE_IPS),$(KIND_IPV6_EXCLUDE_IPS) \
 		$(MAKE) kind-install-chart
 
@@ -505,8 +505,12 @@ kind-install-chart: kind-load-image kind-untaint-control-plane
 		--set networking.vlan.VLAN_INTERFACE_NAME=$(shell echo $${VLAN_INTERFACE_NAME}) \
 		--set networking.vlan.VLAN_ID=$(shell echo $${VLAN_ID:-100}) \
 		--set networking.EXCLUDE_IPS='$(shell echo $${EXCLUDE_IPS} | sed 's/,/\\,/g')' \
-		--set $(NET_STACK).POD_CIDR='$(shell echo $${POD_CIDR:-10.16.0.0/16} | sed 's/,/\\,/')' \
-		--set $(NET_STACK).POD_GATEWAY='$(shell echo $${POD_GATEWAY:-10.16.0.1} | sed 's/,/\\,/')' \
+		--set ipv4.POD_CIDR='$(shell echo $${IPV4_POD_CIDR:-10.16.0.0/16} | sed 's/,/\\,/')' \
+		--set ipv4.POD_GATEWAY='$(shell echo $${IPV4_POD_GATEWAY:-10.16.0.1} | sed 's/,/\\,/')' \
+		--set ipv6.POD_CIDR='$(shell echo $${IPV6_POD_CIDR:-fd00:10:16::/112} | sed 's/,/\\,/')' \
+		--set ipv6.POD_GATEWAY='$(shell echo $${IPV6_POD_GATEWAY:-fd00:10:16::1} | sed 's/,/\\,/')' \
+		--set dual_stack.POD_CIDR='$(shell echo $${DUAL_POD_CIDR:-10.16.0.0/16,fd00:10:16::/112} | sed 's/,/\\,/')' \
+		--set dual_stack.POD_GATEWAY='$(shell echo $${DUAL_POD_GATEWAY:-10.16.0.1,fd00:10:16::1} | sed 's/,/\\,/')' \
 		--set cni_conf.CNI_CONFIG_PRIORITY=$(shell echo $${CNI_CONFIG_PRIORITY:-01}) \
 		--set func.ENABLE_LB=$(shell echo $${ENABLE_LB:-true}) \
 		--set func.ENABLE_NP=$(shell echo $${ENABLE_NP:-true}) \
