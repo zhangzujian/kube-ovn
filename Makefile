@@ -504,7 +504,7 @@ kind-install-chart: kind-load-image kind-untaint-control-plane
 		--set networking.ENABLE_SSL=$(shell echo $${ENABLE_SSL:-false}) \
 		--set networking.vlan.VLAN_INTERFACE_NAME=$(shell echo $${VLAN_INTERFACE_NAME}) \
 		--set networking.vlan.VLAN_ID=$(shell echo $${VLAN_ID:-100}) \
-		--set networking.EXCLUDE_IPS='$(shell echo $${EXCLUDE_IPS} | sed 's/,/\\,/')' \
+		--set networking.EXCLUDE_IPS='$(shell echo $${EXCLUDE_IPS} | sed 's/,/\\,/g')' \
 		--set $(NET_STACK).POD_CIDR='$(shell echo $${POD_CIDR:-10.16.0.0/16} | sed 's/,/\\,/')' \
 		--set $(NET_STACK).POD_GATEWAY='$(shell echo $${POD_GATEWAY:-10.16.0.1} | sed 's/,/\\,/')' \
 		--set cni_conf.CNI_CONFIG_PRIORITY=$(shell echo $${CNI_CONFIG_PRIORITY:-01}) \
