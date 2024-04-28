@@ -103,6 +103,8 @@ performance:
 debug:
   ENABLE_MIRROR: false
   MIRROR_IFACE: "mirror0"
+  # valgrind, strace or glibc
+  WRAPPER: ""
 
 cni_conf:
   CNI_CONFIG_PRIORITY: "01"

@@ -455,17 +455,66 @@ kind-untaint-control-plane:
 		done; \
 	done
 
+.PHONY: kind-install-chart-overlay-%
+kind-install-chart-overlay-%:
+	@NET_STACK=$* $(MAKE) kind-install-chart-$*
+
+.PHONY: kind-install-chart-%
+kind-install-chart-%:
+	@NET_STACK=$* $(MAKE) kind-install-chart
+
+.PHONY: kind-install-chart-underlay-ipv4
+kind-install-chart-underlay-ipv4: kind-disable-hairpin kind-load-image kind-untaint-control-plane
+	$(call docker_network_info,kind)
+	@NET_STACK=ipv4 NETWORK_TYPE=vlan VLAN_INTERFACE_NAME=eth0 VLAN_ID=0  \
+		POD_CIDR=$(KIND_IPV4_SUBNET) \
+		POD_GATEWAY=$(KIND_IPV4_GATEWAY) \
+		EXCLUDE_IPS=$(KIND_IPV4_EXCLUDE_IPS) \
+		$(MAKE) kind-install-chart
+
+.PHONY: kind-install-chart-underlay-ipv6
+kind-install-chart-underlay-ipv6: kind-disable-hairpin kind-load-image kind-untaint-control-plane
+	$(call docker_network_info,kind)
+	@NET_STACK=ipv6 NETWORK_TYPE=vlan VLAN_INTERFACE_NAME=eth0 VLAN_ID=0 \
+		POD_CIDR=$(KIND_IPV6_SUBNET) \
+		POD_GATEWAY=$(KIND_IPV6_GATEWAY) \
+		EXCLUDE_IPS=$(KIND_IPV6_EXCLUDE_IPS) \
+		$(MAKE) kind-install-chart
+
+.PHONY: kind-install-chart-underlay-dual
+kind-install-chart-underlay-dual: kind-disable-hairpin kind-load-image kind-untaint-control-plane
+	$(call docker_network_info,kind)
+	@NET_STACK=dual NETWORK_TYPE=vlan VLAN_INTERFACE_NAME=eth0 VLAN_ID=0 \
+		POD_CIDR=$(KIND_IPV4_SUBNET),$(KIND_IPV6_SUBNET) \
+		POD_GATEWAY=$(KIND_IPV4_GATEWAY),$(KIND_IPV6_GATEWAY) \
+		EXCLUDE_IPS=$(KIND_IPV4_EXCLUDE_IPS),$(KIND_IPV6_EXCLUDE_IPS) \
+		$(MAKE) kind-install-chart
+
 .PHONY: kind-install-chart
 kind-install-chart: kind-load-image kind-untaint-control-plane
+	$(eval NET_STACK = $(shell echo $${NET_STACK:-ipv4} | sed 's/^dual$$/dual_stack/'))
 	kubectl label node -lbeta.kubernetes.io/os=linux kubernetes.io/os=linux --overwrite
 	kubectl label node -lnode-role.kubernetes.io/control-plane kube-ovn/role=master --overwrite
 	kubectl label node -lovn.kubernetes.io/ovs_dp_type!=userspace ovn.kubernetes.io/ovs_dp_type=kernel --overwrite
 	helm install kubeovn ./charts/kube-ovn --wait \
 		--set global.images.kubeovn.tag=$(VERSION) \
-		--set networking.NET_STACK=$(shell echo $${NET_STACK:-ipv4} | sed 's/^dual$$/dual_stack/') \
+		--set debug.WRAPPER=$(shell echo $${DEBUG_WRAPPER}) \
+		--set networking.NET_STACK=$(NET_STACK) \
+		--set networking.NETWORK_TYPE=$(shell echo $${NETWORK_TYPE:-geneve}) \
 		--set networking.ENABLE_SSL=$(shell echo $${ENABLE_SSL:-false}) \
+		--set networking.vlan.VLAN_INTERFACE_NAME=$(shell echo $${VLAN_INTERFACE_NAME}) \
+		--set networking.vlan.VLAN_ID=$(shell echo $${VLAN_ID:-100}) \
+		--set networking.EXCLUDE_IPS='$(shell echo $${EXCLUDE_IPS} | sed 's/,/\\,/')' \
+		--set $(NET_STACK).POD_CIDR='$(shell echo $${POD_CIDR:-10.16.0.0/16} | sed 's/,/\\,/')' \
+		--set $(NET_STACK).POD_GATEWAY='$(shell echo $${POD_GATEWAY:-10.16.0.1} | sed 's/,/\\,/')' \
+		--set cni_conf.CNI_CONFIG_PRIORITY=$(shell echo $${CNI_CONFIG_PRIORITY:-01}) \
+		--set func.ENABLE_LB=$(shell echo $${ENABLE_LB:-true}) \
+		--set func.ENABLE_NP=$(shell echo $${ENABLE_NP:-true}) \
+		--set func.ENABLE_LB_SVC=$(shell echo $${ENABLE_LB_SVC:-false}) \
 		--set func.ENABLE_BIND_LOCAL_IP=$(shell echo $${ENABLE_BIND_LOCAL_IP:-true}) \
 		--set func.ENABLE_IC=$(shell kubectl get node --show-labels | grep -qw "ovn.kubernetes.io/ic-gw" && echo true || echo false)
+	kubectl wait --for=condition=Ready nodes --all --timeout 60s
+	kubectl wait --for=condition=Ready pods --all --timeout 120s -n kube-system
 
 .PHONY: kind-install-chart-ssl
 kind-install-chart-ssl:
@@ -782,12 +831,12 @@ kind-install-kubevirt:
 .PHONY: kind-install-lb-svc
 kind-install-lb-svc:
 	$(call kind_load_image,kube-ovn,$(VPC_NAT_GW_IMG))
-	@$(MAKE) ENABLE_LB_SVC=true CNI_CONFIG_PRIORITY=10 kind-install
+	@$(MAKE) ENABLE_LB_SVC=true CNI_CONFIG_PRIORITY=10 kind-install-chart
 	@$(MAKE) kind-install-multus
 	kubectl apply -f yamls/lb-svc-attachment.yaml
 
 .PHONY: kind-install-webhook
-kind-install-webhook: kind-install
+kind-install-webhook:
 	$(call kind_load_image,kube-ovn,$(CERT_MANAGER_CONTROLLER),1)
 	$(call kind_load_image,kube-ovn,$(CERT_MANAGER_CAINJECTOR),1)
 	$(call kind_load_image,kube-ovn,$(CERT_MANAGER_WEBHOOK),1)
@@ -838,9 +887,8 @@ kind-install-cilium-chaining-%:
 		--set cni.customConf=true \
 		--set cni.configMap=cni-configuration
 	kubectl -n kube-system rollout status ds cilium --timeout 120s
-	@$(MAKE) ENABLE_LB=false ENABLE_NP=false \
-		CNI_CONFIG_PRIORITY=10 WITHOUT_KUBE_PROXY=true \
-		kind-install-$*
+	@$(MAKE) ENABLE_LB=false ENABLE_NP=false CNI_CONFIG_PRIORITY=10 \
+		kind-install-chart-$*
 	kubectl describe no
 
 .PHONY: kind-install-bgp

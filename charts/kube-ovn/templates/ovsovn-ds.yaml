@@ -92,6 +92,8 @@ spec:
               value: "{{ .Values.networking.OVN_REMOTE_PROBE_INTERVAL }}"
             - name: OVN_REMOTE_OPENFLOW_INTERVAL
               value: "{{ .Values.networking.OVN_REMOTE_OPENFLOW_INTERVAL }}"
+            - name: DEBUG_WRAPPER
+              value: "{{ .Values.debug.WRAPPER }}"
           volumeMounts:
             - mountPath: /var/run/netns
               name: host-ns
