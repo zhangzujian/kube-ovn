@@ -831,7 +831,7 @@ kind-install-kubevirt:
 .PHONY: kind-install-lb-svc
 kind-install-lb-svc:
 	$(call kind_load_image,kube-ovn,$(VPC_NAT_GW_IMG))
-	@$(MAKE) ENABLE_LB_SVC=true CNI_CONFIG_PRIORITY=10 kind-install-chart
+	@ENABLE_LB_SVC=true CNI_CONFIG_PRIORITY=10 $(MAKE) kind-install-chart
 	@$(MAKE) kind-install-multus
 	kubectl apply -f yamls/lb-svc-attachment.yaml
 
@@ -887,8 +887,8 @@ kind-install-cilium-chaining-%:
 		--set cni.customConf=true \
 		--set cni.configMap=cni-configuration
 	kubectl -n kube-system rollout status ds cilium --timeout 120s
-	@$(MAKE) ENABLE_LB=false ENABLE_NP=false CNI_CONFIG_PRIORITY=10 \
-		kind-install-chart-$*
+	@ENABLE_LB=false ENABLE_NP=false CNI_CONFIG_PRIORITY=10 \
+		$(MAKE) kind-install-chart-$*
 	kubectl describe no
 
 .PHONY: kind-install-bgp
