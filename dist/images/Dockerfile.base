@@ -10,6 +10,8 @@ RUN apt update && apt install -y git curl
 RUN cd /usr/src/ && \
     git clone -b branch-3.1 --depth=1 https://github.com/openvswitch/ovs.git && \
     cd ovs && \
+    # add option to disable setsid
+    curl -s https://github.com/kubeovn/ovs/commit/58f425b8922b606f5a984113341729f54970ce34.patch | git apply && \
     # fix memory leak by ofport_usage and trim memory periodically
     curl -s https://github.com/kubeovn/ovs/commit/25d71867370c9a44c66b973556338de7a4d9bad7.patch | git apply && \
     # increase election timer
