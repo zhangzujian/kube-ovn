@@ -96,7 +96,7 @@ function quit {
     # pkill -P $$
 
     # kill the tail process
-    # pkill -P $$ tail
+    pkill -P $$ tail
     pstree -Tp $PPID
     # echo $PPID > /dev/termination-log
     # ps aux | grep -w runc
