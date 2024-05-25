@@ -179,7 +179,7 @@ kubectl annotate ns --all ovn.kubernetes.io/allocated-
 
 # ensure kube-ovn components have been deleted
 while :; do
-  sleep 30
+  sleep 35
   if [ $(kubectl get pod -n kube-system -l component=network -o name | wc -l) -eq 0 ]; then
     # sudo kind export logs -n kube-ovn
     # sudo bash -exco pipefail 'dir=`kind export logs -n kube-ovn | grep -w /tmp/`; mv $dir /tmp/kind-logs'
