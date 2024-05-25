@@ -81,11 +81,12 @@ function quit {
     # done
     pstree -Tp $PPID
     # ensure ovn-controller/ovsdb-server/ovs-vswitchd are killed
-    for pid in `pidof -c monitor ovn-controller ovsdb-server ovs-vswitchd`; do
-      kill $pid
+    for name in monitor ovn-controller ovsdb-server ovs-vswitchd tail; do
+      pkill -x -P $$ tail
     done
+
     # kill the tail process
-    # pkill -P $$
+    # pkill -P $$ tail
     pstree -Tp $PPID
     # echo $PPID > /dev/termination-log
     # ps aux | grep -w runc
