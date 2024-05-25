@@ -54,6 +54,7 @@ function cgroup_match {
 
 function quit {
   set -x
+  sleep 10
   gen_name=$(kubectl -n "${POD_NAMESPACE}" get pod "${POD_NAME}" -o jsonpath='{.metadata.generateName}')
   revision_hash=$(kubectl -n "${POD_NAMESPACE}" get pod "${POD_NAME}" -o jsonpath='{.metadata.labels.controller-revision-hash}')
   revision=$(kubectl -n "${POD_NAMESPACE}" get controllerrevision "${gen_name}${revision_hash}" --ignore-not-found -o jsonpath='{.revision}')
@@ -78,10 +79,11 @@ function quit {
     #   pkill -P $pid
     #   kill $pid
     # done
+    pstree -Tp $PPID
     # ensure ovn-controller/ovsdb-server/ovs-vswitchd are killed
-    # for pid in `pidof -c ovn-controller ovsdb-server ovs-vswitchd`; do
-    #   kill -9 $pid
-    # done
+    for pid in `pidof -c monitor ovn-controller ovsdb-server ovs-vswitchd`; do
+      kill $pid
+    done
     # kill the tail process
     # pkill -P $$
     pstree -Tp $PPID
