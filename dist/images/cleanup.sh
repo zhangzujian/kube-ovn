@@ -1,6 +1,6 @@
 #!/bin/bash
 set -eux
-export PS4='+ $(date "+%Y-%m-%d %H:%M:%S")\011 '
+# export PS4='+ $(date "+%Y-%m-%d %H:%M:%S")\011 '
 
 kubectl delete --ignore-not-found -n kube-system ds kube-ovn-pinger
 # ensure kube-ovn-pinger has been deleted
@@ -179,14 +179,50 @@ kubectl annotate ns --all ovn.kubernetes.io/allocated-
 
 # ensure kube-ovn components have been deleted
 while :; do
-  sleep 10
+  sleep 35
   if [ $(kubectl get pod -n kube-system -l component=network -o name | wc -l) -eq 0 ]; then
+    # sudo kind export logs -n kube-ovn
+    # sudo bash -exco pipefail 'dir=`kind export logs -n kube-ovn | grep -w /tmp/`; mv $dir /tmp/kind-logs'
+    # ls -lhd /tmp/kind-logs
+    # exit 1
     break
   fi
+  # sleep 300
   for pod in `kubectl -n kube-system get pod -l component=network -o name`; do
+    kubectl -n kube-system describe $pod
+    # kubectl -n kube-system get $pod -o yaml
     echo "$pod logs:"
-    kubectl -n kube-system logs $pod --timestamps --tail 50
+    kubectl -n kube-system logs $pod --timestamps
+    node=`kubectl -n kube-system get $pod -o jsonpath='{.spec.nodeName}'`
+    containerID=`kubectl -n kube-system get $pod -o jsonpath='{.status.containerStatuses[0].containerID}' | awk -F/ '{print $NF}'`
+    # docker exec $node crictl ps --id $containerID
+    # docker exec $node crictl inspect $containerID
+    # sandboxID=`docker exec $node sh -c "crictl inspect -o json $containerID | jq -r .info.sandboxID"`
+    # docker exec $node crictl inspectp $sandboxID
+    pid=`docker exec $node sh -c "crictl inspect -o json $containerID | jq -r .info.pid"`
+    docker exec $node sh -c 'apt update && apt install -y psmisc'
+    docker exec $node pstree -pT $pid
+    ppid=`docker exec kube-ovn-control-plane cat /proc/$pid/status | grep PPid | awk '{print $NF}'`
+    docker exec $node pstree -pT $ppid
+    # docker exec $node crictl info
+    # docker exec $node journalctl -u kubelet
+    # docker exec $node journalctl -u containerd
+    # docker exec $node dmesg -T
+    # docker exec $node sh -c 'kill -USR1 $(pidof containerd)'
+    # sleep 1
+    # shimPid=`docker exec $node ps aux | grep -v grep | grep -w $sandboxID | awk '{print $2}'`
+    # docker exec $node sh -c "kill -USR1 $shimPid"
+    # sleep 1
+    # docker exec $node journalctl -u containerd
+    # sleep 1
+    # sudo systemctl restart containerd
+    # sleep 300
+    # docker exec $node journalctl -u containerd
+    # sudo bash -exco pipefail 'dir=`kind export logs -n kube-ovn | grep -w /tmp/`; mv $dir /tmp/kind-logs'
+    # ls -lhd /tmp/kind-logs
+    exit 1
   done
+  # sleep 300
 done
 
 # wait for all pods to be deleted before deleting serviceaccount/clusterrole/clusterrolebinding

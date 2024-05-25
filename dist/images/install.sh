@@ -3646,7 +3646,7 @@ spec:
         - name: openvswitch
           image: "$REGISTRY/kube-ovn:$VERSION"
           imagePullPolicy: $IMAGE_PULL_POLICY
-          command:
+          args:
           - /kube-ovn/start-ovs.sh
           securityContext:
             runAsUser: 0
