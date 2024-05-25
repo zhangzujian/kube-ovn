@@ -82,7 +82,7 @@ function quit {
     pstree -Tp $PPID
     # ensure ovn-controller/ovsdb-server/ovs-vswitchd are killed
     for name in monitor ovn-controller ovsdb-server ovs-vswitchd tail; do
-      pkill -x -P $$ tail
+      pkill -x -P $$ $name
     done
 
     # kill the tail process
