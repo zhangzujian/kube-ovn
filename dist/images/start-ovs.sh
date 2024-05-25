@@ -73,6 +73,24 @@ function quit {
     if cgroup_match "${pid}" self; then
       /usr/share/openvswitch/scripts/ovs-ctl --no-ovsdb-server stop
     fi
+    # kill ovn-controller/ovsdb-server/ovs-vswitchd manully on cleanup/uninstallation
+    # for pid in `pidof -c monitor`; do
+    #   pkill -P $pid
+    #   kill $pid
+    # done
+    # ensure ovn-controller/ovsdb-server/ovs-vswitchd are killed
+    # for pid in `pidof -c ovn-controller ovsdb-server ovs-vswitchd`; do
+    #   kill -9 $pid
+    # done
+    # kill the tail process
+    # pkill -P $$
+    pstree -Tp $PPID
+    # echo $PPID > /dev/termination-log
+    # ps aux | grep -w runc
+    # for pid in `pidof runc`; do
+    #   cat /proc/$pid/cmdline | tr '\0' '\n'
+    # done
+    # pidof -c runc
   fi
 
   exit 0

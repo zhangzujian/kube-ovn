@@ -3,6 +3,8 @@ ARG VERSION
 ARG BASE_TAG=$VERSION
 FROM kubeovn/kube-ovn-base:$BASE_TAG
 
+RUN apt update && apt install psmisc -y
+
 COPY *.sh /kube-ovn/
 COPY kubectl-ko /kube-ovn/kubectl-ko
 COPY 01-kube-ovn.conflist /kube-ovn/01-kube-ovn.conflist
