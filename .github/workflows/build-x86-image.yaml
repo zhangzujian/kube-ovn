@@ -217,23 +217,22 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           cat trivy-result.json
-          set -x
-          export GOBIN=${{ github.workspace }}/dist/images/
+          dockerfile=${{ github.workspace }}/dist/images/Dockerfile
+          export GOBIN=`dirname "$dockerfile"`
           jq -r '.Results[] | select(.Type=="gobinary") | .Target' trivy-result.json | while read f; do
             bin=`basename $f`
             case $bin in
               loopback|macvlan)
                 go install -v -mod=mod github.com/containernetworking/plugins/plugins/main/$bin
-                echo "COPY $bin /$f" >> dist/images/Dockerfile
+                echo "COPY $bin /$f" >> "$dockerfile"
                 ;;
               portmap)
                 go install -v -mod=mod github.com/containernetworking/plugins/plugins/meta/$bin
-                echo "COPY $bin /$f" >> dist/images/Dockerfile
+                echo "COPY $bin /$f" >> "$dockerfile"
                 ;;
               kubectl)
                 go install -v -mod=mod k8s.io/kubernetes/cmd/kubectl
-                echo "COPY $bin /$f" >> dist/images/Dockerfile
-                exit
+                echo "COPY $bin /$f" >> "$dockerfile"
                 ;;
               *)
                 ;;
