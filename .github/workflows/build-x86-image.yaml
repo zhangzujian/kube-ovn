@@ -211,6 +211,7 @@ jobs:
           format: json
           output: trivy-result.json
           ignore-unfixed: true
+          trivyignores: .trivyignore
           vuln-type: library
 
       - name: Build go binaries from source
