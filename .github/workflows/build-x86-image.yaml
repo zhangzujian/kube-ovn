@@ -216,19 +216,22 @@ jobs:
       - name: Build go binaries from source
         if: github.event_name == 'pull_request'
         run: |
+          cat trivy-result.json
+          set -x
+          export GOBIN=${{ github.workspace }}/dist/images/
           jq -r '.Results[] | select(.Type=="gobinary") | .Target' trivy-result.json | while read f; do
             bin=`basename $f`
             case $bin in
               loopback|macvlan)
-                GOBIN=dist/images/ go install github.com/containernetworking/plugins/plugins/main/$bin
+                go install -v -mod=mod github.com/containernetworking/plugins/plugins/main/$bin
                 echo "COPY $bin /$f" >> dist/images/Dockerfile
                 ;;
               portmap)
-                GOBIN=dist/images/ go install github.com/containernetworking/plugins/plugins/meta/$bin
+                go install -v -mod=mod github.com/containernetworking/plugins/plugins/meta/$bin
                 echo "COPY $bin /$f" >> dist/images/Dockerfile
                 ;;
               kubectl)
-                GOBIN=dist/images/ go install k8s.io/kubernetes/cmd/kubectl
+                go install -v -mod=mod k8s.io/kubernetes/cmd/kubectl
                 echo "COPY $bin /$f" >> dist/images/Dockerfile
                 exit
                 ;;
