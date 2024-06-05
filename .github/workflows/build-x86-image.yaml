@@ -220,18 +220,21 @@ jobs:
           cat trivy-result.json
           dockerfile=${{ github.workspace }}/dist/images/Dockerfile
           export GOBIN=`dirname "$dockerfile"`
-          jq -r '.Results[] | select(.Type=="gobinary") | .Target' trivy-result.json | while read f; do
+          jq -r '.Results[] | select((.Type=="gobinary") and (.Vulnerabilities!=null)) | .Target' trivy-result.json | while read f; do
             bin=`basename $f`
             case $bin in
               loopback|macvlan)
+                echo "Building $bin from source..."
                 go install -v -mod=mod github.com/containernetworking/plugins/plugins/main/$bin
                 echo "COPY $bin /$f" >> "$dockerfile"
                 ;;
               portmap)
+                echo "Building $bin from source..."
                 go install -v -mod=mod github.com/containernetworking/plugins/plugins/meta/$bin
                 echo "COPY $bin /$f" >> "$dockerfile"
                 ;;
               kubectl)
+                echo "Building $bin from source..."
                 go install -v -mod=mod k8s.io/kubernetes/cmd/kubectl
                 echo "COPY $bin /$f" >> "$dockerfile"
                 ;;
