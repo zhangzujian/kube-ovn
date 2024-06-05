@@ -214,7 +214,7 @@ jobs:
           trivyignores: .trivyignore
           vuln-type: library
 
-      - name: Build go binaries from source
+      - name: Build kubectl and CNI plugins from source
         if: github.event_name == 'pull_request'
         run: |
           cat trivy-result.json
