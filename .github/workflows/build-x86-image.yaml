@@ -479,7 +479,7 @@ jobs:
         env:
           VERSION: ${{ env.DEBUG_TAG }}
           DEBUG_WRAPPER: valgrind
-        run: make kind-install-${{ matrix.mode }}-${{ matrix.ip-family }}
+        run: make kind-install-chart-${{ matrix.mode }}-${{ matrix.ip-family }}
 
       - name: Run E2E
         working-directory: ${{ env.E2E_DIR }}
@@ -642,7 +642,7 @@ jobs:
         env:
           VERSION: ${{ env.DEBUG_TAG }}
           DEBUG_WRAPPER: valgrind
-        run: make kind-install-${{ matrix.ip-family }}
+        run: make kind-install-chart-${{ matrix.ip-family }}
 
       - name: Run E2E
         working-directory: ${{ env.E2E_DIR }}
@@ -776,7 +776,7 @@ jobs:
         env:
           VERSION: ${{ env.DEBUG_TAG }}
           DEBUG_WRAPPER: valgrind
-        run: make kind-install-${{ matrix.ip-family }}
+        run: make kind-install-chart-${{ matrix.ip-family }}
 
       - name: Run E2E
         working-directory: ${{ env.E2E_DIR }}
@@ -929,7 +929,7 @@ jobs:
         env:
           VERSION: ${{ env.DEBUG_TAG }}
           DEBUG_WRAPPER: valgrind
-        run: make kind-install-${{ matrix.mode }}-${{ matrix.ip-family }}
+        run: make kind-install-chart-${{ matrix.mode }}-${{ matrix.ip-family }}
 
       - name: Run E2E
         working-directory: ${{ env.E2E_DIR }}
@@ -1205,7 +1205,7 @@ jobs:
           sudo chown -R $(id -un). ~/.kube/
 
       - name: Install Kube-OVN
-        run: make kind-install-${{ matrix.ip-family }}
+        run: make kind-install-chart-${{ matrix.ip-family }}
 
       - name: Install Multus
         run: make kind-install-multus
@@ -1381,7 +1381,7 @@ jobs:
       - name: Install Kube-OVN without LoadBalancer
         env:
           ENABLE_LB: "false"
-        run: make kind-install
+        run: make kind-install-chart
 
       - name: Check kube ovn pod restarts
         run: |
@@ -1432,7 +1432,7 @@ jobs:
       - name: Install Kube-OVN
         env:
           ENABLE_NP: "false"
-        run: make kind-install
+        run: make kind-install-chart
 
       - name: Check kube ovn pod restarts
         run: |
@@ -1632,7 +1632,9 @@ jobs:
           sudo chown -R $(id -un). ~/.kube/
 
       - name: Install Kube-OVN
-        run: make kind-install-webhook
+        run: |
+          make kind-install-chart
+          make kind-install-webhook
 
       - name: Run E2E
         working-directory: ${{ env.E2E_DIR }}
@@ -1696,7 +1698,7 @@ jobs:
           sudo chown -R $(id -un). ~/.kube/
 
       - name: Install Kube-OVN
-        run: make kind-install
+        run: make kind-install-chart
 
       - name: Check kube ovn pod restarts
         run: |
@@ -2277,7 +2279,7 @@ jobs:
           sudo chown -R $(id -un). ~/.kube/
 
       - name: Install Kube-OVN
-        run: make kind-install
+        run: make kind-install-chart
 
       - name: Run Vip E2E
         working-directory: ${{ env.E2E_DIR }}
