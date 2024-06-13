@@ -43,6 +43,10 @@ var _ = framework.Describe("[group:kubectl-ko]", func() {
 		k8sframework.TestContext.KubeConfig = ""
 	})
 	ginkgo.AfterEach(func() {
+		if ginkgo.CurrentSpecReport().Failed() {
+			execOrDie("get pod -A -o wide")
+		}
+
 		k8sframework.TestContext.KubeConfig = kubectlConfig
 
 		ginkgo.By("Deleting pod " + podName)
