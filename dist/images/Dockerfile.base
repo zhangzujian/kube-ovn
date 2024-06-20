@@ -6,7 +6,7 @@ ARG LEGACY
 ARG DEBIAN_FRONTEND=noninteractive
 ENV SRC_DIR='/usr/src'
 
-RUN apt update && apt install -y git curl
+RUN apt update && apt install -y git curl && echo
 
 RUN cd /usr/src/ && \
     git clone -b branch-3.3 --depth=1 https://github.com/openvswitch/ovs.git && \
