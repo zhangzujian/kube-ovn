@@ -552,6 +552,7 @@ kind-install-ovn-ic-ipv4:
 
 define kind_config_ovn_ic
 	kubectl config use-context kind-$(1)
+	for node in `kubectl get node -o name`; do kubectl label $$node ovn.kubernetes.io/ic-gw=true --overwrite; done
 	$(eval IC_GATEWAY_NODES=$(shell kind get nodes -n $(1) | sort -r | head -n3 | tr '\n' ',' | sed 's/,$$//'))
 	ic_db_host=$(2) zone=$(3) gateway_nodes=$(IC_GATEWAY_NODES) jinjanate yamls/ovn-ic-config.yaml.j2 -o ovn-ic-config.yaml
 	kubectl apply -f ovn-ic-config.yaml
