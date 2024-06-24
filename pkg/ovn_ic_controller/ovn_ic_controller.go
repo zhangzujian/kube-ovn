@@ -2,11 +2,14 @@ package ovn_ic_controller
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -35,6 +38,43 @@ const (
 	icFirstEstablish
 	icConfigChange
 )
+
+func getTsCIDR(azName string, af, index int) string {
+	hash := sha256.Sum256([]byte(azName))
+	if af == 4 {
+		cidr := net.IPNet{
+			IP:   net.ParseIP("169.0.0.0").To4(),
+			Mask: net.CIDRMask(28, 32),
+		}
+		cidr.IP[1] = hash[0]
+		cidr.IP[2] = hash[1]
+		cidr.IP[3] = 0xf0 & (byte(index) << 4)
+		return cidr.String()
+	}
+
+	cidr := net.IPNet{
+		IP:   net.ParseIP("fe80:a9fe::").To16(),
+		Mask: net.CIDRMask(120, 128),
+	}
+	for i := 0; i < 6; i++ {
+		cidr.IP[i+2] = hash[i]
+	}
+	cidr.IP[8] = byte(index)
+	return cidr.String()
+}
+
+func getTsSubnet(azName string, index int) (string, error) {
+	switch util.CheckProtocol(os.Getenv("POD_IPS")) {
+	case kubeovnv1.ProtocolIPv4:
+		return getTsCIDR(azName, 4, index), nil
+	case kubeovnv1.ProtocolIPv6:
+		return getTsCIDR(azName, 6, index), nil
+	case kubeovnv1.ProtocolDual:
+		return fmt.Sprintf("%s,%s", getTsCIDR(azName, 4, index), getTsCIDR(azName, 6, index)), nil
+	default:
+		return "", fmt.Errorf(`invalid environment variable "POD_IPS": %q`, os.Getenv("POD_IPS"))
+	}
+}
 
 func (c *Controller) disableOVNIC(azName string) error {
 	if err := c.removeInterConnection(azName); err != nil {
@@ -244,22 +284,19 @@ func (c *Controller) removeInterConnection(azName string) error {
 		return err
 	}
 	for _, cachedNode := range nodes {
-		no := cachedNode.DeepCopy()
-		patchPayloadTemplate := `[{
-        "op": "%s",
-        "path": "/metadata/labels",
-        "value": %s
-    	}]`
+		node := cachedNode.DeepCopy()
+		patchPayloadTemplate := `[{"op": "%s", "path": "/metadata/labels", "value": %s}]`
 		op := "replace"
-		if len(no.Labels) == 0 {
+		if len(node.Labels) == 0 {
+			node.Labels = make(map[string]string, 1)
 			op = "add"
 		}
-		if no.Labels[util.ICGatewayLabel] != "false" {
-			no.Labels[util.ICGatewayLabel] = "false"
-			raw, _ := json.Marshal(no.Labels)
+		if node.Labels[util.ICGatewayLabel] != "false" {
+			node.Labels[util.ICGatewayLabel] = "false"
+			raw, _ := json.Marshal(node.Labels)
 			patchPayload := fmt.Sprintf(patchPayloadTemplate, op, raw)
-			if _, err = c.config.KubeClient.CoreV1().Nodes().Patch(context.Background(), no.Name, types.JSONPatchType, []byte(patchPayload), metav1.PatchOptions{}, ""); err != nil {
-				klog.Errorf("patch ic gw node %s failed %v", no.Name, err)
+			if _, err = c.config.KubeClient.CoreV1().Nodes().Patch(context.Background(), node.Name, types.JSONPatchType, []byte(patchPayload), metav1.PatchOptions{}, ""); err != nil {
+				klog.Errorf("failed to patch ic gw node %s: %v", node.Name, err)
 				return err
 			}
 		}
@@ -272,7 +309,7 @@ func (c *Controller) removeInterConnection(azName string) error {
 
 	if azName != "" {
 		if err := c.DeleteICResources(azName); err != nil {
-			klog.Errorf("failed to delete ovn-ic resource on az %s , %v", azName, err)
+			klog.Errorf("failed to delete ovn-ic resource on az %s: %v", azName, err)
 			return err
 		}
 	}
@@ -281,7 +318,8 @@ func (c *Controller) removeInterConnection(azName string) error {
 }
 
 func (c *Controller) establishInterConnection(config map[string]string) error {
-	if err := c.OVNNbClient.SetAzName(config["az-name"]); err != nil {
+	azName := config["az-name"]
+	if err := c.OVNNbClient.SetAzName(azName); err != nil {
 		klog.Errorf("failed to set az name: %v", err)
 		return err
 	}
@@ -291,78 +329,112 @@ func (c *Controller) establishInterConnection(config map[string]string) error {
 		return err
 	}
 
-	tsNames, err := c.ovnLegacyClient.GetTs()
+	tsList, err := c.ovnLegacyClient.GetTsByAZ()
 	if err != nil {
 		klog.Errorf("failed to list ic logical switch: %v", err)
 		return err
 	}
 
-	sort.Strings(tsNames)
-
-	gwNodes := strings.Split(strings.Trim(config["gw-nodes"], ","), ",")
-	chassises := make([]string, len(gwNodes))
-
-	for i, tsName := range tsNames {
-		gwNodesOrdered := generateNewOrderGwNodes(gwNodes, i)
-		for j, gw := range gwNodesOrdered {
-			gw = strings.TrimSpace(gw)
-			chassis, err := c.OVNSbClient.GetChassisByHost(gw)
-			if err != nil {
-				klog.Errorf("failed to get gw %q chassis: %v", gw, err)
+	current := tsList[azName]
+	expected := make([]string, 0, 3)
+	for i := 1; i <= 3; i++ {
+		expected = append(expected, fmt.Sprintf("%s-egress-%d", azName, i))
+	}
+	for _, tsName := range current {
+		if !slices.Contains(expected, tsName) {
+			if err = c.ovnLegacyClient.DelTS(tsName); err != nil {
+				klog.Error(err)
 				return err
-			}
-			if chassis.Name == "" {
-				return fmt.Errorf("no chassis for gw %q", gw)
-			}
-			chassises[j] = chassis.Name
-
-			cachedNode, err := c.nodesLister.Get(gw)
-			if err != nil {
-				klog.Errorf("failed to get gw node %q: %v", gw, err)
-				return err
-			}
-			node := cachedNode.DeepCopy()
-			patchPayloadTemplate := `[{
-			"op": "%s",
-			"path": "/metadata/labels",
-			"value": %s
-			}]`
-			op := "replace"
-			if len(node.Labels) == 0 {
-				op = "add"
-			}
-			if node.Labels[util.ICGatewayLabel] != "true" {
-				node.Labels[util.ICGatewayLabel] = "true"
-				raw, _ := json.Marshal(node.Labels)
-				patchPayload := fmt.Sprintf(patchPayloadTemplate, op, raw)
-				if _, err = c.config.KubeClient.CoreV1().Nodes().Patch(context.Background(), gw, types.JSONPatchType, []byte(patchPayload), metav1.PatchOptions{}, ""); err != nil {
-					klog.Errorf("failed to patch gw node %q: %v", gw, err)
-					return err
-				}
 			}
 		}
-
-		tsPort := fmt.Sprintf("%s-%s", tsName, config["az-name"])
-		exist, err := c.OVNNbClient.LogicalSwitchPortExists(tsPort)
+	}
+	for i, tsName := range expected {
+		subnet, err := getTsSubnet(azName, i)
 		if err != nil {
-			klog.Errorf("failed to check logical switch port %q: %v", tsPort, err)
+			klog.Errorf("failed to get subnet of ts %s: %v", tsName, err)
 			return err
 		}
-		if exist {
-			klog.Infof("ts port %s already exists", tsPort)
+		if err = c.ovnLegacyClient.AddTS(tsName, azName, subnet); err != nil {
+			klog.Error(err)
+			return err
+		}
+	}
+
+	for az, tsNames := range tsList {
+		if az == "" {
+			continue
+		}
+		if len(tsNames) != 3 {
+			klog.Infof("ts count of az %s is %d, skip", az, len(tsNames))
 			continue
 		}
 
-		lrpAddr, err := c.acquireLrpAddress(tsName)
-		if err != nil {
-			klog.Errorf("failed to acquire lrp address for ts %q: %v", tsName, err)
-			return err
-		}
+		setLrpChassis := az != azName
+		gwNodes := strings.Split(strings.Trim(config["gw-nodes"], ","), ",")
+		sort.Strings(tsNames)
 
-		lrpName := fmt.Sprintf("%s-%s", config["az-name"], tsName)
-		if err := c.OVNNbClient.CreateLogicalPatchPort(tsName, c.config.ClusterRouter, tsPort, lrpName, lrpAddr, util.GenerateMac(), chassises...); err != nil {
-			klog.Errorf("failed to create ovn-ic lrp %q: %v", lrpName, err)
-			return err
+		for i, tsName := range tsNames {
+			chassises := make([]string, 0, len(gwNodes))
+			gwNodesOrdered := generateNewOrderGwNodes(gwNodes, i)
+			for _, gw := range gwNodesOrdered {
+				gw = strings.TrimSpace(gw)
+				chassis, err := c.OVNSbClient.GetChassisByHost(gw)
+				if err != nil {
+					klog.Errorf("failed to get gw %q chassis: %v", gw, err)
+					return err
+				}
+				if chassis.Name == "" {
+					return fmt.Errorf("no chassis for gw %q", gw)
+				}
+				if setLrpChassis {
+					chassises = append(chassises, chassis.Name)
+				}
+
+				cachedNode, err := c.nodesLister.Get(gw)
+				if err != nil {
+					klog.Errorf("failed to get gw node %q: %v", gw, err)
+					return err
+				}
+				node := cachedNode.DeepCopy()
+				patchPayloadTemplate := `[{"op": "%s", "path": "/metadata/labels", "value": %s}]`
+				op := "replace"
+				if len(node.Labels) == 0 {
+					node.Labels = make(map[string]string, 1)
+					op = "add"
+				}
+				if node.Labels[util.ICGatewayLabel] != "true" {
+					node.Labels[util.ICGatewayLabel] = "true"
+					raw, _ := json.Marshal(node.Labels)
+					patchPayload := fmt.Sprintf(patchPayloadTemplate, op, raw)
+					if _, err = c.config.KubeClient.CoreV1().Nodes().Patch(context.Background(), gw, types.JSONPatchType, []byte(patchPayload), metav1.PatchOptions{}, ""); err != nil {
+						klog.Errorf("failed to patch gw node %q: %v", gw, err)
+						return err
+					}
+				}
+			}
+
+			tsPort := fmt.Sprintf("%s-%s", tsName, azName)
+			exist, err := c.OVNNbClient.LogicalSwitchPortExists(tsPort)
+			if err != nil {
+				klog.Errorf("failed to check logical switch port %q: %v", tsPort, err)
+				return err
+			}
+			if exist {
+				klog.Infof("ts port %s already exists", tsPort)
+				continue
+			}
+
+			lrpAddr, err := c.acquireLrpAddress(tsName)
+			if err != nil {
+				klog.Errorf("failed to acquire lrp address for ts %q: %v", tsName, err)
+				return err
+			}
+
+			lrpName := fmt.Sprintf("%s-%s", azName, tsName)
+			if err := c.OVNNbClient.CreateLogicalPatchPort(tsName, c.config.ClusterRouter, tsPort, lrpName, lrpAddr, util.GenerateMac(), chassises...); err != nil {
+				klog.Errorf("failed to create ovn-ic lrp %q: %v", lrpName, err)
+				return err
+			}
 		}
 	}
 

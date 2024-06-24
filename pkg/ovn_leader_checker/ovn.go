@@ -425,26 +425,16 @@ func getTSName(index int) string {
 }
 
 func getTSCidr(index int) (string, error) {
-	var proto, cidr string
-	podIpsEnv := os.Getenv("POD_IPS")
-	podIps := strings.Split(podIpsEnv, ",")
-	if len(podIps) == 1 {
-		if util.CheckProtocol(podIps[0]) == kubeovnv1.ProtocolIPv6 {
-			proto = kubeovnv1.ProtocolIPv6
-		} else {
-			proto = kubeovnv1.ProtocolIPv4
-		}
-	} else if len(podIps) == 2 {
-		proto = kubeovnv1.ProtocolDual
-	}
-
-	switch proto {
+	var cidr string
+	switch util.CheckProtocol(os.Getenv("POD_IPS")) {
 	case kubeovnv1.ProtocolIPv4:
 		cidr = fmt.Sprintf("169.254.%d.0/24", 100+index)
 	case kubeovnv1.ProtocolIPv6:
 		cidr = fmt.Sprintf("fe80:a9fe:%02x::/112", 100+index)
 	case kubeovnv1.ProtocolDual:
 		cidr = fmt.Sprintf("169.254.%d.0/24,fe80:a9fe:%02x::/112", 100+index, 100+index)
+	default:
+		return "", fmt.Errorf(`invalid environment variable "POD_IPS": %q`, os.Getenv("POD_IPS"))
 	}
 	return cidr, nil
 }
