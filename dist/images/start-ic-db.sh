@@ -2,9 +2,8 @@
 set -eo pipefail
 
 LOCAL_IP=${LOCAL_IP:-$POD_IP}
-TS_NUM=${TS_NUM:-ts}
 ENABLE_BIND_LOCAL_IP=${ENABLE_BIND_LOCAL_IP:-true}
-ENABLE_OVN_LEADER_CHECK=${ENABLE_OVN_LEADER_CHECK:-true}
+ENABLE_OVN_LEADER_CHECK=${ENABLE_OVN_LEADER_CHECK:-false}
 
 DB_ADDR=::
 if [[ $ENABLE_BIND_LOCAL_IP == "true" ]]; then
@@ -86,7 +85,10 @@ function ovn_db_pre_start() {
     cp "$db_file" "$db_bak" || return 1
 
     echo "detected database corruption for file $db_file, try to fix it."
-    ovsdb-tool fix-cluster "$db_file" && return
+    if ovsdb-tool fix-cluster "$db_file"; then
+        echo "checking whether database file $db_file has been fixed."
+        ovsdb-tool check-cluster "$db_file" && return
+    fi
 
     echo "failed to fix database file $db_file, rebuild it."
     local sid=$(ovsdb-tool db-sid "$db_file")
@@ -216,17 +218,17 @@ if [[ $ENABLE_OVN_LEADER_CHECK == "true" ]]; then
     /kube-ovn/kube-ovn-leader-checker --probeInterval=${OVN_LEADER_PROBE_INTERVAL} --isICDBServer=true
 else
     # Compatible with controller deployment methods before kube-ovn 1.11.16
-    TS_NAME=${TS_NAME:-ts}
-    PROTOCOL=${PROTOCOL:-ipv4}
-    if [ "$PROTOCOL" = "ipv4" ]; then
-      TS_CIDR=${TS_CIDR:-169.254.100.0/24}
-    elif [ "$PROTOCOL" = "ipv6" ]; then
-      TS_CIDR=${TS_CIDR:-fe80:a9fe:64::/112}
-    elif [ "$PROTOCOL" = "dual" ]; then
-      TS_CIDR=${TS_CIDR:-"169.254.100.0/24,fe80:a9fe:64::/112"}
-    fi
-    ovn-ic-nbctl --may-exist ts-add "$TS_NAME"
-    ovn-ic-nbctl set Transit_Switch ts external_ids:subnet="$TS_CIDR"
+    # TS_NAME=${TS_NAME:-ts}
+    # PROTOCOL=${PROTOCOL:-ipv4}
+    # if [ "$PROTOCOL" = "ipv4" ]; then
+    #   TS_CIDR=${TS_CIDR:-169.254.100.0/24}
+    # elif [ "$PROTOCOL" = "ipv6" ]; then
+    #   TS_CIDR=${TS_CIDR:-fe80:a9fe:64::/112}
+    # elif [ "$PROTOCOL" = "dual" ]; then
+    #   TS_CIDR=${TS_CIDR:-"169.254.100.0/24,fe80:a9fe:64::/112"}
+    # fi
+    # ovn-ic-nbctl --may-exist ts-add "$TS_NAME"
+    # ovn-ic-nbctl set Transit_Switch ts external_ids:subnet="$TS_CIDR"
     tail --follow=name --retry /var/log/ovn/ovsdb-server-ic-nb.log
 fi
 

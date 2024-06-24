@@ -4707,6 +4707,10 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            - name: POD_IPS
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIPs
             - name: OVN_DB_IPS
               value: $addresses
           resources:
