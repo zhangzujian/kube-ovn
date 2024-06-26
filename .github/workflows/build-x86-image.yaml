@@ -285,143 +285,6 @@ jobs:
         if: steps.lookup-go-cache.outputs.cache-hit != 'true'
         working-directory: ${{ env.E2E_DIR }}
 
-  # k8s-conformance-e2e:
-  #   name: Kubernetes Conformance E2E
-  #   needs:
-  #     - build-kube-ovn
-  #     - build-e2e-binaries
-  #   runs-on: ubuntu-22.04
-  #   timeout-minutes: 20
-  #   strategy:
-  #     fail-fast: false
-  #     matrix:
-  #       ip-family:
-  #         # - ipv4
-  #         # - ipv6
-  #         - dual
-  #       mode:
-  #         - overlay
-  #         - underlay
-  #       index:
-  #         - 0
-  #         - 1
-  #         - 2
-  #         - 3
-  #         - 4
-  #   steps:
-  #     - uses: jlumbroso/free-disk-space@v1.3.1
-  #       with:
-  #         android: true
-  #         dotnet: true
-  #         haskell: true
-  #         docker-images: false
-  #         large-packages: false
-  #         tool-cache: false
-  #         swap-storage: false
-
-  #     - uses: actions/checkout@v4
-
-  #     - name: Create the default branch directory
-  #       if: (github.base_ref || github.ref_name) != github.event.repository.default_branch
-  #       run: mkdir -p test/e2e/source
-
-  #     - name: Check out the default branch
-  #       if: (github.base_ref || github.ref_name) != github.event.repository.default_branch
-  #       uses: actions/checkout@v4
-  #       with:
-  #         ref: ${{ github.event.repository.default_branch }}
-  #         fetch-depth: 1
-  #         path: test/e2e/source
-
-  #     - name: Export E2E directory
-  #       run: |
-  #         if [ '${{ github.base_ref || github.ref_name }}' = '${{ github.event.repository.default_branch }}' ]; then
-  #           echo "E2E_DIR=." >> "$GITHUB_ENV"
-  #         else
-  #           echo "E2E_DIR=test/e2e/source" >> "$GITHUB_ENV"
-  #         fi
-
-  #     - name: Remove DNS search domain
-  #       run: |
-  #         sudo sed -i '/^search/d' /etc/resolv.conf
-  #         sudo systemctl restart docker
-
-  #     - uses: actions/setup-go@v5
-  #       with:
-  #         go-version: ${{ env.GO_VERSION || '' }}
-  #         go-version-file: ${{ env.E2E_DIR }}/go.mod
-  #         check-latest: true
-  #         cache: false
-
-  #     - name: Export Go full version
-  #       run: echo "GO_FULL_VER=$(go env GOVERSION)" >> "$GITHUB_ENV"
-
-  #     - name: Go cache
-  #       uses: actions/cache/restore@v4
-  #       with:
-  #         path: |
-  #           ~/.cache/go-build
-  #           ~/go/pkg/mod
-  #         key: ${{ runner.os }}-e2e-${{ env.GO_FULL_VER }}-x86-${{ hashFiles(format('{0}/**/go.sum', env.E2E_DIR)) }}
-  #         restore-keys: ${{ runner.os }}-e2e-${{ env.GO_FULL_VER }}-x86-
-
-  #     - name: Install kind
-  #       uses: helm/kind-action@v1.10.0
-  #       with:
-  #         version: ${{ env.KIND_VERSION }}
-  #         install_only: true
-
-  #     - name: Install ginkgo
-  #       working-directory: ${{ env.E2E_DIR }}
-  #       run: go install -v -mod=mod github.com/onsi/ginkgo/v2/ginkgo
-
-  #     - name: Download image
-  #       uses: actions/download-artifact@v4
-  #       with:
-  #         name: kube-ovn
-
-  #     - name: Load image
-  #       run: docker load --input kube-ovn.tar
-
-  #     # - name: Export debug image tag
-  #     #   run: echo "DEBUG_TAG='$(cat VERSION)-debug'" >> "$GITHUB_ENV"
-
-  #     - name: Create kind cluster
-  #       run: |
-  #         sudo pip3 install jinjanator
-  #         sudo PATH=~/.local/bin:$PATH make kind-init-${{ matrix.ip-family }}
-  #         sudo cp -r /root/.kube/ ~/.kube/
-  #         sudo chown -R $(id -un). ~/.kube/
-
-  #     - name: Install Kube-OVN
-  #       id: install
-  #       # env:
-  #       #   VERSION: ${{ env.DEBUG_TAG }}
-  #       #   DEBUG_WRAPPER: valgrind
-  #       run: make kind-install-${{ matrix.mode }}-${{ matrix.ip-family }}
-
-  #     - name: Run E2E
-  #       id: e2e
-  #       working-directory: ${{ env.E2E_DIR }}
-  #       env:
-  #         E2E_BRANCH: ${{ github.base_ref || github.ref_name }}
-  #         E2E_IP_FAMILY: ${{ matrix.ip-family }}
-  #         E2E_NETWORK_MODE: ${{ matrix.mode }}
-  #       run: make k8s-conformance-e2e
-
-  #     - name: kubectl ko log
-  #       if: failure()
-  #       run: |
-  #         make kubectl-ko-log
-  #         mv kubectl-ko-log.tar.gz k8s-conformance-e2e-${{ matrix.ip-family }}-${{ matrix.mode }}-ko-log.tar.gz
-
-  #     - name: upload kubectl ko log
-  #       uses: actions/upload-artifact@v4
-  #       if: failure()
-  #       with:
-  #         name: k8s-conformance-e2e-${{ matrix.ip-family }}-${{ matrix.mode }}-${{ matrix.index }}-ko-log
-  #         path: k8s-conformance-e2e-${{ matrix.ip-family }}-${{ matrix.mode }}-ko-log.tar.gz
-
   kube-ovn-conformance-e2e:
     name: Kube-OVN Conformance E2E
     needs:
@@ -566,7 +429,7 @@ jobs:
       - name: Create kind cluster
         run: |
           sudo pip3 install jinjanator
-          sudo PATH=~/.local/bin:$PATH make kind-init-${{ matrix.ip-family }}
+          sudo PATH=~/.local/bin:$PATH auditing=true make kind-init-${{ matrix.ip-family }}
           sudo cp -r /root/.kube/ ~/.kube/
           sudo chown -R $(id -un). ~/.kube/
 
@@ -589,11 +452,24 @@ jobs:
           # make kind-install-kubevirt
           # make kube-ovn-kubevirt-e2e
 
+      - name: Collect apiserver audit logs
+        if: failure()
+        run: |
+          docker cp kube-ovn-control-plane:/var/log/kubernetes/kube-apiserver-audit.log .
+          tar zcf kube-ovn-conformance-e2e-${{ matrix.mode }}-${{ matrix.ip-family }}-audit-log.tar.gz kube-apiserver-audit.log
+
       - name: kubectl ko log
         if: failure()
         run: |
           make kubectl-ko-log
           mv kubectl-ko-log.tar.gz kube-ovn-conformance-e2e-${{ matrix.mode }}-${{ matrix.ip-family }}-ko-log.tar.gz
+
+      - name: Upload apiserver audit logs
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: kube-ovn-conformance-e2e-${{ matrix.mode }}-${{ matrix.ip-family }}-audit-log
+          path: kube-ovn-conformance-e2e-${{ matrix.mode }}-${{ matrix.ip-family }}-audit-log.tar.gz
 
       - name: upload kubectl ko log
         uses: actions/upload-artifact@v4
