@@ -69,6 +69,7 @@ var _ = framework.OrderedDescribe("[group:node]", func() {
 
 		ginkgo.By("Validating node annotations")
 		for _, node := range nodeList.Items {
+			framework.Logf("Resource version of node %s is %s", node.Name, node.ResourceVersion)
 			framework.ExpectHaveKeyWithValue(node.Annotations, util.AllocatedAnnotation, "true")
 			framework.ExpectUUID(node.Annotations[util.ChassisAnnotation])
 			framework.ExpectHaveKeyWithValue(node.Annotations, util.CidrAnnotation, join.Spec.CIDRBlock)
