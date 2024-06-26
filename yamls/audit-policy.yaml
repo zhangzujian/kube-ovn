@@ -10,3 +10,7 @@ rules:
           - pods
           - services
           - endpoints
+    verbs:
+      - patch
+      - update
+omitManagedFields: true
