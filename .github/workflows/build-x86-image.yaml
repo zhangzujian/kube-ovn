@@ -468,7 +468,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: kube-ovn-conformance-e2e-${{ matrix.mode }}-${{ matrix.ip-family }}-audit-log
+          name: kube-ovn-conformance-e2e-${{ matrix.mode }}-${{ matrix.ip-family }}-${{ matrix.index }}-audit-log
           path: kube-ovn-conformance-e2e-${{ matrix.mode }}-${{ matrix.ip-family }}-audit-log.tar.gz
 
       - name: upload kubectl ko log
