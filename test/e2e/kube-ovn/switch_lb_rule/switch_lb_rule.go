@@ -3,6 +3,7 @@ package switch_lb_rule
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"strconv"
 	"time"
 
@@ -38,7 +39,14 @@ func curlSvc(f *framework.Framework, clientPodName, vip string, port int32) {
 	ginkgo.GinkgoHelper()
 	cmd := fmt.Sprintf("curl -q -s --connect-timeout 2 --max-time 2 %s", util.JoinHostPort(vip, port))
 	ginkgo.By(fmt.Sprintf(`Executing %q in pod %s/%s`, cmd, f.Namespace.Name, clientPodName))
-	e2epodoutput.RunHostCmdOrDie(f.Namespace.Name, clientPodName, cmd)
+	_, err := e2epodoutput.RunHostCmd(f.Namespace.Name, clientPodName, cmd)
+	if err != nil {
+		execCmd := "kubectl ko nbctl list Load_Balancer"
+		output, err := exec.Command("bash", "-c", execCmd).CombinedOutput()
+		framework.ExpectNoError(err)
+		framework.Logf("Load_Balancer:\n%s", output)
+	}
+	framework.ExpectNoError(err)
 }
 
 var _ = framework.Describe("[group:slr]", func() {
