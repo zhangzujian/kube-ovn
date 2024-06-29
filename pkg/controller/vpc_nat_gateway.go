@@ -23,6 +23,7 @@ import (
 	"k8s.io/klog/v2"
 
 	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
+	"github.com/kubeovn/kube-ovn/pkg/request"
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
 
@@ -271,14 +272,13 @@ func (c *Controller) handleAddOrUpdateVpcNatGw(key string) error {
 	oldSts, err := c.config.KubeClient.AppsV1().StatefulSets(c.config.PodNamespace).
 		Get(context.Background(), util.GenNatGwStsName(gw.Name), metav1.GetOptions{})
 	if err != nil {
-		if k8serrors.IsNotFound(err) {
-			needToCreate = true
-		} else {
+		if !k8serrors.IsNotFound(err) {
 			klog.Error(err)
 			return err
 		}
+		needToCreate, oldSts = true, nil
 	}
-	newSts := c.genNatGwStatefulSet(gw, oldSts.DeepCopy())
+	newSts := c.genNatGwStatefulSet(gw, oldSts)
 	if !needToCreate && isVpcNatGwChanged(gw) {
 		needToUpdate = true
 	}
@@ -777,7 +777,21 @@ func (c *Controller) genNatGwStatefulSet(gw *kubeovnv1.VpcNatGateway, oldSts *v1
 		selectors[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
 	}
 	klog.V(3).Infof("prepare for vpc nat gateway pod, node selector: %v", selectors)
-	v4SubnetGw, _, _ := c.GetGwBySubnet(gw.Spec.Subnet)
+	v4Gateway, v6Gateway, _ := c.GetGwBySubnet(gw.Spec.Subnet)
+	v4ClusterIPRange, v6ClusterIPRange := util.SplitStringIP(c.config.ServiceClusterIPRange)
+	routes := make([]request.Route, 0, 2)
+	if v4Gateway != "" && v4ClusterIPRange != "" {
+		routes = append(routes, request.Route{Destination: v4ClusterIPRange, Gateway: v4Gateway})
+	}
+	if v6Gateway != "" && v6ClusterIPRange != "" {
+		routes = append(routes, request.Route{Destination: v6ClusterIPRange, Gateway: v6Gateway})
+	}
+	buf, err := json.Marshal(routes)
+	if err != nil {
+		klog.Errorf("failed to marshal routes %+v: %v", routes, err)
+		return
+	}
+	newPodAnnotations[util.RoutesAnnotation] = string(buf)
 	newSts = &v1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   name,
@@ -798,21 +812,7 @@ func (c *Controller) genNatGwStatefulSet(gw *kubeovnv1.VpcNatGateway, oldSts *v1
 						{
 							Name:            "vpc-nat-gw",
 							Image:           vpcNatImage,
-							Command:         []string{"bash"},
-							Args:            []string{"-c", "while true; do sleep 10000; done"},
-							ImagePullPolicy: corev1.PullIfNotPresent,
-							SecurityContext: &corev1.SecurityContext{
-								Privileged:               &privileged,
-								AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-							},
-						},
-					},
-					InitContainers: []corev1.Container{
-						{
-							Name:            "vpc-nat-gw-init",
-							Image:           vpcNatImage,
-							Command:         []string{"bash"},
-							Args:            []string{"-c", fmt.Sprintf("bash /kube-ovn/nat-gateway.sh init %s,%s", c.config.ServiceClusterIPRange, v4SubnetGw)},
+							Command:         []string{"sleep", "infinity"},
 							ImagePullPolicy: corev1.PullIfNotPresent,
 							SecurityContext: &corev1.SecurityContext{
 								Privileged:               &privileged,
