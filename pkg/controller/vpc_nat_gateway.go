@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"regexp"
 	"slices"
@@ -21,6 +22,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/ptr"
 
 	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
 	"github.com/kubeovn/kube-ovn/pkg/request"
@@ -744,7 +746,7 @@ func (c *Controller) execNatGwRules(pod *corev1.Pod, operation string, rules []s
 	return nil
 }
 
-func (c *Controller) genNatGwStatefulSet(gw *kubeovnv1.VpcNatGateway, oldSts *v1.StatefulSet) (newSts *v1.StatefulSet) {
+func (c *Controller) genNatGwStatefulSet(gw *kubeovnv1.VpcNatGateway, oldSts *v1.StatefulSet) *v1.StatefulSet {
 	replicas := int32(1)
 	name := util.GenNatGwStsName(gw.Name)
 	allowPrivilegeEscalation := true
@@ -755,7 +757,7 @@ func (c *Controller) genNatGwStatefulSet(gw *kubeovnv1.VpcNatGateway, oldSts *v1
 	}
 	newPodAnnotations := map[string]string{}
 	if oldSts != nil && len(oldSts.Annotations) != 0 {
-		newPodAnnotations = oldSts.Annotations
+		newPodAnnotations = maps.Clone(oldSts.Annotations)
 	}
 	externalNetwork := util.GetNatGwExternalNetwork(gw.Spec.ExternalSubnets)
 	podAnnotations := map[string]string{
@@ -777,7 +779,10 @@ func (c *Controller) genNatGwStatefulSet(gw *kubeovnv1.VpcNatGateway, oldSts *v1
 		selectors[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
 	}
 	klog.V(3).Infof("prepare for vpc nat gateway pod, node selector: %v", selectors)
-	v4Gateway, v6Gateway, _ := c.GetGwBySubnet(gw.Spec.Subnet)
+	v4Gateway, v6Gateway, err := c.GetGwBySubnet(gw.Spec.Subnet)
+	if err != nil {
+		klog.Errorf("failed to get gateway ips for subnet %s: %v", gw.Spec.Subnet, err)
+	}
 	v4ClusterIPRange, v6ClusterIPRange := util.SplitStringIP(c.config.ServiceClusterIPRange)
 	routes := make([]request.Route, 0, 2)
 	if v4Gateway != "" && v4ClusterIPRange != "" {
@@ -789,10 +794,10 @@ func (c *Controller) genNatGwStatefulSet(gw *kubeovnv1.VpcNatGateway, oldSts *v1
 	buf, err := json.Marshal(routes)
 	if err != nil {
 		klog.Errorf("failed to marshal routes %+v: %v", routes, err)
-		return
+	} else {
+		newPodAnnotations[util.RoutesAnnotation] = string(buf)
 	}
-	newPodAnnotations[util.RoutesAnnotation] = string(buf)
-	newSts = &v1.StatefulSet{
+	return &v1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   name,
 			Labels: labels,
@@ -808,6 +813,7 @@ func (c *Controller) genNatGwStatefulSet(gw *kubeovnv1.VpcNatGateway, oldSts *v1
 					Annotations: newPodAnnotations,
 				},
 				Spec: corev1.PodSpec{
+					TerminationGracePeriodSeconds: ptr.To(int64(0)),
 					Containers: []corev1.Container{
 						{
 							Name:            "vpc-nat-gw",
@@ -830,7 +836,6 @@ func (c *Controller) genNatGwStatefulSet(gw *kubeovnv1.VpcNatGateway, oldSts *v1
 			},
 		},
 	}
-	return
 }
 
 func (c *Controller) cleanUpVpcNatGw() error {
