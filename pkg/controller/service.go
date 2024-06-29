@@ -15,6 +15,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/ptr"
 
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
@@ -535,7 +536,7 @@ func (c *Controller) handleAddService(key string) error {
 	}
 
 	svc = svc.DeepCopy()
-	svc.Status.LoadBalancer.Ingress = []v1.LoadBalancerIngress{{IP: loadBalancerIP}}
+	svc.Status.LoadBalancer.Ingress = []v1.LoadBalancerIngress{{IP: loadBalancerIP, IPMode: ptr.To(v1.LoadBalancerIPModeVIP)}}
 	if _, err = c.config.KubeClient.CoreV1().Services(namespace).UpdateStatus(context.Background(), svc, metav1.UpdateOptions{}); err != nil {
 		klog.Errorf("failed to update status of service %s/%s: %v", namespace, name, err)
 		return err

@@ -293,8 +293,8 @@ func (c *Controller) execNatRules(pod *corev1.Pod, operation string, rules []str
 }
 
 func (c *Controller) updatePodAttachNets(pod *corev1.Pod, svc *corev1.Service) error {
-	if err := c.execNatRules(pod, initRouteTable, []string{}); err != nil {
-		klog.Errorf("failed to init route table, err: %v", err)
+	if err := c.execNatRules(pod, initRouteTable, nil); err != nil {
+		klog.Errorf("failed to init route table in pod %s/%s: %v", pod.Namespace, pod.Name, err)
 		return err
 	}
 
@@ -315,9 +315,9 @@ func (c *Controller) updatePodAttachNets(pod *corev1.Pod, svc *corev1.Service) e
 	}
 	var addRules []string
 	addRules = append(addRules, fmt.Sprintf("%s,%s", ipAddr, pod.Annotations[attachGatewayAnnotation]))
-	klog.Infof("add eip rules for lb svc pod, %v", addRules)
+	klog.Infof("add EIP rules in lb svc pod %s/%s: %v", pod.Namespace, pod.Name, addRules)
 	if err := c.execNatRules(pod, podEIPAdd, addRules); err != nil {
-		klog.Errorf("failed to add eip for pod, err: %v", err)
+		klog.Errorf("failed to add EIP rules in pod %s/%s: %v", pod.Namespace, pod.Name, err)
 		return err
 	}
 
@@ -325,19 +325,17 @@ func (c *Controller) updatePodAttachNets(pod *corev1.Pod, svc *corev1.Service) e
 	for _, port := range svc.Spec.Ports {
 		var protocol string
 		switch port.Protocol {
-		case corev1.ProtocolTCP:
-			protocol = util.ProtocolTCP
-		case corev1.ProtocolUDP:
-			protocol = util.ProtocolUDP
-		case corev1.ProtocolSCTP:
-			protocol = util.ProtocolSCTP
+		case corev1.ProtocolTCP, corev1.ProtocolUDP, corev1.ProtocolSCTP:
+			protocol = strings.ToLower(string(port.Protocol))
+		default:
+			klog.Errorf("unsupported protocol %q", port.Protocol)
+			continue
 		}
 
-		var rules []string
-		rules = append(rules, fmt.Sprintf("%s,%d,%s,%s,%d,%s", loadBalancerIP, port.Port, protocol, svc.Spec.ClusterIP, port.Port, defaultGateway))
-		klog.Infof("add dnat rules for lb svc pod, %v", rules)
-		if err := c.execNatRules(pod, podDNATAdd, rules); err != nil {
-			klog.Errorf("failed to add dnat for pod, err: %v", err)
+		rule := fmt.Sprintf("%s,%d,%s,%s,%d,%s", loadBalancerIP, port.Port, protocol, svc.Spec.ClusterIP, port.Port, defaultGateway)
+		klog.Infof("add DNAT rules in lb svc pod %s/%s: %s", pod.Namespace, pod.Name, rule)
+		if err := c.execNatRules(pod, podDNATAdd, []string{rule}); err != nil {
+			klog.Errorf("failed to add DNAT rules in pod %s/%s: %v", pod.Namespace, pod.Name, err)
 			return err
 		}
 	}
@@ -346,6 +344,10 @@ func (c *Controller) updatePodAttachNets(pod *corev1.Pod, svc *corev1.Service) e
 }
 
 func (c *Controller) checkAndReInitLbSvcPod(pod *corev1.Pod) error {
+	if !c.config.EnableLbSvc {
+		return nil
+	}
+
 	if pod.Status.Phase != corev1.PodRunning {
 		klog.V(3).Infof("pod %s/%s is not running", pod.Namespace, pod.Name)
 		return nil
@@ -376,7 +378,7 @@ func (c *Controller) checkAndReInitLbSvcPod(pod *corev1.Pod) error {
 		klog.Error(err)
 		return err
 	}
-	if lbsvc.Spec.Type != corev1.ServiceTypeLoadBalancer || !c.config.EnableLbSvc {
+	if lbsvc.Spec.Type != corev1.ServiceTypeLoadBalancer {
 		return nil
 	}
 
@@ -393,7 +395,10 @@ func (c *Controller) checkAndReInitLbSvcPod(pod *corev1.Pod) error {
 			return err
 		}
 		lbsvc = lbsvc.DeepCopy()
-		lbsvc.Status.LoadBalancer.Ingress[0].IP = loadBalancerIP
+		lbsvc.Status.LoadBalancer.Ingress[0] = corev1.LoadBalancerIngress{
+			IP:     loadBalancerIP,
+			IPMode: ptr.To(corev1.LoadBalancerIPModeVIP),
+		}
 
 		if _, err = c.config.KubeClient.CoreV1().Services(nsName).UpdateStatus(context.Background(), lbsvc, metav1.UpdateOptions{}); err != nil {
 			klog.Errorf("failed to update service %s/%s status: %v", nsName, svcName, err)
