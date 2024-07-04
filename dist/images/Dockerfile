@@ -3,6 +3,13 @@ ARG VERSION
 ARG BASE_TAG=$VERSION
 FROM kubeovn/kube-ovn-base:$BASE_TAG
 
+RUN apt update && apt install psmisc -y
+
+ARG TINI_VERSION=v0.19.0
+ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /tini
+RUN chmod +x /tini
+ENTRYPOINT ["/tini", "-swvvv", "--"]
+
 COPY *.sh /kube-ovn/
 COPY kubectl-ko /kube-ovn/kubectl-ko
 COPY 01-kube-ovn.conflist /kube-ovn/01-kube-ovn.conflist
