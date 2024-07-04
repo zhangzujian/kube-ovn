@@ -25,6 +25,7 @@ spec:
       annotations:
         chart-version: "{{ .Chart.Name }}-{{ .Chart.Version }}"
     spec:
+      terminationGracePeriodSeconds: 120
       tolerations:
         - effect: NoSchedule
           operator: Exists
