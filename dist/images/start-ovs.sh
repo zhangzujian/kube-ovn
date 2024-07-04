@@ -54,6 +54,9 @@ function cgroup_match {
 
 function quit {
   set -x
+  pstree -Tp $PPID
+  sleep 10
+  pstree -Tp $PPID
   gen_name=$(kubectl -n "${POD_NAMESPACE}" get pod "${POD_NAME}" -o jsonpath='{.metadata.generateName}')
   revision_hash=$(kubectl -n "${POD_NAMESPACE}" get pod "${POD_NAME}" -o jsonpath='{.metadata.labels.controller-revision-hash}')
   revision=$(kubectl -n "${POD_NAMESPACE}" get controllerrevision "${gen_name}${revision_hash}" --ignore-not-found -o jsonpath='{.revision}')
@@ -65,14 +68,42 @@ function quit {
     if cgroup_match "${pid}" self; then
       /usr/share/ovn/scripts/grace_stop_ovn_controller
     fi
-    pid=$((/usr/share/openvswitch/scripts/ovs-ctl status || printf '\novsdb-server 0') | grep ovsdb-server | tail -n1 | awk '{print $NF}')
-    if cgroup_match "${pid}" self; then
-      /usr/share/openvswitch/scripts/ovs-ctl --no-ovs-vswitchd stop
-    fi
     pid=$((/usr/share/openvswitch/scripts/ovs-ctl status || printf '\novs-vswitchd 0') | grep ovs-vswitchd | tail -n1 | awk '{print $NF}')
     if cgroup_match "${pid}" self; then
       /usr/share/openvswitch/scripts/ovs-ctl --no-ovsdb-server stop
     fi
+    pid=$((/usr/share/openvswitch/scripts/ovs-ctl status || printf '\novsdb-server 0') | grep ovsdb-server | tail -n1 | awk '{print $NF}')
+    if cgroup_match "${pid}" self; then
+      /usr/share/openvswitch/scripts/ovs-ctl --no-ovs-vswitchd stop
+    fi
+
+    # kill ovn-controller/ovsdb-server/ovs-vswitchd manully on cleanup/uninstallation
+    # for pid in `pidof -c monitor`; do
+    #   pkill -P $pid
+    #   kill $pid
+    # done
+    pstree -Tp $PPID
+    # ensure ovn-controller/ovsdb-server/ovs-vswitchd are killed
+    # for name in monitor ovn-controller ovsdb-server ovs-vswitchd tail; do
+    #   pkill -x -P $$ $name
+    # done
+
+    for pid in `pgrep -P $PPID monitor`; do
+      pkill -P $pid
+    done
+
+    # kill monitor/tail
+    # pkill -P $$
+
+    # kill the tail process
+    pkill -P $$ tail
+    pstree -Tp $PPID
+    # echo $PPID > /dev/termination-log
+    # ps aux | grep -w runc
+    # for pid in `pidof runc`; do
+    #   cat /proc/$pid/cmdline | tr '\0' '\n'
+    # done
+    # pidof -c runc
   fi
 
   exit 0
