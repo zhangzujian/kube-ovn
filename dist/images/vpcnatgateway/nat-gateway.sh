@@ -41,6 +41,10 @@ function init() {
     iptables -t nat -A SNAT_FILTER -j SHARED_SNAT
 }
 
+function activate() {
+    echo "activating interface eth0 by sending a RARP request"
+    exec_cmd "send-rarp-request eth0"
+}
 
 function get_iptables_version() {
   exec_cmd "iptables --version"
@@ -433,88 +437,91 @@ function eip_egress_qos_del() {
 rules=${@:2:${#}}
 opt=$1
 case $opt in
- init)
+    init)
         echo "init $rules"
         init $rules
         ;;
- subnet-route-add)
+    activate)
+        activate
+        ;;
+    subnet-route-add)
         echo "subnet-route-add $rules"
         add_vpc_internal_route $rules
         ;;
- subnet-route-del)
+    subnet-route-del)
         echo "subnet-route-del $rules"
         del_vpc_internal_route $rules
         ;;
- ext-subnet-route-add)
+    ext-subnet-route-add)
         echo "ext-subnet-route-add $rules"
         add_vpc_external_route $rules
         ;;
- ext-subnet-route-del)
+    ext-subnet-route-del)
         echo "ext-subnet-route-del $rules"
         del_vpc_external_route $rules
         ;;
- eip-add)
+    eip-add)
         echo "eip-add $rules"
         add_eip $rules
         ;;
- eip-del)
+    eip-del)
         echo "eip-del $rules"
         del_eip $rules
         ;;
- dnat-add)
+    dnat-add)
         echo "dnat-add $rules"
         add_dnat $rules
         ;;
- dnat-del)
+    dnat-del)
         echo "dnat-del $rules"
         del_dnat $rules
         ;;
- snat-add)
+    snat-add)
         echo "snat-add $rules"
         add_snat $rules
         ;;
- snat-del)
+    snat-del)
         echo "snat-del $rules"
         del_snat $rules
         ;;
- floating-ip-add)
+    floating-ip-add)
         echo "floating-ip-add $rules"
         add_floating_ip $rules
         ;;
- floating-ip-del)
+    floating-ip-del)
         echo "floating-ip-del $rules"
         del_floating_ip $rules
         ;;
- get-iptables-version)
+    get-iptables-version)
         echo "get-iptables-version $rules"
         get_iptables_version $rules
         ;;
- eip-ingress-qos-add)
+    eip-ingress-qos-add)
         echo "eip-ingress-qos-add $rules"
         eip_ingress_qos_add $rules
         ;;
- eip-egress-qos-add)
+    eip-egress-qos-add)
         echo "eip-egress-qos-add $rules"
         eip_egress_qos_add $rules
         ;;
- eip-ingress-qos-del)
+    eip-ingress-qos-del)
         echo "eip-ingress-qos-del $rules"
         eip_ingress_qos_del $rules
         ;;
- eip-egress-qos-del)
+    eip-egress-qos-del)
         echo "eip-egress-qos-del $rules"
         eip_egress_qos_del $rules
         ;;
- qos-add)
+    qos-add)
         echo "qos-add $rules"
         qos_add $rules
         ;;
- qos-del)
+    qos-del)
         echo "qos-del $rules"
         qos_del $rules
         ;;
- *)
-        echo "Usage: $0 [init|subnet-route-add|subnet-route-del|eip-add|eip-del|floating-ip-add|floating-ip-del|dnat-add|dnat-del|snat-add|snat-del] ..."
+    *)
+        echo "Usage: $0 [init|activate|subnet-route-add|subnet-route-del|eip-add|eip-del|floating-ip-add|floating-ip-del|dnat-add|dnat-del|snat-add|snat-del] ..."
         exit 1
         ;;
 esac

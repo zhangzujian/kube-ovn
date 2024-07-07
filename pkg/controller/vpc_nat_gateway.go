@@ -37,6 +37,7 @@ var (
 
 const (
 	natGwInit              = "init"
+	natGwActivate          = "activate"
 	natGwEipAdd            = "eip-add"
 	natGwEipDel            = "eip-del"
 	natGwDnatAdd           = "dnat-add"
@@ -371,7 +372,7 @@ func (c *Controller) handleInitVpcNatGw(key string) error {
 
 	if pod.Status.Phase != corev1.PodRunning {
 		time.Sleep(10 * time.Second)
-		return fmt.Errorf("failed to init vpc nat gateway, pod is not ready")
+		return fmt.Errorf("failed to init vpc nat gateway %s, pod is not ready", key)
 	}
 
 	if _, hasInit := pod.Annotations[util.VpcNatGatewayInitAnnotation]; hasInit {
@@ -391,6 +392,13 @@ func (c *Controller) handleInitVpcNatGw(key string) error {
 			return err
 		}
 	}
+
+	if err = c.execNatGwRules(pod, natGwActivate, nil); err != nil {
+		err = fmt.Errorf("failed to activate vpc nat gateway %s: %v", key, err)
+		klog.Error(err)
+		return err
+	}
+
 	// if update qos success, will update nat gw status
 	if gw.Spec.QoSPolicy != gw.Status.QoSPolicy {
 		if err = c.patchNatGwQoSStatus(key, gw.Spec.QoSPolicy); err != nil {
@@ -758,10 +766,11 @@ func (c *Controller) genNatGwStatefulSet(gw *kubeovnv1.VpcNatGateway, oldSts *v1
 	}
 	externalNetwork := util.GetNatGwExternalNetwork(gw.Spec.ExternalSubnets)
 	podAnnotations := map[string]string{
-		util.VpcNatGatewayAnnotation:     gw.Name,
-		util.AttachmentNetworkAnnotation: fmt.Sprintf("%s/%s", c.config.PodNamespace, externalNetwork),
-		util.LogicalSwitchAnnotation:     gw.Spec.Subnet,
-		util.IPAddressAnnotation:         gw.Spec.LanIP,
+		util.VpcNatGatewayAnnotation:      gw.Name,
+		util.AttachmentNetworkAnnotation:  fmt.Sprintf("%s/%s", c.config.PodNamespace, externalNetwork),
+		util.LogicalSwitchAnnotation:      gw.Spec.Subnet,
+		util.IPAddressAnnotation:          gw.Spec.LanIP,
+		util.ActivationStrategyAnnotation: "rarp",
 	}
 	for key, value := range podAnnotations {
 		newPodAnnotations[key] = value
