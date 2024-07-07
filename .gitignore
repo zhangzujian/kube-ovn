@@ -5,6 +5,7 @@ dist/images/test-server
 dist/images/kube-ovn
 dist/images/kube-ovn-cmd
 dist/images/kube-ovn-webhook
+dist/images/vpcnatgateway/send-rarp-request
 dist/windows/kube-ovn.exe
 dist/windows/kube-ovn-daemon.exe
 ovnnb_db.*.backup
