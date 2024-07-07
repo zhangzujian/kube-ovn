@@ -6,7 +6,6 @@ import (
 	"net/netip"
 	"os"
 
-	"github.com/kubeovn/kube-ovn/pkg/util"
 	"github.com/mdlayher/arp"
 	"github.com/mdlayher/ethernet"
 	"github.com/mdlayher/packet"
@@ -15,10 +14,20 @@ import (
 const rarpProtocol = 0x8035
 const rarpRequestOp = 3
 
+func exit(msg string, args ...interface{}) {
+	fmt.Fprintf(os.Stderr, msg, args...)
+	os.Exit(1)
+}
+
+func exitOnError(err error, msg string, args ...interface{}) {
+	if err != nil {
+		exit(msg, append(args, err)...)
+	}
+}
+
 func main() {
 	if len(os.Args) != 2 && len(os.Args) != 3 {
-		fmt.Printf("Usage: %s <interface> [ip address]\n", os.Args[0])
-		os.Exit(1)
+		exit("Usage: %s <interface> [ip address]\n", os.Args[0])
 	}
 
 	addr := netip.IPv4Unspecified()
@@ -26,34 +35,25 @@ func main() {
 		var err error
 		addr, err = netip.ParseAddr(os.Args[2])
 		if err != nil {
-			util.LogFatalAndExit(err, "invalid ip address %q", os.Args[2])
+			exit("failed to parse ip address %q: %v", os.Args[2], err)
 		}
 		if !addr.Is4() {
-			fmt.Printf("Invalid IPv4 addresses %q\n", os.Args[2])
-			os.Exit(2)
+			exit("Invalid IPv4 addresses %q\n", os.Args[2])
 		}
 	}
 
 	iface, err := net.InterfaceByName(os.Args[1])
-	if err != nil {
-		util.LogFatalAndExit(err, "failed to get interface %q", os.Args[1])
-	}
+	exitOnError(err, "failed to get interface %q: %v", os.Args[1])
 
 	p, err := packet.Listen(iface, packet.Raw, rarpProtocol, nil)
-	if err != nil {
-		util.LogFatalAndExit(err, "failed to listen on interface %q", os.Args[1])
-	}
+	exitOnError(err, "failed to listen on interface %s: %v", os.Args[1])
 	defer p.Close()
 
 	arp, err := arp.NewPacket(rarpRequestOp, iface.HardwareAddr, addr, ethernet.Broadcast, addr)
-	if err != nil {
-		util.LogFatalAndExit(err, "failed to create rarp request packet")
-	}
+	exitOnError(err, "failed to create rarp request packet: %v")
 
 	pb, err := arp.MarshalBinary()
-	if err != nil {
-		util.LogFatalAndExit(err, "failed to convert rarp request packet to binary")
-	}
+	exitOnError(err, "failed to convert rarp request packet to binary: %v")
 
 	f := &ethernet.Frame{
 		Destination: ethernet.Broadcast,
@@ -63,12 +63,8 @@ func main() {
 	}
 
 	fb, err := f.MarshalBinary()
-	if err != nil {
-		util.LogFatalAndExit(err, "failed to convert ethernet frame to binary")
-	}
+	exitOnError(err, "failed to convert ethernet frame to binary: %v")
 
 	_, err = p.WriteTo(fb, &packet.Addr{HardwareAddr: arp.SenderHardwareAddr})
-	if err != nil {
-		util.LogFatalAndExit(err, "failed to send rarp request packet")
-	}
+	exitOnError(err, "failed to send rarp request packet: %v")
 }

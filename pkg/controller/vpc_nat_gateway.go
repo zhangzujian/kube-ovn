@@ -37,6 +37,7 @@ var (
 
 const (
 	natGwInit              = "init"
+	natGwActivate          = "activate"
 	natGwEipAdd            = "eip-add"
 	natGwEipDel            = "eip-del"
 	natGwDnatAdd           = "dnat-add"
@@ -391,6 +392,13 @@ func (c *Controller) handleInitVpcNatGw(key string) error {
 			return err
 		}
 	}
+
+	if err = c.execNatGwRules(pod, natGwActivate, nil); err != nil {
+		err = fmt.Errorf("failed to activate vpc nat gateway %s: %v", key, err)
+		klog.Error(err)
+		return err
+	}
+
 	// if update qos success, will update nat gw status
 	if gw.Spec.QoSPolicy != gw.Status.QoSPolicy {
 		if err = c.patchNatGwQoSStatus(key, gw.Spec.QoSPolicy); err != nil {
