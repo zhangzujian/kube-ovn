@@ -489,7 +489,7 @@ func configureContainerNic(nicName, ifName, ipAddr, gateway string, isDefaultRou
 			finalRoutes = append(finalRoutes, route)
 		}
 
-		if gwCheckMode != gatewayModeDisabled {
+		if gwCheckMode != gatewayCheckModeDisabled {
 			var (
 				underlayGateway = gwCheckMode == gatewayCheckModeArping || gwCheckMode == gatewayCheckModeArpingNotConcerned
 				interfaceName   = nicName
