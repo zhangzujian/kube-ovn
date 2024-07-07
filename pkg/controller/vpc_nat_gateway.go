@@ -372,7 +372,7 @@ func (c *Controller) handleInitVpcNatGw(key string) error {
 
 	if pod.Status.Phase != corev1.PodRunning {
 		time.Sleep(10 * time.Second)
-		return fmt.Errorf("failed to init vpc nat gateway, pod is not ready")
+		return fmt.Errorf("failed to init vpc nat gateway %s, pod is not ready", key)
 	}
 
 	if _, hasInit := pod.Annotations[util.VpcNatGatewayInitAnnotation]; hasInit {
@@ -766,10 +766,11 @@ func (c *Controller) genNatGwStatefulSet(gw *kubeovnv1.VpcNatGateway, oldSts *v1
 	}
 	externalNetwork := util.GetNatGwExternalNetwork(gw.Spec.ExternalSubnets)
 	podAnnotations := map[string]string{
-		util.VpcNatGatewayAnnotation:     gw.Name,
-		util.AttachmentNetworkAnnotation: fmt.Sprintf("%s/%s", c.config.PodNamespace, externalNetwork),
-		util.LogicalSwitchAnnotation:     gw.Spec.Subnet,
-		util.IPAddressAnnotation:         gw.Spec.LanIP,
+		util.VpcNatGatewayAnnotation:      gw.Name,
+		util.AttachmentNetworkAnnotation:  fmt.Sprintf("%s/%s", c.config.PodNamespace, externalNetwork),
+		util.LogicalSwitchAnnotation:      gw.Spec.Subnet,
+		util.IPAddressAnnotation:          gw.Spec.LanIP,
+		util.ActivationStrategyAnnotation: "rarp",
 	}
 	for key, value := range podAnnotations {
 		newPodAnnotations[key] = value

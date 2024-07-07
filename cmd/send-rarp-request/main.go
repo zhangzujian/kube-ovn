@@ -34,9 +34,7 @@ func main() {
 	if len(os.Args) == 3 {
 		var err error
 		addr, err = netip.ParseAddr(os.Args[2])
-		if err != nil {
-			exit("failed to parse ip address %q: %v", os.Args[2], err)
-		}
+		exitOnError(err, "failed to parse ip address %q: %v", os.Args[2])
 		if !addr.Is4() {
 			exit("Invalid IPv4 addresses %q\n", os.Args[2])
 		}
