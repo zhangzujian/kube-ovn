@@ -11,8 +11,13 @@
     rotate 7
     size 100M
     compress
-    sharedscripts
     missingok
+    nosharedscripts
+    prerotate
+        if [ -e "$1.1" ]; then
+            rm -fv "$1.1";
+        fi
+    endscript
     postrotate
     endscript
 }
