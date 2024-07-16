@@ -538,10 +538,11 @@ jobs:
 
       - name: Create kind cluster
         run: |
-          sudo pip3 install jinjanator
-          sudo --preserve-env=CI PATH=~/.local/bin:$PATH make kind-init-${{ matrix.ip-family }}
-          sudo cp -r /root/.kube/ ~/.kube/
-          sudo chown -R $(id -un). ~/.kube/
+          sudo apt update
+          sudo apt install pipx
+          pipx ensurepath
+          pipx install jinjanator
+          make kind-init-${{ matrix.ip-family }}
 
       - name: Install Kube-OVN
         id: install
@@ -730,10 +731,11 @@ jobs:
 
       - name: Create kind cluster
         run: |
-          sudo pip3 install jinjanator
-          sudo --preserve-env=CI PATH=~/.local/bin:$PATH make kind-init-${{ matrix.ip-family }}
-          sudo cp -r /root/.kube/ ~/.kube/
-          sudo chown -R $(id -un). ~/.kube/
+          sudo apt update
+          sudo apt install pipx
+          pipx ensurepath
+          pipx install jinjanator
+          make kind-init-${{ matrix.ip-family }}
 
       - name: Install Kube-OVN
         id: install
@@ -893,10 +895,11 @@ jobs:
 
       - name: Create kind cluster
         run: |
-          sudo pip3 install jinjanator
-          sudo --preserve-env=CI PATH=~/.local/bin:$PATH make kind-init-${{ matrix.ip-family }}
-          sudo cp -r /root/.kube/ ~/.kube/
-          sudo chown -R $(id -un). ~/.kube/
+          sudo apt update
+          sudo apt install pipx
+          pipx ensurepath
+          pipx install jinjanator
+          make kind-init-${{ matrix.ip-family }}
 
       - name: Install Kube-OVN
         id: install
@@ -1075,10 +1078,11 @@ jobs:
 
       - name: Create kind cluster
         run: |
-          sudo pip3 install jinjanator
-          sudo --preserve-env=CI PATH=~/.local/bin:$PATH make kind-init-${{ matrix.ip-family }}
-          sudo cp -r /root/.kube/ ~/.kube/
-          sudo chown -R $(id -un). ~/.kube/
+          sudo apt update
+          sudo apt install pipx
+          pipx ensurepath
+          pipx install jinjanator
+          make kind-init-${{ matrix.ip-family }}
 
       - name: Install Kube-OVN
         id: install
@@ -1261,10 +1265,11 @@ jobs:
 
       - name: Create kind clusters
         run: |
-          sudo pip3 install jinjanator
-          sudo --preserve-env=CI PATH=~/.local/bin:$PATH make kind-init-ovn-ic-${{ matrix.ip-family }}
-          sudo cp -r /root/.kube/ ~/.kube/
-          sudo chown -R $(id -un). ~/.kube/
+          sudo apt update
+          sudo apt install pipx
+          pipx ensurepath
+          pipx install jinjanator
+          make kind-init-${{ matrix.ip-family }}
 
       - name: Install Kube-OVN
         id: install
@@ -1420,10 +1425,11 @@ jobs:
 
       - name: Create kind cluster
         run: |
-          sudo pip3 install jinjanator
-          sudo --preserve-env=CI PATH=~/.local/bin:$PATH make kind-init-${{ matrix.ip-family }}
-          sudo cp -r /root/.kube/ ~/.kube/
-          sudo chown -R $(id -un). ~/.kube/
+          sudo apt update
+          sudo apt install pipx
+          pipx ensurepath
+          pipx install jinjanator
+          make kind-init-${{ matrix.ip-family }}
 
       - name: Install Kube-OVN
         id: install
@@ -1523,10 +1529,11 @@ jobs:
 
       - name: Create kind cluster
         run: |
-          sudo pip3 install jinjanator
-          sudo --preserve-env=CI PATH=~/.local/bin:$PATH make kind-init
-          sudo cp -r /root/.kube/ ~/.kube/
-          sudo chown -R $(id -un). ~/.kube/
+          sudo apt update
+          sudo apt install pipx
+          pipx ensurepath
+          pipx install jinjanator
+          make kind-init
 
       - name: Install Kube-OVN
         id: install
@@ -1575,10 +1582,11 @@ jobs:
 
       - name: Create kind cluster
         run: |
-          sudo pip3 install jinjanator
-          sudo --preserve-env=CI PATH=~/.local/bin:$PATH make kind-init-dual
-          sudo cp -r /root/.kube/ ~/.kube/
-          sudo chown -R $(id -un). ~/.kube/
+          sudo apt update
+          sudo apt install pipx
+          pipx ensurepath
+          pipx install jinjanator
+          make kind-init-dual
 
       - name: Install Kube-OVN
         id: install
@@ -1625,10 +1633,11 @@ jobs:
 
       - name: Create kind cluster
         run: |
-          sudo pip3 install jinjanator
-          sudo --preserve-env=CI PATH=~/.local/bin:$PATH make kind-init
-          sudo cp -r /root/.kube/ ~/.kube/
-          sudo chown -R $(id -un). ~/.kube/
+          sudo apt update
+          sudo apt install pipx
+          pipx ensurepath
+          pipx install jinjanator
+          make kind-init
 
       - name: Install Kube-OVN without LoadBalancer
         id: install
@@ -1677,10 +1686,11 @@ jobs:
 
       - name: Create kind cluster
         run: |
-          sudo pip3 install jinjanator
-          sudo --preserve-env=CI PATH=~/.local/bin:$PATH make kind-init
-          sudo cp -r /root/.kube/ ~/.kube/
-          sudo chown -R $(id -un). ~/.kube/
+          sudo apt update
+          sudo apt install pipx
+          pipx ensurepath
+          pipx install jinjanator
+          make kind-init
 
       - name: Install Kube-OVN
         id: install
@@ -1782,10 +1792,11 @@ jobs:
 
       - name: Create kind cluster
         run: |
-          sudo pip3 install jinjanator
-          sudo --preserve-env=CI PATH=~/.local/bin:$PATH make kind-init
-          sudo cp -r /root/.kube/ ~/.kube/
-          sudo chown -R $(id -un). ~/.kube/
+          sudo apt update
+          sudo apt install pipx
+          pipx ensurepath
+          pipx install jinjanator
+          make kind-init
 
       - name: Install Multus and Kube-OVN
         id: install
@@ -1921,10 +1932,11 @@ jobs:
 
       - name: Create kind cluster
         run: |
-          sudo pip3 install jinjanator
-          sudo --preserve-env=CI PATH=~/.local/bin:$PATH make kind-init
-          sudo cp -r /root/.kube/ ~/.kube/
-          sudo chown -R $(id -un). ~/.kube/
+          sudo apt update
+          sudo apt install pipx
+          pipx ensurepath
+          pipx install jinjanator
+          make kind-init
 
       - name: Install Kube-OVN with webhook
         id: install
@@ -1990,10 +2002,11 @@ jobs:
         env:
           k8s_version: v1.23.17
         run: |
-          sudo pip3 install jinjanator
-          sudo --preserve-env=CI PATH=~/.local/bin:$PATH make kind-init
-          sudo cp -r /root/.kube/ ~/.kube/
-          sudo chown -R $(id -un). ~/.kube/
+          sudo apt update
+          sudo apt install pipx
+          pipx ensurepath
+          pipx install jinjanator
+          make kind-init
 
       - name: Install Kube-OVN
         id: install
@@ -2116,10 +2129,11 @@ jobs:
 
       - name: Create kind cluster
         run: |
-          sudo pip3 install jinjanator
-          sudo --preserve-env=CI PATH=~/.local/bin:$PATH make kind-init-cilium-chaining-${{ matrix.ip-family }}
-          sudo cp -r /root/.kube/ ~/.kube/
-          sudo chown -R $(id -un). ~/.kube/
+          sudo apt update
+          sudo apt install pipx
+          pipx ensurepath
+          pipx install jinjanator
+          make kind-init-cilium-chaining-${{ matrix.ip-family }}
 
       - name: Install Kube-OVN with Cilium chaining
         id: install
@@ -2273,10 +2287,11 @@ jobs:
 
       - name: Create kind cluster
         run: |
-          sudo pip3 install jinjanator
-          sudo --preserve-env=CI PATH=~/.local/bin:$PATH make kind-init-ha-${{ matrix.ip-family }}
-          sudo cp -r /root/.kube/ ~/.kube/
-          sudo chown -R $(id -un). ~/.kube/
+          sudo apt update
+          sudo apt install pipx
+          pipx ensurepath
+          pipx install jinjanator
+          make kind-init-ha-${{ matrix.ip-family }}
 
       - name: Install Kube-OVN
         id: install
@@ -2377,10 +2392,11 @@ jobs:
 
       - name: Create kind cluster
         run: |
-          sudo pip3 install jinjanator
-          sudo --preserve-env=CI PATH=~/.local/bin:$PATH make kind-init-ovn-submariner
-          sudo cp -r /root/.kube/ ~/.kube/
-          sudo chown -R $(id -un). ~/.kube/
+          sudo apt update
+          sudo apt install pipx
+          pipx ensurepath
+          pipx install jinjanator
+          make kind-init-ovn-submariner
 
       - name: Install Kube-OVN and Submariner
         id: install
@@ -2498,10 +2514,11 @@ jobs:
 
       - name: Create kind cluster
         run: |
-          sudo pip3 install jinjanator
-          sudo --preserve-env=CI PATH=~/.local/bin:$PATH make kind-init
-          sudo cp -r /root/.kube/ ~/.kube/
-          sudo chown -R $(id -un). ~/.kube/
+          sudo apt update
+          sudo apt install pipx
+          pipx ensurepath
+          pipx install jinjanator
+          make kind-init
 
       - name: Install Kube-OVN with VPC NAT gateway enabled
         id: install
@@ -2636,10 +2653,11 @@ jobs:
 
       - name: Create kind cluster
         run: |
-          sudo pip3 install jinjanator
-          sudo --preserve-env=CI PATH=~/.local/bin:$PATH make kind-init
-          sudo cp -r /root/.kube/ ~/.kube/
-          sudo chown -R $(id -un). ~/.kube/
+          sudo apt update
+          sudo apt install pipx
+          pipx ensurepath
+          pipx install jinjanator
+          make kind-init
 
       - name: Install Kube-OVN
         id: install
