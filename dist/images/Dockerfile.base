@@ -49,8 +49,6 @@ RUN cd /usr/src/ && git clone -b branch-21.06 --depth=1 https://github.com/ovn-o
     curl -s https://github.com/kubeovn/ovn/commit/e24734913d25c0bffdf1cfd79e14ef43d01e1019.patch | git apply && \
     # do not send multicast packets to conntrack
     curl -s https://github.com/kubeovn/ovn/commit/8f4e4868377afb5e980856755b9f6394f8b649e2.patch | git apply && \
-    # do not send traffic that not designate to svc to conntrack
-    curl -s https://github.com/kubeovn/ovn/commit/23a87cabb76fbdce5092a6b3d3b56f3fa8dd61f5.patch | git apply && \
     # Add EXTRA_CONFIGURE_OPTS for debian build
     curl -s https://github.com/kubeovn/ovn/commit/89ca60989df4af9a96cc6024e04f99b9b77bad22.patch | git apply && \
     # fix ipv6 svc
