@@ -129,9 +129,13 @@ jobs:
       - name: Create kind cluster
         run: |
           pipx install jinjanator
+          set -x
           podman system info
           id
           systemctl status podman
+          podman ps -a
+          podman network ls
+          kind get clusters
           make kind-init-${{ matrix.ip-family }}
           sleep 30
           sudo sh -c 'ps aux | grep apiserver'
