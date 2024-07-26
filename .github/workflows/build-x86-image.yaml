@@ -997,6 +997,8 @@ jobs:
       - build-e2e-binaries
     runs-on: ubuntu-24.04
     timeout-minutes: 40
+    env:
+      KIND_EXPERIMENTAL_PROVIDER: podman
     strategy:
       fail-fast: false
       matrix:
@@ -1075,10 +1077,11 @@ jobs:
           name: kube-ovn
 
       - name: Load image
-        run: docker load --input kube-ovn.tar
+        run: podman load --input kube-ovn.tar
 
       - name: Set environment variables
         run: |
+          echo "VLAN_ID=$(($RANDOM%4096))" >> "$GITHUB_ENV"
           if [ $(($RANDOM%2)) -ne 0 ]; then
             # run as root and use valgrind to debug memory leak
             echo "VERSION=$(cat VERSION)-debug" >> "$GITHUB_ENV"
@@ -1089,9 +1092,19 @@ jobs:
         run: |
           pipx install jinjanator
           make kind-init-${{ matrix.ip-family }}
+      
+      - name: Prepare node network
+        run: |
+          podman network create --dns 114.114.114.114,8.8.8.8 --ipv6 -o mtu=1500 -o vlan=$VLAN_ID vlan-$VLAN_ID
+          kind -n kube-ovn get nodes | while read node; do
+            podman network connect vlan-$VLAN_ID $node
+            podman exec $node ip address flush dev eth1 scope global
+          done
 
       - name: Install Kube-OVN
         id: install
+        env:
+          VLAN_NIC: eth1
         run: make kind-install-${{ matrix.mode }}-${{ matrix.ip-family }}
 
       - name: Run E2E

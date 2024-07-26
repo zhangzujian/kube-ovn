@@ -2,7 +2,7 @@ SHELL = /bin/bash
 
 include Makefile.e2e
 
-REGISTRY = kubeovn
+REGISTRY = docker.io/kubeovn
 DEV_TAG = dev
 RELEASE_TAG = $(shell cat VERSION)
 DEBUG_TAG = $(shell cat VERSION)-debug
@@ -10,6 +10,10 @@ LEGACY_TAG = $(shell cat VERSION)-amd64-legacy
 VERSION = $(shell echo $${VERSION:-$(RELEASE_TAG)})
 COMMIT = git-$(shell git rev-parse --short HEAD)
 DATE = $(shell date +"%Y-%m-%d_%H:%M:%S")
+
+KIND_PROVIDER=$(shell echo $${KIND_EXPERIMENTAL_PROVIDER:-docker})
+VLAN_NIC=$(shell echo $${VLAN_NIC:-eth0})
+VLAN_NETWORK=$(shell echo $${VLAN_NETWORK:-vlan-$${VLAN_ID}})
 
 GOLDFLAGS = -extldflags '-z now' -X github.com/kubeovn/kube-ovn/versions.COMMIT=$(COMMIT) -X github.com/kubeovn/kube-ovn/versions.VERSION=$(RELEASE_TAG) -X github.com/kubeovn/kube-ovn/versions.BUILDDATE=$(DATE)
 ifdef DEBUG
@@ -82,11 +86,6 @@ KWOK_VERSION = v0.6.0
 KWOK_IMAGE = registry.k8s.io/kwok/kwok:$(KWOK_VERSION)
 
 VPC_NAT_GW_IMG = $(REGISTRY)/vpc-nat-gateway:$(VERSION)
-
-E2E_NETWORK = bridge
-ifneq ($(VLAN_ID),)
-E2E_NETWORK = kube-ovn-vlan
-endif
 
 KIND_AUDITING = $(shell echo $${KIND_AUDITING:-false})
 ifeq ($(shell echo $${CI:-false}),true)
@@ -227,13 +226,13 @@ base-tar-arm64:
 	docker save $(REGISTRY)/kube-ovn-base:$(RELEASE_TAG)-arm64 $(REGISTRY)/kube-ovn-base:$(DEBUG_TAG)-arm64 -o image-arm64.tar
 
 define docker_ensure_image_exists
-	if ! docker images --format "{{.Repository}}:{{.Tag}}" | grep "^$(1)$$" >/dev/null; then \
-		docker pull "$(1)"; \
+	if ! $(KIND_PROVIDER) images --format "{{.Repository}}:{{.Tag}}" | grep "^$(1)$$" >/dev/null; then \
+		$(KIND_PROVIDER) pull "$(1)"; \
 	fi
 endef
 
 define docker_rm_container
-	@docker ps -a -f name="$(1)" --format "{{.ID}}" | while read c; do docker rm -f $$c; done
+	@$(KIND_PROVIDER) ps -a -f name="$(1)" --format "{{.ID}}" | while read c; do $(KIND_PROVIDER) rm -f $$c; done
 endef
 
 define docker_network_info
@@ -247,13 +246,20 @@ define docker_network_info
 	$(eval $(VAR_PREFIX)_IPV6_EXCLUDE_IPS = $(shell docker network inspect $(1) -f '{{range .Containers}},{{index (split .IPv6Address "/") 0}}{{end}}' | sed 's/^,//'))
 endef
 
-define docker_create_vlan_network
-	$(eval VLAN_NETWORK_ID = $(shell docker network ls -f name=$(E2E_NETWORK) --format '{{.ID}}'))
-	@if [ ! -z "$(VLAN_ID)" -a -z "$(VLAN_NETWORK_ID)" ]; then \
-		docker network create --attachable -d bridge \
-			--ipv6 --subnet fc00:adb1:b29b:608d::/64 --gateway fc00:adb1:b29b:608d::1 \
-			-o com.docker.network.bridge.enable_ip_masquerade=true \
-			-o com.docker.network.driver.mtu=1500 $(E2E_NETWORK); \
+define podman_network_info
+	$(eval VAR_PREFIX = $(shell echo $(1) | tr '[:lower:]' '[:upper:]'))
+	$(eval $(VAR_PREFIX)_IPV4_SUBNET = $(shell podman network inspect $(1) -f "{{range .Subnets}}{{.Subnet}}\n{{end}}" | grep -v :))
+	$(eval $(VAR_PREFIX)_IPV6_SUBNET = $(shell podman network inspect $(1) -f "{{range .Subnets}}{{.Subnet}}\n{{end}}" | grep :))
+	$(eval $(VAR_PREFIX)_IPV4_GATEWAY = $(shell podman network inspect $(1) -f "{{range .Subnets}}{{.Gateway}}\n{{end}}" | grep -v :))
+	$(eval $(VAR_PREFIX)_IPV6_GATEWAY = $(shell podman network inspect $(1) -f "{{range .Subnets}}{{.Gateway}}\n{{end}}" | grep :))
+	$(eval $(VAR_PREFIX)_IPV4_EXCLUDE_IPS = $(shell for c in $$(podman ps -f network=$(1) --format '{{range .}}{{.ID}}\n{{end}}'); do podman inspect $$c --format '{{(index .NetworkSettings.Networks "$(1)").IPAddress}}'; done | tr '\n' ',' | sed 's/,$$//'))
+	$(eval $(VAR_PREFIX)_IPV6_EXCLUDE_IPS = $(shell for c in $$(podman ps -f network=$(1) --format '{{range .}}{{.ID}}\n{{end}}'); do podman inspect $$c --format '{{(index .NetworkSettings.Networks "$(1)")..GlobalIPv6Address}}'; done | tr '\n' ',' | sed 's/,$$//'))
+endef
+
+define podman_create_vlan_network
+	$(eval VLAN_NETWORK_ID = $(shell podman network ls -f name=$(VLAN_NETWORK) --format '{{.ID}}'))
+	@if [ -z "$(VLAN_NETWORK_ID)" ]; then \
+		podman network create --dns 114.114.114.114,8.8.8.8 --ipv6 -o mtu=1500 -o vlan=$(VLAN_ID) $(VLAN_NETWORK)
 	fi
 endef
 
@@ -645,14 +651,14 @@ kind-install-underlay-hairpin: kind-install-underlay-hairpin-ipv4
 
 .PHONY: kind-install-underlay-ipv4
 kind-install-underlay-ipv4: kind-disable-hairpin kind-load-image kind-untaint-control-plane
-	$(call docker_network_info,kind)
+	$(call $(KIND_PROVIDER)_network_info,kind)
 	@sed -e 's@^[[:space:]]*POD_CIDR=.*@POD_CIDR="$(KIND_IPV4_SUBNET)"@' \
 		-e 's@^[[:space:]]*POD_GATEWAY=.*@POD_GATEWAY="$(KIND_IPV4_GATEWAY)"@' \
 		-e 's@^[[:space:]]*EXCLUDE_IPS=.*@EXCLUDE_IPS="$(KIND_IPV4_EXCLUDE_IPS)"@' \
 		-e 's@^VLAN_ID=.*@VLAN_ID="0"@' \
 		-e 's/VERSION=.*/VERSION=$(VERSION)/' \
 		dist/images/install.sh | \
-		ENABLE_VLAN=true VLAN_NIC=eth0 bash
+		ENABLE_VLAN=true VLAN_NIC=$(VLAN_NIC) bash
 	kubectl describe no
 
 .PHONY: kind-install-underlay-u2o-interconnection-dual
