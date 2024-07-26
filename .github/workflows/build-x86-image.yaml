@@ -131,6 +131,7 @@ jobs:
           pipx install jinjanator
           podman system info
           id
+          systemctl status podman
           make kind-init-${{ matrix.ip-family }}
           sleep 30
           sudo sh -c 'ps aux | grep apiserver'
