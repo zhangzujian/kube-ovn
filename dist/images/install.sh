@@ -3829,7 +3829,6 @@ spec:
                 - NET_BIND_SERVICE
                 - SYS_MODULE
                 - SYS_NICE
-                - SYS_ADMIN
           env:
             - name: ENABLE_SSL
               value: "$ENABLE_SSL"
@@ -4440,7 +4439,6 @@ spec:
               - NET_ADMIN
               - NET_BIND_SERVICE
               - NET_RAW
-              - SYS_ADMIN
               - SYS_MODULE
               - SYS_NICE
         env:
