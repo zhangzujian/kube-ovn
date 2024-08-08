@@ -722,7 +722,6 @@ func (c *Controller) ovnMetricsUpdate() {
 	resetSysParaMetrics()
 	c.setIPLocalPortRangeMetric()
 	c.setCheckSumErrMetric()
-	c.setCniConfigMetric()
 	c.setDNSSearchMetric()
 	c.setTCPTwRecycleMetric()
 	c.setTCPMtuProbingMetric()
@@ -735,7 +734,6 @@ func (c *Controller) ovnMetricsUpdate() {
 func resetSysParaMetrics() {
 	metricIPLocalPortRange.Reset()
 	metricCheckSumErr.Reset()
-	metricCniConfig.Reset()
 	metricDNSSearch.Reset()
 	metricTCPTwRecycle.Reset()
 	metricTCPMtuProbing.Reset()
