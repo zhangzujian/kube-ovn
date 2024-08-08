@@ -40,10 +40,7 @@ ENABLE_COMPACT=${ENABLE_COMPACT:-false}
 
 # debug
 DEBUG_WRAPPER=${DEBUG_WRAPPER:-}
-RUN_AS_USER=65534 # run as nobody
-if [ -n "$DEBUG_WRAPPER" ]; then
-  RUN_AS_USER=0
-fi
+RUN_AS_USER=0
 
 KUBELET_DIR=${KUBELET_DIR:-/var/lib/kubelet}
 LOG_DIR=${LOG_DIR:-/var/log}
@@ -4328,6 +4325,7 @@ spec:
           - --dpdk-tunnel-iface=${DPDK_TUNNEL_IFACE}
           - --network-type=$TUNNEL_TYPE
           - --default-interface-name=$VLAN_INTERFACE_NAME
+          - --cni-conf-name=${CNI_CONFIG_PRIORITY}-kube-ovn.conflist
           - --logtostderr=false
           - --alsologtostderr=true
           - --log_file=/var/log/kube-ovn/kube-ovn-cni.log
@@ -4392,6 +4390,8 @@ spec:
           - mountPath: /etc/openvswitch
             name: systemid
             readOnly: true
+          - mountPath: /etc/cni/net.d
+            name: cni-conf
           - mountPath: /run/openvswitch
             name: host-run-ovs
             mountPropagation: HostToContainer

@@ -82,7 +82,7 @@ spec:
           command: ["/kube-ovn/start-ic-db.sh"]
           securityContext:
             privileged: false
-            runAsUser: 65534
+            runAsUser: 0
             capabilities:
               add:
                 - NET_BIND_SERVICE
