@@ -8,7 +8,6 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/scylladb/go-set/strset"
 	corev1 "k8s.io/api/core/v1"
 	netv1 "k8s.io/api/networking/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -17,6 +16,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/set"
 
 	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
 	"github.com/kubeovn/kube-ovn/pkg/ovs"
@@ -143,7 +143,7 @@ func (c *Controller) handleUpdateNp(key string) error {
 	}
 
 	var subnets []*kubeovnv1.Subnet
-	protocolSet := strset.NewWithSize(2)
+	protocolSet := set.New[string]()
 	for _, subnetName := range subnetNames {
 		subnet, err := c.subnetsLister.Get(subnetName)
 		if err != nil {
@@ -153,12 +153,12 @@ func (c *Controller) handleUpdateNp(key string) error {
 		subnets = append(subnets, subnet)
 
 		if subnet.Spec.Protocol == kubeovnv1.ProtocolDual {
-			protocolSet.Add(kubeovnv1.ProtocolIPv4, kubeovnv1.ProtocolIPv6)
+			protocolSet.Insert(kubeovnv1.ProtocolIPv4, kubeovnv1.ProtocolIPv6)
 		} else {
-			protocolSet.Add(subnet.Spec.Protocol)
+			protocolSet.Insert(subnet.Spec.Protocol)
 		}
 	}
-	klog.Infof("UpdateNp, releated subnets protocols %s", protocolSet.String())
+	klog.Infof("UpdateNp, releated subnets protocols %s", strings.Join(protocolSet.UnsortedList(), ", "))
 
 	if err = c.OVNNbClient.PortGroupSetPorts(pgName, ports); err != nil {
 		klog.Errorf("failed to set ports of port group %s to %v: %v", pgName, ports, err)
@@ -172,7 +172,7 @@ func (c *Controller) handleUpdateNp(key string) error {
 	}
 
 	if hasIngressRule(np) {
-		for _, protocol := range protocolSet.List() {
+		for protocol := range protocolSet {
 			for idx, npr := range np.Spec.Ingress {
 				// A single address set must contain addresses of the same type and the name must be unique within table, so IPv4 and IPv6 address set should be different
 				ingressAllowAsName := fmt.Sprintf("%s.%s.%d", ingressAllowAsNamePrefix, protocol, idx)
@@ -301,7 +301,7 @@ func (c *Controller) handleUpdateNp(key string) error {
 	}
 
 	if hasEgressRule(np) {
-		for _, protocol := range protocolSet.List() {
+		for protocol := range protocolSet {
 			for idx, npr := range np.Spec.Egress {
 				// A single address set must contain addresses of the same type and the name must be unique within table, so IPv4 and IPv6 address set should be different
 				egressAllowAsName := fmt.Sprintf("%s.%s.%d", egressAllowAsNamePrefix, protocol, idx)

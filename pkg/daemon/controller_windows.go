@@ -5,13 +5,13 @@ import (
 	"net"
 	"strings"
 
-	"github.com/scylladb/go-set/strset"
 	v1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/set"
 
 	"github.com/kubeovn/kube-ovn/pkg/ovs"
 	"github.com/kubeovn/kube-ovn/pkg/util"
@@ -125,13 +125,13 @@ func (c *Controller) reconcileRouters(_ *subnetEvent) error {
 }
 
 func routeDiff(existingRoutes, v4Cidrs, v6Cidrs []string) (toAddV4, toAddV6, toDel []string) {
-	existing := strset.New(existingRoutes...)
-	expectedV4 := strset.New(v4Cidrs...)
-	expectedV6 := strset.New(v6Cidrs...)
+	existing := set.New(existingRoutes...)
+	expectedV4 := set.New(v4Cidrs...)
+	expectedV6 := set.New(v6Cidrs...)
 
-	toAddV4 = strset.Difference(expectedV4, existing).List()
-	toAddV6 = strset.Difference(expectedV6, existing).List()
-	toDel = strset.Difference(existing, expectedV4, expectedV6).List()
+	toAddV4 = expectedV4.Difference(existing).UnsortedList()
+	toAddV6 = expectedV6.Difference(existing).UnsortedList()
+	toDel = existing.Difference(expectedV4).Difference(expectedV6).UnsortedList()
 
 	return
 }

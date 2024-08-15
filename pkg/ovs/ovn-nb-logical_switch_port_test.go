@@ -1494,7 +1494,7 @@ func (suite *OvnClientTestSuite) testgetLogicalSwitchPortSgs() {
 			},
 		}
 
-		sgs := getLogicalSwitchPortSgs(lsp).List()
+		sgs := getLogicalSwitchPortSgs(lsp).UnsortedList()
 		require.ElementsMatch(t, []string{"sg1", "sg2"}, sgs)
 	})
 
@@ -1506,7 +1506,7 @@ func (suite *OvnClientTestSuite) testgetLogicalSwitchPortSgs() {
 			},
 		}
 
-		sgs := getLogicalSwitchPortSgs(lsp).List()
+		sgs := getLogicalSwitchPortSgs(lsp)
 		require.Empty(t, sgs)
 	})
 
@@ -1514,7 +1514,7 @@ func (suite *OvnClientTestSuite) testgetLogicalSwitchPortSgs() {
 		t.Parallel()
 		lsp := &ovnnb.LogicalSwitchPort{}
 
-		sgs := getLogicalSwitchPortSgs(lsp).List()
+		sgs := getLogicalSwitchPortSgs(lsp)
 		require.Empty(t, sgs)
 	})
 }

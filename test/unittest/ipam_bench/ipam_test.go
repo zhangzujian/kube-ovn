@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/scylladb/go-set/strset"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/set"
 
 	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
 	"github.com/kubeovn/kube-ovn/pkg/ipam"
@@ -392,26 +392,22 @@ func getRandomInt() int {
 }
 
 type stringSet struct {
-	*strset.Set
+	set.Set[string]
 	mutex sync.RWMutex
 }
 
 func newStringSet() *stringSet {
 	return &stringSet{
-		Set: strset.New(),
+		Set: set.New[string](),
 	}
 }
 
 func (s *stringSet) Add(item string) {
-	s.Set.Add(item)
+	s.Set.Insert(item)
 }
 
 func (s *stringSet) Pop() (string, bool) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	return s.Pop2()
-}
-
-func (s *stringSet) Len() int {
-	return s.Size()
+	return s.Set.PopAny()
 }

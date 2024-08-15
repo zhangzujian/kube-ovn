@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/scylladb/go-set/strset"
 	v1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,6 +23,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 	k8sexec "k8s.io/utils/exec"
+	"k8s.io/utils/set"
 
 	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
 	kubeovninformer "github.com/kubeovn/kube-ovn/pkg/client/informers/externalversions"
@@ -288,7 +288,7 @@ func (c *Controller) initProviderNetwork(pn *kubeovnv1.ProviderNetwork, node *v1
 		fmt.Sprintf(util.ProviderNetworkExcludeTemplate, pn.Name):   nil,
 	}
 
-	vlans := strset.NewWithSize(len(pn.Status.Vlans) + 1)
+	vlans := set.New[string]()
 	for _, vlanName := range pn.Status.Vlans {
 		vlan, err := c.vlansLister.Get(vlanName)
 		if err != nil {
@@ -299,15 +299,15 @@ func (c *Controller) initProviderNetwork(pn *kubeovnv1.ProviderNetwork, node *v1
 			klog.Errorf("failed to get vlan %q: %v", vlanName, err)
 			return err
 		}
-		vlans.Add(strconv.Itoa(vlan.Spec.ID))
+		vlans.Insert(strconv.Itoa(vlan.Spec.ID))
 	}
 	// always add trunk 0 so that the ovs bridge can communicate with the external network
-	vlans.Add("0")
+	vlans.Insert("0")
 
 	var mtu int
 	var err error
 	klog.V(3).Infof("ovs init provider network %s", pn.Name)
-	if mtu, err = c.ovsInitProviderNetwork(pn.Name, nic, vlans.List(), pn.Spec.ExchangeLinkName, c.config.MacLearningFallback); err != nil {
+	if mtu, err = c.ovsInitProviderNetwork(pn.Name, nic, vlans.UnsortedList(), pn.Spec.ExchangeLinkName, c.config.MacLearningFallback); err != nil {
 		delete(labels, fmt.Sprintf(util.ProviderNetworkExcludeTemplate, pn.Name))
 		if err1 := util.UpdateNodeLabels(c.config.KubeClient.CoreV1().Nodes(), node.Name, labels); err1 != nil {
 			klog.Errorf("failed to update annotations of node %s: %v", node.Name, err1)

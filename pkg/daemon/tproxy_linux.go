@@ -10,11 +10,11 @@ import (
 	"syscall"
 
 	"github.com/containernetworking/plugins/pkg/ns"
-	"github.com/scylladb/go-set/strset"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
+	"k8s.io/utils/set"
 
 	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
 	"github.com/kubeovn/kube-ovn/pkg/ovs"
@@ -57,7 +57,7 @@ func (c *Controller) StartTProxyForwarding() {
 }
 
 func (c *Controller) StartTProxyTCPPortProbe() {
-	probePorts := strset.New()
+	probePorts := set.New[string]()
 
 	pods, err := c.getTProxyConditionPod(false)
 	if err != nil {
@@ -78,7 +78,7 @@ func (c *Controller) StartTProxyTCPPortProbe() {
 				if container.ReadinessProbe != nil {
 					if tcpSocket := container.ReadinessProbe.TCPSocket; tcpSocket != nil {
 						if port := tcpSocket.Port.String(); port != "" {
-							probePorts.Add(port)
+							probePorts.Insert(port)
 						}
 					}
 				}
@@ -86,14 +86,13 @@ func (c *Controller) StartTProxyTCPPortProbe() {
 				if container.LivenessProbe != nil {
 					if tcpSocket := container.LivenessProbe.TCPSocket; tcpSocket != nil {
 						if port := tcpSocket.Port.String(); port != "" {
-							probePorts.Add(port)
+							probePorts.Insert(port)
 						}
 					}
 				}
 			}
 
-			probePortsList := probePorts.List()
-			for _, port := range probePortsList {
+			for port := range probePorts {
 				probePortInNs(podIP.IP, port, true, nil)
 			}
 		}

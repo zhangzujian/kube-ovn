@@ -10,9 +10,9 @@ import (
 	"github.com/ovn-org/libovsdb/client"
 	"github.com/ovn-org/libovsdb/model"
 	"github.com/ovn-org/libovsdb/ovsdb"
-	"github.com/scylladb/go-set/strset"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
+	"k8s.io/utils/set"
 
 	ovsclient "github.com/kubeovn/kube-ovn/pkg/ovsdb/client"
 	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
@@ -31,7 +31,7 @@ func (c *OVNNbClient) AddLogicalRouterPolicy(lrName string, priority int, match,
 	duplicate := make([]string, 0, len(policyList))
 	var policyFound *ovnnb.LogicalRouterPolicy
 	for _, policy := range policyList {
-		if policy.Action != action || (policy.Action == ovnnb.LogicalRouterPolicyActionReroute && !strset.New(nextHops...).IsEqual(strset.New(policy.Nexthops...))) {
+		if policy.Action != action || (policy.Action == ovnnb.LogicalRouterPolicyActionReroute && !set.New(nextHops...).Equal(set.New(policy.Nexthops...))) {
 			duplicate = append(duplicate, policy.UUID)
 			continue
 		}

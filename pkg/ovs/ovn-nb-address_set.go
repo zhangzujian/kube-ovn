@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/ovn-org/libovsdb/client"
-	"github.com/scylladb/go-set/strset"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/set"
 
 	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
 )
@@ -72,7 +72,7 @@ func (c *OVNNbClient) AddressSetUpdateAddress(asName string, addresses ...string
 	}
 
 	// update will failed when slice contains duplicate elements
-	addresses = strset.New(addresses...).List()
+	addresses = set.New(addresses...).SortedList()
 
 	// clear addresses when addresses is empty
 	as.Addresses = addresses

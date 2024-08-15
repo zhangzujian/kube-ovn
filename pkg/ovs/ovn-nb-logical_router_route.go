@@ -9,9 +9,9 @@ import (
 	"github.com/ovn-org/libovsdb/client"
 	"github.com/ovn-org/libovsdb/model"
 	"github.com/ovn-org/libovsdb/ovsdb"
-	"github.com/scylladb/go-set/strset"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
+	"k8s.io/utils/set"
 
 	ovsclient "github.com/kubeovn/kube-ovn/pkg/ovsdb/client"
 	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
@@ -78,11 +78,11 @@ func (c *OVNNbClient) AddLogicalRouterStaticRoute(lrName, routeTable, policy, ip
 		return err
 	}
 
-	existing := strset.New()
+	existing := set.New[string]()
 	var toDel []string
 	for _, route := range routes {
 		if slices.Contains(nexthops, route.Nexthop) {
-			existing.Add(route.Nexthop)
+			existing.Insert(route.Nexthop)
 		} else {
 			if route.BFD != nil && bfdID != nil && *route.BFD != *bfdID {
 				continue

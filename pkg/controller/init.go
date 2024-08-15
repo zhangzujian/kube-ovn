@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/scylladb/go-set/strset"
 	v1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -16,6 +15,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
+	"k8s.io/utils/set"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -605,7 +605,7 @@ func (c *Controller) syncIPCR() error {
 		return err
 	}
 
-	ipMap := strset.New(c.getVMLsps()...)
+	ipMap := set.New(c.getVMLsps()...)
 	for _, ip := range ips {
 		if !ip.DeletionTimestamp.IsZero() && len(ip.GetFinalizers()) != 0 {
 			klog.Infof("enqueue update for deleting ip %s", ip.Name)

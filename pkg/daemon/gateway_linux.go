@@ -15,12 +15,12 @@ import (
 
 	"github.com/kubeovn/felix/ipsets"
 	"github.com/kubeovn/go-iptables/iptables"
-	"github.com/scylladb/go-set/strset"
 	"github.com/vishvananda/netlink"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/set"
 
 	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
 	"github.com/kubeovn/kube-ovn/pkg/ovs"
@@ -177,7 +177,7 @@ func (c *Controller) addNatOutGoingPolicyRuleIPset(rule kubeovnv1.NatOutgoingPol
 	}
 }
 
-func (c *Controller) removeNatOutGoingPolicyRuleIPset(protocol string, natPolicyRuleIDs *strset.Set) {
+func (c *Controller) removeNatOutGoingPolicyRuleIPset(protocol string, natPolicyRuleIDs set.Set[string]) {
 	sets, err := c.k8sipsets.ListSets()
 	if err != nil {
 		klog.Errorf("failed to list ipsets: %v", err)
@@ -201,7 +201,7 @@ func (c *Controller) reconcileNatOutGoingPolicyIPset(protocol string) {
 	}
 
 	subnetCidrs := make([]string, 0)
-	natPolicyRuleIDs := strset.New()
+	natPolicyRuleIDs := set.New[string]()
 	for _, subnet := range subnets {
 		cidrBlock := getCidrByProtocol(subnet.Spec.CIDRBlock, protocol)
 		subnetCidrs = append(subnetCidrs, cidrBlock)
@@ -210,7 +210,7 @@ func (c *Controller) reconcileNatOutGoingPolicyIPset(protocol string) {
 				klog.Errorf("unexpected empty ID for NAT outgoing rule %q of subnet %s", rule.NatOutgoingPolicyRule, subnet.Name)
 				continue
 			}
-			natPolicyRuleIDs.Add(rule.RuleID)
+			natPolicyRuleIDs.Insert(rule.RuleID)
 			c.addNatOutGoingPolicyRuleIPset(rule, protocol)
 		}
 	}
@@ -856,7 +856,7 @@ func (c *Controller) reconcileTProxyIPTableRules(protocol string, isDual bool) e
 	ipt := c.iptables[protocol]
 	tproxyPreRoutingRules := make([]util.IPTableRule, 0)
 	tproxyOutputRules := make([]util.IPTableRule, 0)
-	probePorts := strset.New()
+	probePorts := set.New[string]()
 
 	pods, err := c.getTProxyConditionPod(true)
 	if err != nil {
@@ -881,7 +881,7 @@ func (c *Controller) reconcileTProxyIPTableRules(protocol string, isDual bool) e
 			if container.ReadinessProbe != nil {
 				if httpGet := container.ReadinessProbe.HTTPGet; httpGet != nil {
 					if port := httpGet.Port.String(); port != "" {
-						probePorts.Add(port)
+						probePorts.Insert(port)
 					}
 				}
 
@@ -889,7 +889,7 @@ func (c *Controller) reconcileTProxyIPTableRules(protocol string, isDual bool) e
 					if port := tcpSocket.Port.String(); port != "" {
 						if isTCPProbePortReachable, ok := customVPCPodTCPProbeIPPort.Load(getIPPortString(podIP, port)); ok {
 							if isTCPProbePortReachable.(bool) {
-								probePorts.Add(port)
+								probePorts.Insert(port)
 							}
 						}
 					}
@@ -899,7 +899,7 @@ func (c *Controller) reconcileTProxyIPTableRules(protocol string, isDual bool) e
 			if container.LivenessProbe != nil {
 				if httpGet := container.LivenessProbe.HTTPGet; httpGet != nil {
 					if port := httpGet.Port.String(); port != "" {
-						probePorts.Add(port)
+						probePorts.Insert(port)
 					}
 				}
 
@@ -907,7 +907,7 @@ func (c *Controller) reconcileTProxyIPTableRules(protocol string, isDual bool) e
 					if port := tcpSocket.Port.String(); port != "" {
 						if isTCPProbePortReachable, ok := customVPCPodTCPProbeIPPort.Load(getIPPortString(podIP, port)); ok {
 							if isTCPProbePortReachable.(bool) {
-								probePorts.Add(port)
+								probePorts.Insert(port)
 							}
 						}
 					}
@@ -915,12 +915,11 @@ func (c *Controller) reconcileTProxyIPTableRules(protocol string, isDual bool) e
 			}
 		}
 
-		if probePorts.IsEmpty() {
+		if probePorts.Len() == 0 {
 			continue
 		}
 
-		probePortList := probePorts.List()
-		sort.Strings(probePortList)
+		probePortList := probePorts.SortedList()
 		for _, probePort := range probePortList {
 			tProxyOutputMarkMask := fmt.Sprintf("%#x/%#x", TProxyOutputMark, TProxyOutputMask)
 			tProxyPreRoutingMarkMask := fmt.Sprintf("%#x/%#x", TProxyPreroutingMark, TProxyPreroutingMask)
@@ -1002,7 +1001,7 @@ func (c *Controller) reconcileNatOutgoingPolicyIptablesChain(protocol string) er
 func (c *Controller) generateNatOutgoingPolicyChainRules(protocol string) ([]util.IPTableRule, map[string][]util.IPTableRule, []string, error) {
 	natPolicySubnetIptables := make([]util.IPTableRule, 0)
 	natPolicyRuleIptablesMap := make(map[string][]util.IPTableRule)
-	natPolicySubnetUIDs := strset.New()
+	natPolicySubnetUIDs := set.New[string]()
 	gcNatPolicySubnetChains := make([]string, 0)
 	subnetNames := make([]string, 0)
 	subnetMap := make(map[string]*kubeovnv1.Subnet)
@@ -1029,7 +1028,7 @@ func (c *Controller) generateNatOutgoingPolicyChainRules(protocol string) ([]uti
 	for _, subnetName := range subnetNames {
 		subnet := subnetMap[subnetName]
 		var natPolicyRuleIptables []util.IPTableRule
-		natPolicySubnetUIDs.Add(util.GetTruncatedUID(string(subnet.GetUID())))
+		natPolicySubnetUIDs.Insert(util.GetTruncatedUID(string(subnet.GetUID())))
 		cidrBlock := getCidrByProtocol(subnet.Spec.CIDRBlock, protocol)
 
 		ovnNatPolicySubnetChainName := OvnNatOutGoingPolicySubnet + util.GetTruncatedUID(string(subnet.GetUID()))

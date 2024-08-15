@@ -1,8 +1,8 @@
 package util
 
-import "github.com/scylladb/go-set/strset"
+import "k8s.io/utils/set"
 
 type NamedPortInfo struct {
 	PortID int32
-	Pods   *strset.Set
+	Pods   set.Set[string]
 }

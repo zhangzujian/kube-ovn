@@ -11,8 +11,8 @@ import (
 
 	"github.com/ovn-org/libovsdb/client"
 	"github.com/ovn-org/libovsdb/ovsdb"
-	"github.com/scylladb/go-set/strset"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/set"
 
 	ovsclient "github.com/kubeovn/kube-ovn/pkg/ovsdb/client"
 	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
@@ -470,7 +470,7 @@ func (c *OVNNbClient) SetLogicalSwitchPortSecurityGroup(lsp *ovnnb.LogicalSwitch
 			}
 
 			lsp.ExternalIDs[associatedSgKey] = "true"
-			oldSgs.Add(sgName)
+			oldSgs.Insert(sgName)
 			diffSgs = append(diffSgs, sgName)
 		} else {
 			if !oldSgs.Has(sgName) {
@@ -478,12 +478,12 @@ func (c *OVNNbClient) SetLogicalSwitchPortSecurityGroup(lsp *ovnnb.LogicalSwitch
 			}
 
 			lsp.ExternalIDs[associatedSgKey] = "false"
-			oldSgs.Remove(sgName)
+			oldSgs.Delete(sgName)
 			diffSgs = append(diffSgs, sgName)
 		}
 	}
 
-	newSgs := strings.Join(oldSgs.List(), "/")
+	newSgs := strings.Join(oldSgs.UnsortedList(), "/")
 	lsp.ExternalIDs[sgsKey] = newSgs
 	if len(newSgs) == 0 { // when all sgs had been removed, delete sgsKey
 		delete(lsp.ExternalIDs, sgsKey)
@@ -828,12 +828,12 @@ func logicalSwitchPortFilter(needVendorFilter bool, externalIDs map[string]strin
 }
 
 // getLogicalSwitchPortSgs get logical switch port security group
-func getLogicalSwitchPortSgs(lsp *ovnnb.LogicalSwitchPort) *strset.Set {
-	sgs := strset.New()
+func getLogicalSwitchPortSgs(lsp *ovnnb.LogicalSwitchPort) set.Set[string] {
+	sgs := set.New[string]()
 	if lsp != nil {
 		for key, value := range lsp.ExternalIDs {
 			if strings.HasPrefix(key, associatedSgKeyPrefix) && value == "true" {
-				sgs.Add(strings.ReplaceAll(key, associatedSgKeyPrefix, ""))
+				sgs.Insert(strings.ReplaceAll(key, associatedSgKeyPrefix, ""))
 			}
 		}
 	}

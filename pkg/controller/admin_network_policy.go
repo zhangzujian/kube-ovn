@@ -7,13 +7,13 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/scylladb/go-set/strset"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/set"
 	v1alpha1 "sigs.k8s.io/network-policy-api/apis/v1alpha1"
 
 	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
@@ -200,14 +200,14 @@ func (c *Controller) handleAddAnp(key string) (err error) {
 		klog.Errorf("failed to list address sets for anp %s: %v", key, err)
 		return err
 	}
-	desiredIngressAddrSet := strset.NewWithSize(len(anp.Spec.Ingress) * 2)
-	desiredEgressAddrSet := strset.NewWithSize(len(anp.Spec.Egress) * 2)
+	desiredIngressAddrSet := set.New[string]()
+	desiredEgressAddrSet := set.New[string]()
 
 	// create ingress acl
 	for index, anpr := range anp.Spec.Ingress {
 		// A single address set must contain addresses of the same type and the name must be unique within table, so IPv4 and IPv6 address set should be different
 		ingressAsV4Name, ingressAsV6Name := getAnpAddressSetName(pgName, anpr.Name, index, true)
-		desiredIngressAddrSet.Add(ingressAsV4Name, ingressAsV6Name)
+		desiredIngressAddrSet.Insert(ingressAsV4Name, ingressAsV6Name)
 
 		var v4Addrs, v4Addr, v6Addrs, v6Addr []string
 		// This field must be defined and contain at least one item.
@@ -274,7 +274,7 @@ func (c *Controller) handleAddAnp(key string) (err error) {
 	for index, anpr := range anp.Spec.Egress {
 		// A single address set must contain addresses of the same type and the name must be unique within table, so IPv4 and IPv6 address set should be different
 		egressAsV4Name, egressAsV6Name := getAnpAddressSetName(pgName, anpr.Name, index, false)
-		desiredEgressAddrSet.Add(egressAsV4Name, egressAsV6Name)
+		desiredEgressAddrSet.Insert(egressAsV4Name, egressAsV6Name)
 
 		var v4Addrs, v4Addr, v6Addrs, v6Addr []string
 		// This field must be defined and contain at least one item.
@@ -678,9 +678,9 @@ func (c *Controller) createAsForAnpRule(anpName, ruleName, direction, asName str
 	return nil
 }
 
-func (c *Controller) getCurrentAddrSetByName(anpName string, isBanp bool) (*strset.Set, *strset.Set, error) {
-	curIngressAddrSet := strset.New()
-	curEgressAddrSet := strset.New()
+func (c *Controller) getCurrentAddrSetByName(anpName string, isBanp bool) (set.Set[string], set.Set[string], error) {
+	curIngressAddrSet := set.New[string]()
+	curEgressAddrSet := set.New[string]()
 	var ass []ovnnb.AddressSet
 	var err error
 
@@ -699,7 +699,7 @@ func (c *Controller) getCurrentAddrSetByName(anpName string, isBanp bool) (*strs
 		return curIngressAddrSet, curEgressAddrSet, err
 	}
 	for _, as := range ass {
-		curIngressAddrSet.Add(as.Name)
+		curIngressAddrSet.Insert(as.Name)
 	}
 
 	if isBanp {
@@ -716,15 +716,14 @@ func (c *Controller) getCurrentAddrSetByName(anpName string, isBanp bool) (*strs
 		return curIngressAddrSet, curEgressAddrSet, err
 	}
 	for _, as := range ass {
-		curEgressAddrSet.Add(as.Name)
+		curEgressAddrSet.Insert(as.Name)
 	}
 
 	return curIngressAddrSet, curEgressAddrSet, nil
 }
 
-func (c *Controller) deleteUnusedAddrSetForAnp(curAddrSet, desiredAddrSet *strset.Set) error {
-	toDel := strset.Difference(curAddrSet, desiredAddrSet).List()
-
+func (c *Controller) deleteUnusedAddrSetForAnp(curAddrSet, desiredAddrSet set.Set[string]) error {
+	toDel := curAddrSet.Difference(desiredAddrSet).UnsortedList()
 	for _, asName := range toDel {
 		if err := c.OVNNbClient.DeleteAddressSet(asName); err != nil {
 			klog.Errorf("failed to delete address set %s, %v", asName, err)

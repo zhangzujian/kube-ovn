@@ -3,8 +3,8 @@ package ovs
 import (
 	"testing"
 
-	"github.com/scylladb/go-set/strset"
 	"github.com/stretchr/testify/require"
+	"k8s.io/utils/set"
 )
 
 func (suite *OvnClientTestSuite) testCreateBFD() {
@@ -68,11 +68,11 @@ func (suite *OvnClientTestSuite) testListBFD() {
 		bfdList, err = ovnClient.ListBFDs(lrpName, "")
 		require.NoError(t, err)
 		require.Len(t, bfdList, 2)
-		uuids := strset.NewWithSize(len(bfdList))
+		uuids := set.New[string]()
 		for _, bfd := range bfdList {
-			uuids.Add(bfd.UUID)
+			uuids.Insert(bfd.UUID)
 		}
-		require.True(t, uuids.IsEqual(strset.New(bfd1.UUID, bfd2.UUID)))
+		require.Equal(t, uuids, set.New(bfd1.UUID, bfd2.UUID))
 	})
 }
 

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/scylladb/go-set/strset"
 	"github.com/stretchr/testify/require"
+	"k8s.io/utils/set"
 
 	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
 )
@@ -24,7 +24,7 @@ func newLogicalRouterPort(lrName, lrpName, mac string, networks []string) *ovnnb
 func Test_logicalRouterPortFilter(t *testing.T) {
 	t.Parallel()
 
-	exceptPeerPorts := strset.New(
+	exceptPeerPorts := set.New(
 		"except-lrp-0",
 		"except-lrp-1",
 	)

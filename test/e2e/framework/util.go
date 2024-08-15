@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/scylladb/go-set/strset"
+	"k8s.io/utils/set"
 
 	"github.com/onsi/ginkgo/v2"
 
@@ -108,14 +108,14 @@ func randomSortedIPs(cidr string, count int, sort bool) []string {
 	_, ipNet, err := net.ParseCIDR(cidr)
 	ExpectNoError(err)
 
-	set := strset.NewWithSize(count)
+	set := set.New[string]()
 	r := ipam.NewIPRangeFromCIDR(*ipNet)
 	r = ipam.NewIPRange(r.Start().Add(2), r.End().Sub(1))
-	for set.Size() != count {
-		set.Add(r.Random().String())
+	for set.Len() != count {
+		set.Insert(r.Random().String())
 	}
 
-	ips := set.List()
+	ips := set.UnsortedList()
 	if sort {
 		sortIPs(ips)
 	}
@@ -157,8 +157,8 @@ func randomPool(cidr string, count int) []string {
 
 	ones, bits := ipNet.Mask.Size()
 	rl := ipam.NewEmptyIPRangeList()
-	set := strset.NewWithSize(count)
-	for set.Size() != count/4 {
+	ipNetSet := set.New[string]()
+	for ipNetSet.Len() != count/4 {
 		prefix := (ones+bits)/2 + rand.IntN((bits-ones)/2+1)
 		_, ipNet, err = net.ParseCIDR(fmt.Sprintf("%s/%d", r.Random(), prefix))
 		ExpectNoError(err)
@@ -170,14 +170,14 @@ func randomPool(cidr string, count int) []string {
 		}
 
 		rl = rl.MergeRange(ipam.NewIPRange(start, end))
-		set.Add(ipNet.String())
+		ipNetSet.Insert(ipNet.String())
 	}
 
-	count -= set.Size()
+	count -= ipNetSet.Len()
 	m := count / 3 // <IP1>..<IP2>
 	n := count - m // <IP>
 	ips := make([]ipam.IP, 0, m*2+n)
-	ipSet := strset.NewWithSize(cap(ips))
+	ipSet := set.New[string]()
 	for len(ips) != cap(ips) {
 		ip := r.Random()
 		if rl.Contains(ip) {
@@ -189,7 +189,7 @@ func randomPool(cidr string, count int) []string {
 			continue
 		}
 		ips = append(ips, ip)
-		ipSet.Add(s)
+		ipSet.Insert(s)
 	}
 	sort.Slice(ips, func(i, j int) bool { return ips[i].LessThan(ips[j]) })
 
@@ -201,28 +201,27 @@ func randomPool(cidr string, count int) []string {
 			n1, _ := rl.Find(ips[x])
 			n2, _ := rl.Find(ips[y])
 			if n1 == n2 && ips[x].LessThan(ips[y]) {
-				set.Add(fmt.Sprintf("%s..%s", ips[x].String(), ips[y].String()))
+				ipNetSet.Insert(fmt.Sprintf("%s..%s", ips[x].String(), ips[y].String()))
 				i, k = i+1, k+2
 				continue
 			}
 		}
 
 		if j != n {
-			set.Add(ips[k%len(ips)].String())
+			ipNetSet.Insert(ips[k%len(ips)].String())
 			j, k = j+1, k+1
 		}
 	}
 
-	return set.List()
+	return ipNetSet.UnsortedList()
 }
 
 func RandomIPPool(cidr string, count int) []string {
 	cidrV4, cidrV6 := util.SplitStringIP(cidr)
 	ipsV4, ipsV6 := randomPool(cidrV4, count), randomPool(cidrV6, count)
-	set := strset.NewWithSize(len(cidrV4) + len(cidrV6))
-	set.Add(ipsV4...)
-	set.Add(ipsV6...)
-	return set.List()
+	set := set.New[string](ipsV4...)
+	set.Insert(ipsV6...)
+	return set.UnsortedList()
 }
 
 func PrevIP(ip string) string {

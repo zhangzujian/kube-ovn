@@ -7,8 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/scylladb/go-set/strset"
-	"github.com/scylladb/go-set/u32set"
+	"k8s.io/utils/set"
 
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
@@ -338,7 +337,7 @@ var _ = ginkgo.Context("[group:IPAM]", func() {
 	ginkgo.It("IPv4 NewIPRangeListFrom", func() {
 		n := 40 + rand.IntN(20)
 		cidrList := make([]*net.IPNet, 0, n)
-		cidrSet := u32set.NewWithSize(n * 2)
+		cidrSet := set.New[uint32]()
 		for len(cidrList) != cap(cidrList) {
 			_, cidr, err := net.ParseCIDR(fmt.Sprintf("%s/%d", util.Uint32ToIPv4(rand.Uint32()), 16+rand.IntN(16)))
 			gomega.Expect(err).NotTo(gomega.HaveOccurred())
@@ -352,18 +351,18 @@ var _ = ginkgo.Context("[group:IPAM]", func() {
 			}
 			if !invalid {
 				cidrList = append(cidrList, cidr)
-				cidrSet.Add(util.IPv4ToUint32(cidr.IP))
+				cidrSet.Insert(util.IPv4ToUint32(cidr.IP))
 				bcast := make(net.IP, len(cidr.IP))
 				for i := 0; i < len(bcast); i++ {
 					bcast[i] = cidr.IP[i] | ^cidr.Mask[i]
 				}
-				cidrSet.Add(util.IPv4ToUint32(bcast))
+				cidrSet.Insert(util.IPv4ToUint32(bcast))
 			}
 		}
 
 		n = 80 + rand.IntN(40)
-		set := u32set.NewWithSize(cidrSet.Size() + n)
-		for set.Size() != n {
+		u32Set := set.New[uint32]()
+		for u32Set.Len() != n {
 			v := rand.Uint32()
 			ip := net.ParseIP(util.Uint32ToIPv4(v))
 			var invalid bool
@@ -374,16 +373,16 @@ var _ = ginkgo.Context("[group:IPAM]", func() {
 				}
 			}
 			if !invalid {
-				set.Add(v)
+				u32Set.Insert(v)
 			}
 		}
-		set.Merge(cidrSet)
+		u32Set.Insert(cidrSet.UnsortedList()...)
 
-		ints := set.List()
+		ints := u32Set.UnsortedList()
 		sort.Slice(ints, func(i, j int) bool { return ints[i] < ints[j] })
 
-		ips := make([]string, 0, len(cidrList)+set.Size())
-		mergedInts := make([]uint32, 0, set.Size()*2)
+		ips := make([]string, 0, len(cidrList)+u32Set.Len())
+		mergedInts := make([]uint32, 0, u32Set.Len()*2)
 		var expectedCount uint32
 		for i := 0; i < len(ints); i++ {
 			if cidrSet.Has(ints[i]) {
@@ -437,7 +436,7 @@ var _ = ginkgo.Context("[group:IPAM]", func() {
 			}
 		}
 
-		list, err := ipam.NewIPRangeListFrom(strset.New(ips...).List()...)
+		list, err := ipam.NewIPRangeListFrom(set.New(ips...).UnsortedList()...)
 		gomega.Expect(err).NotTo(gomega.HaveOccurred())
 		gomega.Expect(list.Len()).To(gomega.Equal(len(mergedIPs)))
 		gomega.Expect(list.String()).To(gomega.Equal(strings.Join(mergedIPs, ",")))

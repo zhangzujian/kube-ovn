@@ -5,11 +5,11 @@ import (
 	"sync"
 
 	"github.com/kubeovn/gonetworkmanager/v2"
-	"github.com/scylladb/go-set/strset"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/mod/semver"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/set"
 )
 
 const (
@@ -23,7 +23,7 @@ const (
 type networkManagerSyncer struct {
 	manager   gonetworkmanager.NetworkManager
 	workqueue workqueue.TypedInterface[string]
-	devices   *strset.Set
+	devices   set.Set[string]
 	bridgeMap map[string]string
 	lock      sync.Mutex
 }
@@ -49,7 +49,7 @@ func newNetworkManagerSyncer() *networkManagerSyncer {
 
 	syncer.manager = manager
 	syncer.workqueue = workqueue.NewTypedWithConfig(workqueue.TypedQueueConfig[string]{Name: "NetworkManagerSyncer"})
-	syncer.devices = strset.New()
+	syncer.devices = set.New[string]()
 	syncer.bridgeMap = make(map[string]string)
 	return syncer
 }
@@ -165,7 +165,7 @@ func (n *networkManagerSyncer) AddDevice(nicName, bridge string) error {
 
 	n.lock.Lock()
 	klog.V(3).Infof("adding device %s with bridge %s", nicName, bridge)
-	n.devices.Add(nicName)
+	n.devices.Insert(nicName)
 	n.bridgeMap[nicName] = bridge
 	n.lock.Unlock()
 
@@ -178,7 +178,7 @@ func (n *networkManagerSyncer) RemoveDevice(nicName string) {
 	}
 
 	n.lock.Lock()
-	n.devices.Remove(nicName)
+	n.devices.Delete(nicName)
 	delete(n.bridgeMap, nicName)
 	n.lock.Unlock()
 }

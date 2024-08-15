@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/scylladb/go-set/strset"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/set"
 
 	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
 	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
@@ -597,16 +597,17 @@ func (c *Controller) syncOneRouteToPolicy(key, value string) {
 		}
 		policyMap[match] = lrPolicy.UUID
 	}
-	networks := strset.NewWithSize(len(lrRouteList))
+	networks := set.New[string]()
 	for _, lrRoute := range lrRouteList {
-		networks.Add(lrRoute.IPPrefix)
+		networks.Insert(lrRoute.IPPrefix)
 	}
 
-	networks.Each(func(prefix string) bool {
+	for prefix := range networks {
 		if _, ok := policyMap[prefix]; ok {
 			delete(policyMap, prefix)
-			return true
+			continue
 		}
+
 		match := util.MatchV4Dst + " == " + prefix
 		if util.CheckProtocol(prefix) == kubeovnv1.ProtocolIPv6 {
 			match = util.MatchV6Dst + " == " + prefix
@@ -615,9 +616,7 @@ func (c *Controller) syncOneRouteToPolicy(key, value string) {
 		if err = c.OVNNbClient.AddLogicalRouterPolicy(lr.Name, util.OvnICPolicyPriority, match, ovnnb.LogicalRouterPolicyActionAllow, nil, map[string]string{key: value, "vendor": util.CniTypeName}); err != nil {
 			klog.Errorf("failed to add router policy: %v", err)
 		}
-
-		return true
-	})
+	}
 	for _, uuid := range policyMap {
 		if err := c.OVNNbClient.DeleteLogicalRouterPolicyByUUID(lr.Name, uuid); err != nil {
 			klog.Errorf("deleting router policy failed %v", err)
@@ -625,7 +624,7 @@ func (c *Controller) syncOneRouteToPolicy(key, value string) {
 	}
 }
 
-func (c *Controller) listRemoteLogicalSwitchPortAddress() (*strset.Set, error) {
+func (c *Controller) listRemoteLogicalSwitchPortAddress() (set.Set[string], error) {
 	lsps, err := c.OVNNbClient.ListLogicalSwitchPorts(true, nil, func(lsp *ovnnb.LogicalSwitchPort) bool {
 		return lsp.Type == "remote"
 	})
@@ -634,7 +633,7 @@ func (c *Controller) listRemoteLogicalSwitchPortAddress() (*strset.Set, error) {
 		return nil, fmt.Errorf("list remote logical switch ports: %w", err)
 	}
 
-	existAddress := strset.NewWithSize(len(lsps))
+	existAddress := set.New[string]()
 	for _, lsp := range lsps {
 		if len(lsp.Addresses) == 0 {
 			continue
@@ -647,7 +646,7 @@ func (c *Controller) listRemoteLogicalSwitchPortAddress() (*strset.Set, error) {
 			continue
 		}
 
-		existAddress.Add(fields[1])
+		existAddress.Insert(fields[1])
 	}
 
 	return existAddress, nil

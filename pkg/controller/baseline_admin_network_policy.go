@@ -5,11 +5,11 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/scylladb/go-set/strset"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/set"
 	v1alpha1 "sigs.k8s.io/network-policy-api/apis/v1alpha1"
 
 	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
@@ -159,14 +159,14 @@ func (c *Controller) handleAddBanp(key string) (err error) {
 		klog.Errorf("failed to list address sets for banp %s: %v", key, err)
 		return err
 	}
-	desiredIngressAddrSet := strset.NewWithSize(len(banp.Spec.Ingress) * 2)
-	desiredEgressAddrSet := strset.NewWithSize(len(banp.Spec.Egress) * 2)
+	desiredIngressAddrSet := set.New[string]()
+	desiredEgressAddrSet := set.New[string]()
 
 	// create ingress acl
 	for index, banpr := range banp.Spec.Ingress {
 		// A single address set must contain addresses of the same type and the name must be unique within table, so IPv4 and IPv6 address set should be different
 		ingressAsV4Name, ingressAsV6Name := getAnpAddressSetName(pgName, banpr.Name, index, true)
-		desiredIngressAddrSet.Add(ingressAsV4Name, ingressAsV6Name)
+		desiredIngressAddrSet.Insert(ingressAsV4Name, ingressAsV6Name)
 
 		var v4Addrs, v4Addr, v6Addrs, v6Addr []string
 		// This field must be defined and contain at least one item.
@@ -234,7 +234,7 @@ func (c *Controller) handleAddBanp(key string) (err error) {
 	for index, banpr := range banp.Spec.Egress {
 		// A single address set must contain addresses of the same type and the name must be unique within table, so IPv4 and IPv6 address set should be different
 		egressAsV4Name, egressAsV6Name := getAnpAddressSetName(pgName, banpr.Name, index, false)
-		desiredEgressAddrSet.Add(egressAsV4Name, egressAsV6Name)
+		desiredEgressAddrSet.Insert(egressAsV4Name, egressAsV6Name)
 
 		var v4Addrs, v4Addr, v6Addrs, v6Addr []string
 		// This field must be defined and contain at least one item.

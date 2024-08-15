@@ -8,13 +8,13 @@ import (
 	"unicode"
 
 	"github.com/ovn-org/libovsdb/ovsdb"
-	"github.com/scylladb/go-set/strset"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/set"
 
 	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
 	"github.com/kubeovn/kube-ovn/pkg/ovs"
@@ -22,7 +22,7 @@ import (
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
 
-var lastNoPodLSP = strset.New()
+var lastNoPodLSP = set.New[string]()
 
 func (c *Controller) gc() error {
 	gcFunctions := []func() error{
@@ -58,10 +58,10 @@ func (c *Controller) gcLogicalRouterPort() error {
 		return err
 	}
 
-	exceptPeerPorts := strset.New()
+	exceptPeerPorts := set.New[string]()
 	for _, vpc := range vpcs {
 		for _, peer := range vpc.Status.VpcPeerings {
-			exceptPeerPorts.Add(fmt.Sprintf("%s-%s", vpc.Name, peer))
+			exceptPeerPorts.Insert(fmt.Sprintf("%s-%s", vpc.Name, peer))
 		}
 	}
 
@@ -123,11 +123,11 @@ func (c *Controller) gcLogicalSwitch() error {
 		klog.Errorf("failed to list subnet, %v", err)
 		return err
 	}
-	subnetNames := strset.NewWithSize(len(subnets))
+	subnetNames := set.New[string]()
 	subnetMap := make(map[string]*kubeovnv1.Subnet, len(subnets))
 	for _, s := range subnets {
 		subnetMap[s.Name] = s
-		subnetNames.Add(s.Name)
+		subnetNames.Insert(s.Name)
 	}
 
 	lss, err := c.OVNNbClient.ListLogicalSwitch(c.config.EnableExternalVpc, nil)
@@ -220,9 +220,9 @@ func (c *Controller) gcNode() error {
 		klog.Errorf("failed to list node, %v", err)
 		return err
 	}
-	nodeNames := strset.NewWithSize(len(nodes))
+	nodeNames := set.New[string]()
 	for _, node := range nodes {
-		nodeNames.Add(node.Name)
+		nodeNames.Insert(node.Name)
 	}
 	ips, err := c.ipsLister.List(labels.Everything())
 	if err != nil {
@@ -308,7 +308,7 @@ func (c *Controller) markAndCleanLSP() error {
 		klog.Errorf("failed to list node, %v", err)
 		return err
 	}
-	ipMap := strset.NewWithSize(len(pods) + len(nodes))
+	ipMap := set.New[string]()
 	for _, pod := range pods {
 		if isStsPod, stsName, stsUID := isStatefulSetPod(pod); isStsPod {
 			if isStatefulSetPodToDel(c.config.KubeClient, pod, stsName, stsUID) {
@@ -331,22 +331,22 @@ func (c *Controller) markAndCleanLSP() error {
 			if !isProviderOvn {
 				continue
 			}
-			ipMap.Add(ovs.PodNameToPortName(podName, pod.Namespace, providerName))
+			ipMap.Insert(ovs.PodNameToPortName(podName, pod.Namespace, providerName))
 		}
 	}
 	for _, node := range nodes {
 		if node.Annotations[util.AllocatedAnnotation] == "true" {
-			ipMap.Add(util.NodeLspName(node.Name))
+			ipMap.Insert(util.NodeLspName(node.Name))
 		}
 
 		if _, err := c.ovnEipsLister.Get(node.Name); err == nil {
 			// node external gw lsp is managed by ovn eip cr, skip gc its lsp
-			ipMap.Add(node.Name)
+			ipMap.Insert(node.Name)
 		}
 	}
 
 	// The lsp for vm pod should not be deleted if vm still exists
-	ipMap.Add(c.getVMLsps()...)
+	ipMap.Insert(c.getVMLsps()...)
 
 	lsps, err := c.OVNNbClient.ListNormalLogicalSwitchPorts(c.config.EnableExternalVpc, nil)
 	if err != nil {
@@ -354,10 +354,10 @@ func (c *Controller) markAndCleanLSP() error {
 		return err
 	}
 
-	noPodLSP := strset.New()
-	lspMap := strset.NewWithSize(len(lsps))
+	noPodLSP := set.New[string]()
+	lspMap := set.New[string]()
 	for _, lsp := range lsps {
-		lspMap.Add(lsp.Name)
+		lspMap.Insert(lsp.Name)
 		if ipMap.Has(lsp.Name) {
 			continue
 		}
@@ -367,7 +367,7 @@ func (c *Controller) markAndCleanLSP() error {
 			continue
 		}
 		if !lastNoPodLSP.Has(lsp.Name) {
-			noPodLSP.Add(lsp.Name)
+			noPodLSP.Insert(lsp.Name)
 			continue
 		}
 
@@ -409,12 +409,11 @@ func (c *Controller) markAndCleanLSP() error {
 	}
 	lastNoPodLSP = noPodLSP
 
-	ipMap.Each(func(ipName string) bool {
+	for ipName := range ipMap {
 		if !lspMap.Has(ipName) {
 			klog.Errorf("lsp lost for pod %s, please delete the pod and retry", ipName)
 		}
-		return true
-	})
+	}
 
 	return nil
 }
@@ -428,9 +427,9 @@ func (c *Controller) gcLoadBalancer() error {
 		return err
 	}
 
-	vpcLbs := strset.NewWithSize(len(dnats))
+	vpcLbs := set.New[string]()
 	for _, dnat := range dnats {
-		vpcLbs.Add(dnat.Name)
+		vpcLbs.Insert(dnat.Name)
 	}
 
 	if !c.config.EnableLb {
@@ -495,12 +494,12 @@ func (c *Controller) gcLoadBalancer() error {
 	}
 
 	var (
-		tcpVips         = strset.NewWithSize(len(svcs) * 2)
-		udpVips         = strset.NewWithSize(len(svcs) * 2)
-		sctpVips        = strset.NewWithSize(len(svcs) * 2)
-		tcpSessionVips  = strset.NewWithSize(len(svcs) * 2)
-		udpSessionVips  = strset.NewWithSize(len(svcs) * 2)
-		sctpSessionVips = strset.NewWithSize(len(svcs) * 2)
+		tcpVips         = set.New[string]()
+		udpVips         = set.New[string]()
+		sctpVips        = set.New[string]()
+		tcpSessionVips  = set.New[string]()
+		udpSessionVips  = set.New[string]()
+		sctpSessionVips = set.New[string]()
 	)
 
 	for _, svc := range svcs {
@@ -510,21 +509,21 @@ func (c *Controller) gcLoadBalancer() error {
 				switch port.Protocol {
 				case corev1.ProtocolTCP:
 					if svc.Spec.SessionAffinity == corev1.ServiceAffinityClientIP {
-						tcpSessionVips.Add(vip)
+						tcpSessionVips.Insert(vip)
 					} else {
-						tcpVips.Add(vip)
+						tcpVips.Insert(vip)
 					}
 				case corev1.ProtocolUDP:
 					if svc.Spec.SessionAffinity == corev1.ServiceAffinityClientIP {
-						udpSessionVips.Add(vip)
+						udpSessionVips.Insert(vip)
 					} else {
-						udpVips.Add(vip)
+						udpVips.Insert(vip)
 					}
 				case corev1.ProtocolSCTP:
 					if svc.Spec.SessionAffinity == corev1.ServiceAffinityClientIP {
-						sctpSessionVips.Add(vip)
+						sctpSessionVips.Insert(vip)
 					} else {
-						sctpVips.Add(vip)
+						sctpVips.Insert(vip)
 					}
 				}
 			}
@@ -538,11 +537,11 @@ func (c *Controller) gcLoadBalancer() error {
 	}
 
 	var (
-		removeVip         func(lbName string, svcVips *strset.Set) error
+		removeVip         func(lbName string, svcVips set.Set[string]) error
 		ignoreHealthCheck = true
 	)
 
-	removeVip = func(lbName string, svcVips *strset.Set) error {
+	removeVip = func(lbName string, svcVips set.Set[string]) error {
 		if lbName == "" {
 			return nil
 		}
@@ -579,7 +578,7 @@ func (c *Controller) gcLoadBalancer() error {
 			tcpSessLb, udpSessLb, sctpSessLb = vpc.Status.TCPSessionLoadBalancer, vpc.Status.UDPSessionLoadBalancer, vpc.Status.SctpSessionLoadBalancer
 		)
 
-		vpcLbs.Add(tcpLb, udpLb, sctpLb, tcpSessLb, udpSessLb, sctpSessLb)
+		vpcLbs.Insert(tcpLb, udpLb, sctpLb, tcpSessLb, udpSessLb, sctpSessLb)
 		if err = removeVip(tcpLb, tcpVips); err != nil {
 			klog.Error(err)
 			return err
@@ -621,7 +620,7 @@ func (c *Controller) gcLoadBalancer() error {
 func (c *Controller) gcPortGroup() error {
 	klog.Infof("start to gc network policy")
 
-	npNames := strset.New()
+	npNames := set.New[string]()
 
 	if c.config.EnableNP {
 		nps, err := c.npsLister.List(labels.Everything())
@@ -637,7 +636,7 @@ func (c *Controller) gcPortGroup() error {
 				npName = "np" + np.Name
 			}
 
-			npNames.Add(fmt.Sprintf("%s/%s", np.Namespace, npName))
+			npNames.Insert(fmt.Sprintf("%s/%s", np.Namespace, npName))
 		}
 
 		// append node port group to npNames to avoid gc node port group
@@ -648,7 +647,7 @@ func (c *Controller) gcPortGroup() error {
 		}
 
 		for _, node := range nodes {
-			npNames.Add(fmt.Sprintf("%s/%s", "node", node.Name))
+			npNames.Insert(fmt.Sprintf("%s/%s", "node", node.Name))
 		}
 
 		// append overlay subnets port group to npNames to avoid gc distributed subnets port group
@@ -663,7 +662,7 @@ func (c *Controller) gcPortGroup() error {
 			}
 
 			for _, node := range nodes {
-				npNames.Add(fmt.Sprintf("%s/%s", subnet.Name, node.Name))
+				npNames.Insert(fmt.Sprintf("%s/%s", subnet.Name, node.Name))
 			}
 		}
 
@@ -1000,7 +999,7 @@ func (c *Controller) gcVPCDNS() error {
 	return nil
 }
 
-func logicalRouterPortFilter(exceptPeerPorts *strset.Set) func(lrp *ovnnb.LogicalRouterPort) bool {
+func logicalRouterPortFilter(exceptPeerPorts set.Set[string]) func(lrp *ovnnb.LogicalRouterPort) bool {
 	return func(lrp *ovnnb.LogicalRouterPort) bool {
 		if exceptPeerPorts.Has(lrp.Name) {
 			return false // ignore except lrp
