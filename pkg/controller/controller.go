@@ -1154,6 +1154,9 @@ func (c *Controller) startWorkers(ctx context.Context) {
 	go wait.Until(func() {
 		c.resyncVpcNatGwConfig()
 	}, time.Second, ctx.Done())
+	go wait.Until(func() {
+		c.activateVpcNatGateway()
+	}, time.Second, ctx.Done())
 
 	go wait.Until(func() {
 		c.resyncVpcNatConfig()

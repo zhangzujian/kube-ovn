@@ -41,6 +41,10 @@ function init() {
     iptables -t nat -A SNAT_FILTER -j SHARED_SNAT
 }
 
+function activate() {
+    echo "activating interface eth0 by sending a RARP request"
+    exec_cmd "send-rarp-request eth0"
+}
 
 function get_iptables_version() {
   exec_cmd "iptables --version"
@@ -406,6 +410,9 @@ case $opt in
         echo "init $rules"
         init $rules
         ;;
+    activate)
+        activate
+        ;;
     subnet-route-add)
         echo "subnet-route-add $rules"
         add_vpc_internal_route $rules
@@ -475,7 +482,7 @@ case $opt in
         qos_del $rules
         ;;
     *)
-        echo "Usage: $0 [init|subnet-route-add|subnet-route-del|eip-add|eip-del|floating-ip-add|floating-ip-del|dnat-add|dnat-del|snat-add|snat-del] ..."
+        echo "Usage: $0 [init|activate|subnet-route-add|subnet-route-del|eip-add|eip-del|floating-ip-add|floating-ip-del|dnat-add|dnat-del|snat-add|snat-del] ..."
         exit 1
         ;;
 esac
