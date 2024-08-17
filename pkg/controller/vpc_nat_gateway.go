@@ -37,6 +37,7 @@ var (
 
 const (
 	natGwInit             = "init"
+	natGwActivate         = "activate"
 	natGwEipAdd           = "eip-add"
 	natGwEipDel           = "eip-del"
 	natGwDnatAdd          = "dnat-add"
@@ -92,6 +93,96 @@ func (c *Controller) resyncVpcNatGwConfig() {
 		c.addOrUpdateVpcNatGatewayQueue.Add(gw.Name)
 	}
 	klog.Info("finish establishing vpc-nat-gateway")
+}
+
+func (c *Controller) activateVpcNatGateway() {
+	gateways, err := c.vpcNatGatewayLister.List(labels.Everything())
+	if err != nil {
+		klog.Errorf("failed to list vpc nat gateway: %v", err)
+		return
+	}
+
+	eips, err := c.iptablesEipsLister.List(labels.Everything())
+	if err != nil {
+		klog.Errorf("failed to list eips: %v", err)
+		return
+	}
+
+	snats, err := c.iptablesSnatRulesLister.List(labels.Everything())
+	if err != nil {
+		klog.Errorf("failed to list snats: %v", err)
+		return
+	}
+
+LOOP:
+	for _, gw := range gateways {
+		cachedPod, err := c.getNatGwPod(gw.Name)
+		if err != nil {
+			klog.Infof("failed to get nat gw %s pod: %v", gw.Name, err)
+			continue
+		}
+
+		pod := cachedPod.DeepCopy()
+		if cachedPod.Status.Phase != corev1.PodRunning {
+			continue
+		}
+		if pod.Annotations[util.VpcNatGatewayInitAnnotation] != "true" ||
+			pod.Annotations[util.VpcNatGatewayActivatedAnnotation] == "true" {
+			continue
+		}
+
+		startTime := pod.Status.ContainerStatuses[0].State.Running.StartedAt.Time
+		fnCheckRedo := func(redo string) bool {
+			if redo == "" {
+				return true
+			}
+			t, err := time.ParseInLocation("2006-01-02T15:04:05", redo, time.Local)
+			if err != nil {
+				klog.Errorf("failed to parse redo time %s: %v", redo, err)
+				return false
+			}
+			return t.Before(startTime)
+		}
+
+		// TODO: wait routes to be configured
+		// TODO: performace optimization
+		for _, eip := range eips {
+			if eip.Spec.NatGwDp != gw.Name {
+				continue
+			}
+			if !eip.Status.Ready || !fnCheckRedo(eip.Status.Redo) {
+				continue LOOP
+			}
+
+			for _, snat := range snats {
+				if snat.Spec.EIP != eip.Name {
+					continue
+				}
+				if !snat.Status.Ready || !fnCheckRedo(snat.Status.Redo) {
+					continue LOOP
+				}
+			}
+		}
+
+		klog.Infof("activating vpc nat gw %s", gw.Name)
+		if err = c.execNatGwRules(pod, natGwActivate, nil); err != nil {
+			klog.Errorf("failed to activate vpc nat gateway %s: %v", gw.Name, err)
+			continue
+		}
+
+		pod.Annotations[util.VpcNatGatewayActivatedAnnotation] = "true"
+		patch, err := util.GenerateStrategicMergePatchPayload(cachedPod, pod)
+		if err != nil {
+			klog.Error(err)
+			continue
+		}
+		if _, err = c.config.KubeClient.CoreV1().Pods(pod.Namespace).Patch(context.Background(), pod.Name,
+			types.StrategicMergePatchType, patch, metav1.PatchOptions{}, ""); err != nil {
+			err := fmt.Errorf("patch pod %s/%s failed %v", pod.Name, pod.Namespace, err)
+			klog.Error(err)
+			continue
+		}
+	}
 }
 
 func (c *Controller) enqueueAddVpcNatGw(obj interface{}) {
@@ -323,6 +414,7 @@ func (c *Controller) handleInitVpcNatGw(key string) error {
 			return err
 		}
 	}
+
 	// if update qos success, will update nat gw status
 	if gw.Spec.QoSPolicy != gw.Status.QoSPolicy {
 		if err = c.patchNatGwQoSStatus(key, gw.Spec.QoSPolicy); err != nil {

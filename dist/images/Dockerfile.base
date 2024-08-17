@@ -55,9 +55,7 @@ RUN cd /usr/src/ && git clone -b branch-24.03 --depth=1 https://github.com/ovn-o
     # fix lr-lb dnat with multiple distributed gateway ports
     curl -s https://github.com/kubeovn/ovn/commit/3eb25ce85393e97814c6a2b70101afdc66c6626c.patch | git apply && \
     # northd: skip arp/nd request for lrp addresses from localnet ports
-    curl -s https://github.com/kubeovn/ovn/commit/1aa952f2f1b348739d2585618a6f2afff2ed4501.patch | git apply && \
-    # ovn-controller: make activation strategy work for single chassis
-    curl -s https://github.com/kubeovn/ovn/commit/487cd1c6c0cc9def7cedaaaf3dd4bc99c23974c4.patch | git apply
+    curl -s https://github.com/kubeovn/ovn/commit/1aa952f2f1b348739d2585618a6f2afff2ed4501.patch | git apply
 
 RUN apt install -y build-essential fakeroot \
     autoconf automake bzip2 debhelper-compat dh-exec dh-python dh-sequence-python3 dh-sequence-sphinxdoc \
