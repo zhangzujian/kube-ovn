@@ -20,6 +20,7 @@ import (
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/k8snetworkplumbingwg/sriovnet"
 	sriovutilfs "github.com/k8snetworkplumbingwg/sriovnet/pkg/utils/filesystem"
+	"github.com/mdlayher/netx/eui64"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 	v1 "k8s.io/api/core/v1"
@@ -35,6 +36,8 @@ import (
 	"github.com/kubeovn/kube-ovn/pkg/request"
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
+
+var ipv6LinkLocalPrefix = net.ParseIP("fe80::")
 
 var pciAddrRegexp = regexp.MustCompile(`\b([0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}.\d{1}\S*)`)
 
@@ -695,11 +698,11 @@ func configureNodeNic(portName, ip, gw, joinCIDR string, macAddr net.HardwareAdd
 func (c *Controller) loopOvn0Check() {
 	link, err := netlink.LinkByName(util.NodeNic)
 	if err != nil {
-		util.LogFatalAndExit(err, "failed to get ovn0 nic")
+		util.LogFatalAndExit(err, "failed to get node nic %s", util.NodeNic)
 	}
 
 	if link.Attrs().OperState == netlink.OperDown {
-		util.LogFatalAndExit(err, "ovn0 nic is down")
+		util.LogFatalAndExit(err, "node nic %s is down", util.NodeNic)
 	}
 
 	node, err := c.nodesLister.Get(c.config.NodeName)
@@ -1073,7 +1076,7 @@ func configureNic(link, ip string, macAddr net.HardwareAddr, mtu int, detectIPCo
 	if nodeLink.Attrs().OperState != netlink.OperUp {
 		if err = netlink.LinkSetUp(nodeLink); err != nil {
 			klog.Error(err)
-			return fmt.Errorf("can not set node nic %s up: %w", link, err)
+			return fmt.Errorf("can not set nic %s up: %w", link, err)
 		}
 	}
 
@@ -1085,6 +1088,7 @@ func configureNic(link, ip string, macAddr net.HardwareAddr, mtu int, detectIPCo
 		return fmt.Errorf("can not get addr %s: %w", nodeLink, err)
 	}
 	for _, ipAddr := range ipAddrs {
+		klog.Infof("found ip address %s on %s", ipAddr.String(), link)
 		if ipAddr.IP.IsLinkLocalUnicast() {
 			// skip 169.254.0.0/16 and fe80::/10
 			continue
@@ -1092,7 +1096,21 @@ func configureNic(link, ip string, macAddr net.HardwareAddr, mtu int, detectIPCo
 		ipDelMap[ipAddr.IPNet.String()] = ipAddr
 	}
 
-	for _, ipStr := range strings.Split(ip, ",") {
+	expectedAddresses := strings.Split(ip, ",")
+	for _, addr := range expectedAddresses {
+		if util.CheckProtocol(addr) != kubeovnv1.ProtocolIPv6 {
+			continue
+		}
+		eui64Addr, err := eui64.ParseMAC(ipv6LinkLocalPrefix, macAddr)
+		if err != nil {
+			return fmt.Errorf("failed to generate eui64 address from mac address %s: %w", macAddr.String(), err)
+		}
+		linkLocalAddr := netlink.Addr{IPNet: &net.IPNet{IP: eui64Addr, Mask: net.CIDRMask(64, 128)}}.String()
+		expectedAddresses = append(expectedAddresses, linkLocalAddr)
+		break
+	}
+
+	for _, ipStr := range expectedAddresses {
 		// Do not reassign same address for link
 		if _, ok := ipDelMap[ipStr]; ok {
 			delete(ipDelMap, ipStr)
@@ -1134,7 +1152,7 @@ func configureNic(link, ip string, macAddr net.HardwareAddr, mtu int, detectIPCo
 		}
 
 		klog.Infof("add ip address %s to %s", ip, link)
-		if err = netlink.AddrAdd(nodeLink, &addr); err != nil {
+		if err = netlink.AddrReplace(nodeLink, &addr); err != nil {
 			klog.Error(err)
 			return fmt.Errorf("can not add address %s to nic %s: %w", addr, link, err)
 		}
