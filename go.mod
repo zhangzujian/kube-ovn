@@ -11,7 +11,7 @@ require (
 	github.com/containerd/containerd v1.7.22
 	github.com/containernetworking/cni v1.2.3
 	github.com/containernetworking/plugins v1.5.1
-	github.com/docker/docker v27.2.1+incompatible
+	github.com/docker/docker v27.3.0+incompatible
 	github.com/emicklei/go-restful/v3 v3.12.1
 	github.com/evanphx/json-patch/v5 v5.9.0
 	github.com/go-logr/stdr v1.2.2
@@ -41,7 +41,7 @@ require (
 	golang.org/x/mod v0.21.0
 	golang.org/x/sys v0.25.0
 	golang.org/x/time v0.6.0
-	google.golang.org/grpc v1.66.2
+	google.golang.org/grpc v1.67.0
 	google.golang.org/protobuf v1.34.2
 	gopkg.in/k8snetworkplumbingwg/multus-cni.v4 v4.1.1
 	k8s.io/api v0.31.1
