@@ -6,7 +6,7 @@ import (
 )
 
 func TestLoop(t *testing.T) {
-	records, err := Loop(nil, "test", "http://172.18.0.2:31745/metrics", "GET", 3, 100, 500, 200)
+	records, err := Loop(t, "test", "http://172.18.0.2:31745/metrics", "GET", 3, 100, 500, 200)
 	if err != nil {
 		t.Fatal(err)
 	}

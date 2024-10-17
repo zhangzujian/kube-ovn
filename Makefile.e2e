@@ -80,6 +80,7 @@ e2e-build:
 	ginkgo build $(E2E_BUILD_FLAGS) ./test/e2e/security
 	ginkgo build $(E2E_BUILD_FLAGS) ./test/e2e/kubevirt
 	ginkgo build $(E2E_BUILD_FLAGS) ./test/e2e/webhook
+	ginkgo build $(E2E_BUILD_FLAGS) ./test/e2e/stable
 
 .PHONY: k8s-conformance-e2e
 k8s-conformance-e2e:
@@ -234,3 +235,11 @@ kube-ovn-ipsec-e2e:
 kube-ovn-anp-e2e:
 	KUBECONFIG=$(KUBECONFIG) ./test/anp/conformance.sh
 
+.PHONY: kube-ovn-stable-e2e
+kube-ovn-stable-e2e:
+	ginkgo build $(E2E_BUILD_FLAGS) ./test/e2e/stable
+	E2E_BRANCH=$(E2E_BRANCH) \
+	E2E_IP_FAMILY=$(E2E_IP_FAMILY) \
+	E2E_NETWORK_MODE=$(E2E_NETWORK_MODE) \
+	ginkgo $(GINKGO_OUTPUT_OPT) $(GINKGO_PARALLEL_OPT) --randomize-all -v \
+		--focus=CNI:Kube-OVN ./test/e2e/stable/stable.test -- $(TEST_BIN_ARGS)
