@@ -58,7 +58,7 @@ func (suite *OvnClientTestSuite) testUpdateLogicalRouter() {
 
 	t.Run("update external-ids", func(t *testing.T) {
 		lr.ExternalIDs = map[string]string{"foo": "bar"}
-		err = nbClient.UpdateLogicalRouter(lr)
+		err = nbClient.UpdateLogicalRouter(lr, &lr.ExternalIDs)
 		require.NoError(t, err)
 
 		lr, err := nbClient.GetLogicalRouter(lrName, false)
