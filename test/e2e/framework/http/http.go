@@ -6,11 +6,17 @@ import (
 	"time"
 
 	"github.com/httprunner/httprunner/v4/hrp"
+	"github.com/rs/zerolog"
 )
 
 type Result struct {
-	*hrp.StepResult
+	Index     int
 	Timestamp time.Time `json:"timestamp"`
+	*hrp.StepResult
+}
+
+func init() {
+	zerolog.SetGlobalLevel(zerolog.WarnLevel)
 }
 
 func Loop(t *testing.T, name, url, method string, loop, interval, requestTimeout, expectedStatusCode int) ([]*Result, error) {
@@ -27,13 +33,14 @@ func Loop(t *testing.T, name, url, method string, loop, interval, requestTimeout
 	}
 
 	var failureRecords []*Result
-	for i := 1; i <= loop; i++ {
+	for i := 0; i < loop; i++ {
 		sr := cr.NewSession()
 		startTime := time.Now()
 		result := &Result{
+			Index:     i,
 			Timestamp: startTime,
 			StepResult: &hrp.StepResult{
-				Name:      fmt.Sprintf("%s - %d", tc.Config.Name, i),
+				Name:      tc.Config.Name,
 				Success:   false,
 				StartTime: startTime.Unix(),
 			},
@@ -55,7 +62,6 @@ func Loop(t *testing.T, name, url, method string, loop, interval, requestTimeout
 
 		if !summary.Success {
 			if len(summary.Records) != 0 {
-				summary.Records[0].Name = result.Name
 				result.StepResult = summary.Records[0]
 			} else {
 				result.Elapsed = int64(time.Since(startTime).Milliseconds())
@@ -74,9 +80,7 @@ func Loop(t *testing.T, name, url, method string, loop, interval, requestTimeout
 		}
 
 		if summary.Records[0].Success && summary.Records[0].Elapsed < int64(interval) {
-			// now := time.Now()
 			time.Sleep(time.Duration((int64(interval) - summary.Records[0].Elapsed)) * time.Millisecond)
-			// t.Logf("sleep %d ms", time.Since(now).Milliseconds())
 		}
 	}
 
