@@ -1,8 +1,6 @@
 package main
 
 import (
-	_ "net/http/pprof" // #nosec
-
 	"k8s.io/klog/v2"
 	"kernel.org/pub/linux/libs/security/libcap/cap"
 	ctrl "sigs.k8s.io/controller-runtime"
