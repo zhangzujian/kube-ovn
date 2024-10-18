@@ -49,6 +49,7 @@ require (
 	k8s.io/api v0.31.1
 	k8s.io/apimachinery v0.31.1
 	k8s.io/client-go v1.5.2
+	k8s.io/component-base v0.31.1
 	k8s.io/klog/v2 v2.130.1
 	k8s.io/kubectl v0.31.1
 	k8s.io/kubernetes v1.31.1
@@ -275,7 +276,6 @@ require (
 	k8s.io/cli-runtime v0.31.1 // indirect
 	k8s.io/cloud-provider v0.31.1 // indirect
 	k8s.io/cluster-bootstrap v0.31.1 // indirect
-	k8s.io/component-base v0.31.1 // indirect
 	k8s.io/component-helpers v0.31.1 // indirect
 	k8s.io/controller-manager v0.31.1 // indirect
 	k8s.io/cri-api v0.31.1 // indirect
