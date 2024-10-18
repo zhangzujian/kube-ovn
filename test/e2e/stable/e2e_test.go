@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"flag"
 	"math/rand/v2"
-	"net/rpc"
 	"net/url"
 	"strconv"
 	"testing"
@@ -25,7 +24,22 @@ import (
 	"github.com/kubeovn/kube-ovn/pkg/util"
 	"github.com/kubeovn/kube-ovn/test/e2e/framework"
 	"github.com/kubeovn/kube-ovn/test/e2e/framework/http"
+	"github.com/kubeovn/kube-ovn/test/e2e/framework/rpc"
 )
+
+const rpcAddr = "127.0.0.1:17070"
+
+type RPCNotify struct {
+	ch chan struct{}
+}
+
+func (r *RPCNotify) ProcessExit(_ struct{}, _ *struct{}) error {
+	select {
+	case r.ch <- struct{}{}:
+	default:
+	}
+	return nil
+}
 
 func init() {
 	klog.SetOutput(ginkgo.GinkgoWriter)
@@ -55,11 +69,6 @@ type suiteContext struct {
 	HostIP   string
 	NodePort int32
 }
-
-const errGinkgoRPCEarly = "early"
-
-var rpcVoidRequest struct{}
-var rpcVoidResponse struct{}
 
 var suiteCtx suiteContext
 
@@ -129,65 +138,65 @@ var _ = ginkgo.SynchronizedBeforeSuite(func() []byte {
 })
 
 var _ = framework.Describe("[group:stable]", func() {
+	var server *rpc.Server
+	var notify *RPCNotify
+
+	ginkgo.BeforeEach(ginkgo.OncePerOrdered, func() {
+		ginkgo.By("Creating RPC server listening on " + rpcAddr + " to receive ginkgo process notification")
+		var err error
+		notify = &RPCNotify{ch: make(chan struct{}, 1)}
+		server, err = rpc.NewServer(rpcAddr, notify)
+		framework.ExpectNoError(err)
+	})
+	ginkgo.AfterEach(ginkgo.OncePerOrdered, func() {
+		ginkgo.By("Closing RPC server")
+		framework.ExpectNoError(server.Close())
+	})
+
 	ginkgo.It("NodePort test demo", func() {
-		ginkgo.By("GET /clientip")
-		sc, _ := ginkgo.GinkgoConfiguration()
-		framework.Logf("Ginkgo ParallelHost: %q", sc.ParallelHost)
-
-		ginkgoClient, err := rpc.DialHTTPPath("tcp", sc.ParallelHost, "/")
-		framework.ExpectNoError(err, "failed to dial ginkgo grpc server")
-		defer ginkgoClient.Close()
-
 		u := url.URL{
 			Scheme: "http",
 			Host:   util.JoinHostPort(suiteCtx.HostIP, suiteCtx.NodePort),
 			Path:   "/clientip",
 		}
 		ginkgo.By("GET " + u.String())
-		until := func() bool {
-			err := ginkgoClient.Call("Server.HaveNonprimaryProcsFinished", rpcVoidRequest, &rpcVoidResponse)
-			if err != nil {
-				if err.Error() == errGinkgoRPCEarly {
-					return false
-				}
-				framework.ExpectNoError(err, "unexpected ginkgo rpc error")
-			}
-
-			return true
-		}
-		result, err := http.LoopUntil(nil, "NodePort", u.String(), "GET", 100, 500, 200, until, 20)
+		reports, err := http.Loop(nil, "NodePort", u.String(), "GET", 300, 100, 500, 200, notify.ch)
 		framework.ExpectNoError(err)
 
-		for _, r := range result {
-			_ = r
-			// framework.Logf("index = %03d, timestamp = %v, message = %v", r.Index, r.Timestamp, r .Attachments)
+		for _, r := range reports {
+			framework.Logf("index = %03d, timestamp = %v, message = %v", r.Index, r.Timestamp, r.Attachments)
 		}
 	})
+})
 
-	ginkgo.When("operation", ginkgo.Ordered, func() {
-		ginkgo.BeforeAll(func() {
-			ginkgo.By("Waiting 3s")
-			time.Sleep(3 * time.Second)
-		})
+var _ = framework.OrderedDescribe("[group:stable]", func() {
+	ginkgo.BeforeAll(func() {
+		ginkgo.By("Waiting 3s")
+		time.Sleep(3 * time.Second)
+	})
 
-		ginkgo.AfterAll(func() {
-			ginkgo.By("Waiting 3s")
-			time.Sleep(3 * time.Second)
-		})
+	ginkgo.AfterAll(func() {
+		ginkgo.By("Waiting 3s")
+		time.Sleep(3 * time.Second)
 
-		framework.DisruptiveIt("wip test demo 1", func() {
-			ginkgo.By("demo 1 - sleep 2s")
-			time.Sleep(2 * time.Second)
-		})
+		ginkgo.By("Notify ginkgo process exit")
+		reply := &struct{}{}
+		err := rpc.Call(rpcAddr, "RPCNotify.ProcessExit", struct{}{}, reply)
+		framework.ExpectNoError(err)
+	})
 
-		framework.DisruptiveIt("wip test demo 2", func() {
-			ginkgo.By("demo 2 - sleep 3s")
-			time.Sleep(3 * time.Second)
-		})
+	framework.DisruptiveIt("wip test demo 1", func() {
+		ginkgo.By("demo 1 - sleep 2s")
+		time.Sleep(2 * time.Second)
+	})
 
-		framework.DisruptiveIt("wip test demo 3", func() {
-			ginkgo.By("demo 3 - sleep 4s")
-			time.Sleep(4 * time.Second)
-		})
+	framework.DisruptiveIt("wip test demo 2", func() {
+		ginkgo.By("demo 2 - sleep 3s")
+		time.Sleep(3 * time.Second)
+	})
+
+	framework.DisruptiveIt("wip test demo 3", func() {
+		ginkgo.By("demo 3 - sleep 4s")
+		time.Sleep(4 * time.Second)
 	})
 })

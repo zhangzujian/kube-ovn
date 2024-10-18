@@ -9,7 +9,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
-type Result struct {
+type Report struct {
 	Index     int
 	Timestamp time.Time `json:"timestamp"`
 	*hrp.StepResult
@@ -19,10 +19,10 @@ func init() {
 	zerolog.SetGlobalLevel(zerolog.WarnLevel)
 }
 
-func runCaseOnce(runner *hrp.CaseRunner) (failure *Result) {
+func runCaseOnce(runner *hrp.CaseRunner) (failure *Report) {
 	session := runner.NewSession()
 	startTime := time.Now()
-	failure = &Result{
+	failure = &Report{
 		Timestamp: startTime,
 		StepResult: &hrp.StepResult{
 			Success:   false,
@@ -49,6 +49,7 @@ func runCaseOnce(runner *hrp.CaseRunner) (failure *Result) {
 			failure.Elapsed = int64(time.Since(startTime).Milliseconds())
 			failure.Attachments = "unexpected empty summary records"
 		}
+		return
 	}
 
 	if len(summary.Records) != 1 {
@@ -56,14 +57,10 @@ func runCaseOnce(runner *hrp.CaseRunner) (failure *Result) {
 		failure.Attachments = fmt.Sprintf("record count should be 1, but got %#v", summary.Records)
 	}
 
-	return
+	return nil
 }
 
-func Loop(t *testing.T, name, url, method string, count, interval, requestTimeout, expectedStatusCode int) ([]*Result, error) {
-	return LoopUntil(t, name, url, method, interval, requestTimeout, expectedStatusCode, nil, count)
-}
-
-func LoopUntil(t *testing.T, name, url, method string, interval, requestTimeout, expectedStatusCode int, until func() bool, maxCount int) ([]*Result, error) {
+func Loop(t *testing.T, name, url, method string, count, interval, requestTimeout, expectedStatusCode int, stopCh <-chan struct{}) ([]*Report, error) {
 	tc := &hrp.TestCase{
 		Config: hrp.NewConfig(name).SetRequestTimeout(float32(requestTimeout) / 1000),
 		TestSteps: []hrp.IStep{
@@ -76,19 +73,23 @@ func LoopUntil(t *testing.T, name, url, method string, interval, requestTimeout,
 		return nil, fmt.Errorf("failed to create new case runner: %w", err)
 	}
 
-	var failures []*Result
-	for i := 0; i < maxCount; i++ {
+	var failures []*Report
+LOOP:
+	for i := 0; i < count; i++ {
+		if stopCh != nil {
+			select {
+			case <-stopCh:
+				break LOOP
+			default:
+			}
+		}
+
 		result := runCaseOnce(runner)
-		result.Index, result.Name = i, name
-		finished := until()
 		if result != nil {
+			result.Index, result.Name = i, name
 			failures = append(failures, result)
 		} else {
 			time.Sleep(time.Now().Add(time.Duration(interval) * time.Millisecond).Sub(time.Now()))
-		}
-
-		if finished {
-			break
 		}
 	}
 
