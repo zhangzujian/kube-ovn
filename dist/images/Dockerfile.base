@@ -60,7 +60,7 @@ RUN cd /usr/src/ && git clone -b branch-24.03 --depth=1 https://github.com/ovn-o
     curl -s https://github.com/kubeovn/ovn/commit/cf6ba220851ae13de76473b6569097bb70ec76d8.patch | git apply && \
     # ovn-controller: make activation strategy work for single chassis
     curl -s https://github.com/kubeovn/ovn/commit/487cd1c6c0cc9def7cedaaaf3dd4bc99c23974c4.patch | git apply && \
-    curl -s https://github.com/kubeovn/ovn/commit/452dee23139dd2bcf3961e9e0648d4870d313524.patch | git apply
+    curl -s https://github.com/kubeovn/ovn/commit/2f3d9e32bf5677cdb72225f743177305b8b5b4bf.patch | git apply
 
 RUN apt install -y build-essential fakeroot \
     autoconf automake bzip2 debhelper-compat dh-exec dh-python dh-sequence-python3 dh-sequence-sphinxdoc \
