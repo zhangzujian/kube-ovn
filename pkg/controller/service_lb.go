@@ -195,9 +195,9 @@ func (c *Controller) getLbSvcPod(svcName, svcNamespace string) (*corev1.Pod, err
 	case len(pods) == 0:
 		time.Sleep(2 * time.Second)
 		return nil, fmt.Errorf("pod of deployment %s/%s not found", svcNamespace, genLbSvcDpName(svcName))
-	case len(pods) != 1:
-		time.Sleep(2 * time.Second)
-		return nil, errors.New("too many pods")
+	// case len(pods) != 1:
+	// 	time.Sleep(2 * time.Second)
+	// 	return nil, errors.New("too many pods")
 	case pods[0].Status.Phase != corev1.PodRunning:
 		time.Sleep(2 * time.Second)
 		return nil, fmt.Errorf("pod %s/%s is not running", pods[0].Namespace, pods[0].Name)

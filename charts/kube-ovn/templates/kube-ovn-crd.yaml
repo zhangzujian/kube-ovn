@@ -528,6 +528,17 @@ spec:
                       type: array
                       items:
                         type: string
+                bfd:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                    minRX:
+                      type: integer
+                    minTX:
+                      type: integer
+                    multiplier:
+                      type: integer
                 tolerations:
                   type: array
                   items:

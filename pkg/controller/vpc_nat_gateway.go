@@ -755,7 +755,11 @@ func (c *Controller) genNatGwStatefulSet(gw *kubeovnv1.VpcNatGateway, oldSts *v1
 		util.VpcNatGatewayAnnotation:     gw.Name,
 		util.AttachmentNetworkAnnotation: fmt.Sprintf("%s/%s", c.config.PodNamespace, externalNetworkNad),
 		util.LogicalSwitchAnnotation:     gw.Spec.Subnet,
-		util.IPAddressAnnotation:         gw.Spec.LanIP,
+	}
+	if strings.ContainsAny(gw.Spec.LanIP, ",;") {
+		podAnnotations[util.IPPoolAnnotation] = gw.Spec.LanIP
+	} else {
+		podAnnotations[util.IPAddressAnnotation] = gw.Spec.LanIP
 	}
 
 	// Add an interface that can reach the API server, we need access to it to probe Kube-OVN resources
@@ -768,6 +772,9 @@ func (c *Controller) genNatGwStatefulSet(gw *kubeovnv1.VpcNatGateway, oldSts *v1
 
 	for key, value := range podAnnotations {
 		annotations[key] = value
+		if key == util.IPPoolAnnotation {
+			delete(annotations, util.IPAddressAnnotation)
+		}
 	}
 
 	subnets, err := c.subnetsLister.List(labels.Everything())
@@ -980,6 +987,29 @@ func (c *Controller) genNatGwStatefulSet(gw *kubeovnv1.VpcNatGateway, oldSts *v1
 		}
 
 		sts.Spec.Template.Spec.Containers = append(containers, speakerContainer)
+	}
+
+	if gw.Spec.BFD.Enabled {
+		sts.Spec.Template.Spec.Containers = append(sts.Spec.Template.Spec.Containers, corev1.Container{
+			Name:            "bfd",
+			Image:           "docker.io/kubeovn/kube-ovn:dev",
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command: []string{
+				"sh", "-xc",
+				"bfdd-beacon", "--listen=${POD_IP}",
+			},
+			Env: []corev1.EnvVar{
+				{
+					Name: "POD_IP",
+					ValueFrom: &corev1.EnvVarSource{
+						FieldRef: &corev1.ObjectFieldSelector{
+							FieldPath: "status.podIP",
+						},
+					},
+				},
+			},
+			// TODO: add liveness/readiness probes
+		})
 	}
 
 	return sts, nil

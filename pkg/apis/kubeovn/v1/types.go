@@ -529,6 +529,7 @@ type VpcNatSpec struct {
 	Affinity        corev1.Affinity     `json:"affinity"`
 	QoSPolicy       string              `json:"qosPolicy"`
 	BgpSpeaker      VpcBgpSpeaker       `json:"bgpSpeaker"`
+	BFD             VpcBFD              `json:"bfd"`
 }
 
 type VpcBgpSpeaker struct {
@@ -541,6 +542,13 @@ type VpcBgpSpeaker struct {
 	Password              string          `json:"password"`
 	EnableGracefulRestart bool            `json:"enableGracefulRestart"`
 	ExtraArgs             []string        `json:"extraArgs"`
+}
+
+type VpcBFD struct {
+	Enabled    bool   `json:"enabled"`
+	MinRX      uint32 `json:"minRX"`
+	MinTX      uint32 `json:"minTX"`
+	Multiplier uint32 `json:"multiplier"`
 }
 
 type VpcNatStatus struct {
