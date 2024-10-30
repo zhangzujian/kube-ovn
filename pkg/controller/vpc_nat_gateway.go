@@ -759,7 +759,7 @@ func (c *Controller) genNatGwStatefulSet(gw *kubeovnv1.VpcNatGateway, oldSts *v1
 	}
 
 	// Add an interface that can reach the API server, we need access to it to probe Kube-OVN resources
-	if gw.Spec.BgpSpeaker.Enabled {
+	if gw.Spec.BgpSpeaker.Enabled && gw.Spec.Vpc != c.config.ClusterRouter {
 		if err := c.setNatGwAPIAccess(podAnnotations, externalNetworkNad); err != nil {
 			klog.Error(err)
 			return nil, err
@@ -847,7 +847,7 @@ func (c *Controller) genNatGwStatefulSet(gw *kubeovnv1.VpcNatGateway, oldSts *v1
 			Labels: labels,
 		},
 		Spec: v1.StatefulSetSpec{
-			Replicas: ptr.To(int32(1)),
+			Replicas: ptr.To(int32(2)),
 			Selector: &metav1.LabelSelector{
 				MatchLabels: labels,
 			},
