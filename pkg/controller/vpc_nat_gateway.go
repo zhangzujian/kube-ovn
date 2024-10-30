@@ -994,10 +994,7 @@ func (c *Controller) genNatGwStatefulSet(gw *kubeovnv1.VpcNatGateway, oldSts *v1
 			Name:            "bfd",
 			Image:           "docker.io/kubeovn/kube-ovn:dev",
 			ImagePullPolicy: corev1.PullIfNotPresent,
-			Command: []string{
-				"sh", "-xc",
-				"bfdd-beacon", "--listen=${POD_IP}",
-			},
+			Command:         []string{"sh", "-xc", "bfdd-beacon --nofork --listen=${POD_IP} --tee"},
 			Env: []corev1.EnvVar{
 				{
 					Name: "POD_IP",
@@ -1008,9 +1005,11 @@ func (c *Controller) genNatGwStatefulSet(gw *kubeovnv1.VpcNatGateway, oldSts *v1
 					},
 				},
 			},
-			// TODO: add liveness/readiness probes
+			// TODO: add liveness/readiness probes by executing bfdd-control version/status
 		})
 	}
+
+	// kubectl ko nbctl create bfd logical_port=lrp1 dst_ip=10.16.0.6 min_tx=100 min_rx=100 detect_mult=3
 
 	return sts, nil
 }
@@ -1040,9 +1039,9 @@ func (c *Controller) getNatGwPod(name string) (*corev1.Pod, error) {
 		return nil, err
 	case len(pods) == 0:
 		return nil, k8serrors.NewNotFound(v1.Resource("pod"), name)
-	case len(pods) != 1:
-		time.Sleep(5 * time.Second)
-		return nil, errors.New("too many pod")
+	// case len(pods) != 1:
+	// 	time.Sleep(5 * time.Second)
+	// 	return nil, errors.New("too many pod")
 	case pods[0].Status.Phase != corev1.PodRunning:
 		time.Sleep(5 * time.Second)
 		return nil, errors.New("pod is not active now")
