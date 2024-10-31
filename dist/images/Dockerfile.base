@@ -81,6 +81,7 @@ RUN cd /usr/src/ && git clone -b branch-24.03 --depth=1 https://github.com/ovn-o
 RUN cd /usr/src/ovn && curl -s https://github.com/kubeovn/ovn/commit/399a153572f19d2fb05de0b5f72bf8256bede7d4.patch | git apply
 RUN cd /usr/src/ovn && curl -s https://github.com/kubeovn/ovn/commit/8f41f3fe9cb7e01d9b8866b36487a6f7d94bfc1e.patch | git apply
 RUN cd /usr/src/ovn && curl -s https://github.com/kubeovn/ovn/commit/83577448203692834fce764af7e5887edc4e75a3.patch | git apply
+RUN cd /usr/src/ovn && curl -s https://github.com/kubeovn/ovn/commit/4a29dd2bf8f276d656887c2c55f141c9e41fab78.patch | git apply
 
 RUN cd /usr/src/ovn && \
     sed -i 's/OVN/ovn/g' debian/changelog && \
