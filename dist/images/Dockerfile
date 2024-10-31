@@ -1,6 +1,6 @@
 # syntax = docker/dockerfile:experimental
 ARG VERSION
-ARG BASE_TAG=$VERSION
+ARG BASE_TAG=$VERSION-amd64
 FROM kubeovn/kube-ovn-base:$BASE_TAG AS setcap
 
 COPY *.sh /kube-ovn/

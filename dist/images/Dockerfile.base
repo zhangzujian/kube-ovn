@@ -10,6 +10,15 @@ ENV SRC_DIR='/usr/src'
 
 RUN apt update && apt install -y git curl
 
+ARG http_proxy=http://192.168.73.1:8889
+
+RUN apt install -y build-essential fakeroot \
+    autoconf automake bzip2 debhelper-compat dh-exec dh-python dh-sequence-python3 dh-sequence-sphinxdoc \
+    graphviz iproute2 libcap-ng-dev libdbus-1-dev libnuma-dev libpcap-dev libssl-dev libtool libunbound-dev \
+    openssl pkg-config procps python3-all-dev python3-setuptools python3-sortedcontainers python3-sphinx
+
+ARG https_proxy=http://192.168.73.1:8889
+
 RUN cd /usr/src/ && \
     git clone -b branch-3.3 --depth=1 https://github.com/openvswitch/ovs.git && \
     cd ovs && \
@@ -33,6 +42,14 @@ RUN cd /usr/src/ && \
     curl -s https://github.com/kubeovn/ovs/commit/b7129150cb763d1fd081ee3c6f669da90d46b965.patch | git apply && \
     # increase the default probe interval for large cluster
     curl -s https://github.com/kubeovn/ovs/commit/7e894a0bda966e746f81b2ebe262a62cd91bf269.patch | git apply
+
+RUN cd /usr/src/ovs && \
+    ./boot.sh && \
+    ./configure && \
+    rm -rf .git && \
+    CONFIGURE_OPTS='CFLAGS="-fPIC"' && \
+    if [ "$ARCH" = "amd64" ] && [ "$LEGACY" != "true" ]; then CONFIGURE_OPTS='CFLAGS="-O2 -g -msse4.2 -mpopcnt -fPIC"'; fi && \
+    DATAPATH_CONFIGURE_OPTS='--prefix=/usr' EXTRA_CONFIGURE_OPTS=$CONFIGURE_OPTS make debian-deb
 
 RUN cd /usr/src/ && git clone -b branch-24.03 --depth=1 https://github.com/ovn-org/ovn.git && \
     cd ovn && \
@@ -59,21 +76,11 @@ RUN cd /usr/src/ && git clone -b branch-24.03 --depth=1 https://github.com/ovn-o
     # northd: skip arp/nd request for lrp addresses from localnet ports
     curl -s https://github.com/kubeovn/ovn/commit/cf6ba220851ae13de76473b6569097bb70ec76d8.patch | git apply && \
     # ovn-controller: make activation strategy work for single chassis
-    curl -s https://github.com/kubeovn/ovn/commit/487cd1c6c0cc9def7cedaaaf3dd4bc99c23974c4.patch | git apply && \
-    curl -s https://github.com/kubeovn/ovn/commit/2f3d9e32bf5677cdb72225f743177305b8b5b4bf.patch | git apply
-
-RUN apt install -y build-essential fakeroot \
-    autoconf automake bzip2 debhelper-compat dh-exec dh-python dh-sequence-python3 dh-sequence-sphinxdoc \
-    graphviz iproute2 libcap-ng-dev libdbus-1-dev libnuma-dev libpcap-dev libssl-dev libtool libunbound-dev \
-    openssl pkg-config procps python3-all-dev python3-setuptools python3-sortedcontainers python3-sphinx
-
-RUN cd /usr/src/ovs && \
-    ./boot.sh && \
-    ./configure && \
-    rm -rf .git && \
-    CONFIGURE_OPTS='CFLAGS="-fPIC"' && \
-    if [ "$ARCH" = "amd64" ] && [ "$LEGACY" != "true" ]; then CONFIGURE_OPTS='CFLAGS="-O2 -g -msse4.2 -mpopcnt -fPIC"'; fi && \
-    DATAPATH_CONFIGURE_OPTS='--prefix=/usr' EXTRA_CONFIGURE_OPTS=$CONFIGURE_OPTS make debian-deb
+    curl -s https://github.com/kubeovn/ovn/commit/487cd1c6c0cc9def7cedaaaf3dd4bc99c23974c4.patch | git apply
+    
+RUN cd /usr/src/ovn && curl -s https://github.com/kubeovn/ovn/commit/399a153572f19d2fb05de0b5f72bf8256bede7d4.patch | git apply
+RUN cd /usr/src/ovn && curl -s https://github.com/kubeovn/ovn/commit/8f41f3fe9cb7e01d9b8866b36487a6f7d94bfc1e.patch | git apply
+RUN cd /usr/src/ovn && curl -s https://github.com/kubeovn/ovn/commit/83577448203692834fce764af7e5887edc4e75a3.patch | git apply
 
 RUN cd /usr/src/ovn && \
     sed -i 's/OVN/ovn/g' debian/changelog && \
@@ -95,13 +102,19 @@ ARG ARCH
 ENV CNI_VERSION="v1.6.0"
 ENV KUBE_VERSION="v1.31.2"
 ENV GOBGP_VERSION="3.30.0"
+
 ENV TRIVY_DB_REPOSITORY="public.ecr.aws/aquasecurity/trivy-db:2"
 
+ARG https_proxy=http://192.168.73.1:8889
+
 RUN apk --no-cache add curl jq
+
 ADD go-deps/download-go-deps.sh /
 RUN sh -x /download-go-deps.sh
 
 FROM golang:$GO_VERSION-alpine AS go-deps
+
+ARG https_proxy=http://192.168.73.1:8889
 
 RUN apk --no-cache add bash curl jq
 ADD go-deps/rebuild-go-deps.sh /
@@ -139,6 +152,8 @@ RUN mkdir -p /var/run/openvswitch && \
     mkdir -p /var/run/ovn && \
     mkdir -p /etc/cni/net.d && \
     mkdir -p /opt/cni/bin
+
+ARG https_proxy=http://192.168.73.1:8889
 
 ARG DUMB_INIT_VERSION="1.2.5"
 RUN curl -sSf -L --retry 5 -o /usr/bin/dumb-init https://github.com/Yelp/dumb-init/releases/download/v${DUMB_INIT_VERSION}/dumb-init_${DUMB_INIT_VERSION}_$(arch) && \

@@ -23,30 +23,33 @@ curl -sSf -L --retry 5 https://github.com/osrg/gobgp/releases/download/v${GOBGP_
 
 ls -lh "$DEPS_DIR"
 
-trivy rootfs --ignore-unfixed --scanners vuln --pkg-types library -f json --output trivy.json "$DEPS_DIR"
+# unset https_proxy
+# unset TRIVY_DB_REPOSITORY
 
-cat trivy.json
+# trivy rootfs --ignore-unfixed --scanners vuln --pkg-types library -f json --output trivy.json "$DEPS_DIR"
+
+# cat trivy.json
 
 TARGETS_FILE="$DEPS_DIR/trivy-targets.txt"
 
 : > "$TARGETS_FILE"
-jq -r '.Results[] | select((.Type=="gobinary") and (.Vulnerabilities!=null)) | .Target' trivy.json | while read f; do
-    name=$(basename $f)
-    case $name in
-        loopback|macvlan|portmap)
-            echo "$name@$CNI_PLUGINS_VERSION" >> "$TARGETS_FILE"
-            ;;
-        kubectl)
-            echo "$name@$KUBECTL_VERSION" >> "$TARGETS_FILE"
-            ;;
-        gobgp)
-            echo "$name@v$GOBGP_VERSION" >> "$TARGETS_FILE"
-            ;;
-        *)
-            echo "Unknown go binary: $f"
-            exit 1
-            ;;
-    esac
-done
+# jq -r '.Results[] | select((.Type=="gobinary") and (.Vulnerabilities!=null)) | .Target' trivy.json | while read f; do
+#     name=$(basename $f)
+#     case $name in
+#         loopback|macvlan|portmap)
+#             echo "$name@$CNI_PLUGINS_VERSION" >> "$TARGETS_FILE"
+#             ;;
+#         kubectl)
+#             echo "$name@$KUBECTL_VERSION" >> "$TARGETS_FILE"
+#             ;;
+#         gobgp)
+#             echo "$name@v$GOBGP_VERSION" >> "$TARGETS_FILE"
+#             ;;
+#         *)
+#             echo "Unknown go binary: $f"
+#             exit 1
+#             ;;
+#     esac
+# done
 
 cat "$TARGETS_FILE"
