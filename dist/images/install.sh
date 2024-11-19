@@ -3910,7 +3910,6 @@ spec:
               add:
                 - NET_ADMIN
                 - NET_BIND_SERVICE
-                - SYS_MODULE
                 - SYS_NICE
                 - SYS_ADMIN
           env:
@@ -4526,7 +4525,6 @@ spec:
               - NET_BIND_SERVICE
               - NET_RAW
               - SYS_ADMIN
-              - SYS_MODULE
               - SYS_NICE
               - SYS_PTRACE
         env:
