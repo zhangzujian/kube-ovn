@@ -54,3 +54,5 @@ ovn-req.pem
 ovn-cert.pem
 ovn-privkey.pem
 anp-test-report.yaml
+ovn-nb.ovsschema
+ovn-sb.ovsschema

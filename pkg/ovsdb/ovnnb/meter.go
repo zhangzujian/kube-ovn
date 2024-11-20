@@ -9,7 +9,7 @@ type (
 	MeterUnit = string
 )
 
-var (
+const (
 	MeterUnitKbps  MeterUnit = "kbps"
 	MeterUnitPktps MeterUnit = "pktps"
 )

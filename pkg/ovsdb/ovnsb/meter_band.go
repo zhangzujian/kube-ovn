@@ -9,7 +9,9 @@ type (
 	MeterBandAction = string
 )
 
-var MeterBandActionDrop MeterBandAction = "drop"
+const (
+	MeterBandActionDrop MeterBandAction = "drop"
+)
 
 // MeterBand defines an object in Meter_Band table
 type MeterBand struct {

@@ -13,6 +13,7 @@ import (
 	netv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/ptr"
 	"k8s.io/utils/set"
 
 	v1alpha1 "sigs.k8s.io/network-policy-api/apis/v1alpha1"
@@ -37,7 +38,7 @@ func (c *OVNNbClient) UpdateIngressACLOps(pgName, asIngressName, asExceptName, p
 		options := func(acl *ovnnb.ACL) {
 			if logEnable {
 				acl.Log = true
-				acl.Severity = &ovnnb.ACLSeverityWarning
+				acl.Severity = ptr.To(ovnnb.ACLSeverityWarning)
 			}
 		}
 
@@ -92,7 +93,7 @@ func (c *OVNNbClient) UpdateEgressACLOps(pgName, asEgressName, asExceptName, pro
 		options := func(acl *ovnnb.ACL) {
 			if logEnable {
 				acl.Log = true
-				acl.Severity = &ovnnb.ACLSeverityWarning
+				acl.Severity = ptr.To(ovnnb.ACLSeverityWarning)
 			}
 
 			if acl.Options == nil {
@@ -542,7 +543,7 @@ func (c *OVNNbClient) SetLogicalSwitchPrivate(lsName, cidrBlock, nodeSwitchCIDR 
 	options := func(acl *ovnnb.ACL) {
 		acl.Name = &lsName
 		acl.Log = true
-		acl.Severity = &ovnnb.ACLSeverityWarning
+		acl.Severity = ptr.To(ovnnb.ACLSeverityWarning)
 	}
 
 	defaultDropACL, err := c.newACL(lsName, ovnnb.ACLDirectionToLport, util.DefaultDropPriority, allIPMatch.String(), ovnnb.ACLActionDrop, util.NetpolACLTier, options)
@@ -1344,7 +1345,7 @@ func (c *OVNNbClient) UpdateAnpRuleACLOps(pgName, asName, protocol, aclName stri
 			acl.Name = &aclName
 			acl.Log = true
 			if aclAction == ovnnb.ACLActionDrop {
-				acl.Severity = &ovnnb.ACLSeverityWarning
+				acl.Severity = ptr.To(ovnnb.ACLSeverityWarning)
 			}
 		}
 	}

@@ -9,7 +9,7 @@ type (
 	LogicalFlowPipeline = string
 )
 
-var (
+const (
 	LogicalFlowPipelineIngress LogicalFlowPipeline = "ingress"
 	LogicalFlowPipelineEgress  LogicalFlowPipeline = "egress"
 )

@@ -12,6 +12,7 @@ import (
 	netv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 	v1alpha1 "sigs.k8s.io/network-policy-api/apis/v1alpha1"
 
 	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
@@ -944,7 +945,7 @@ func (suite *OvnClientTestSuite) testSetACLLog() {
 		acl := newACL(pgName, ovnnb.ACLDirectionToLport, util.IngressDefaultDrop, match, ovnnb.ACLActionDrop, util.NetpolACLTier, func(acl *ovnnb.ACL) {
 			acl.Name = &pgName
 			acl.Log = true
-			acl.Severity = &ovnnb.ACLSeverityWarning
+			acl.Severity = ptr.To(ovnnb.ACLSeverityWarning)
 		})
 
 		err = nbClient.CreateAcls(pgName, portGroupKey, acl)
@@ -966,7 +967,7 @@ func (suite *OvnClientTestSuite) testSetACLLog() {
 		acl := newACL(pgName, ovnnb.ACLDirectionFromLport, util.IngressDefaultDrop, match, ovnnb.ACLActionDrop, util.NetpolACLTier, func(acl *ovnnb.ACL) {
 			acl.Name = &pgName
 			acl.Log = false
-			acl.Severity = &ovnnb.ACLSeverityWarning
+			acl.Severity = ptr.To(ovnnb.ACLSeverityWarning)
 		})
 
 		err = nbClient.CreateAcls(pgName, portGroupKey, acl)
@@ -1819,7 +1820,7 @@ func (suite *OvnClientTestSuite) testNewACL() {
 	match := "outport==@ovn.sg.test_create_acl_pg && ip"
 	options := func(acl *ovnnb.ACL) {
 		acl.Log = true
-		acl.Severity = &ovnnb.ACLSeverityWarning
+		acl.Severity = ptr.To(ovnnb.ACLSeverityWarning)
 		acl.Name = &pgName
 	}
 
@@ -1833,7 +1834,7 @@ func (suite *OvnClientTestSuite) testNewACL() {
 			aclParentKey: pgName,
 		},
 		Log:      true,
-		Severity: &ovnnb.ACLSeverityWarning,
+		Severity: ptr.To(ovnnb.ACLSeverityWarning),
 		Tier:     util.NetpolACLTier,
 	}
 

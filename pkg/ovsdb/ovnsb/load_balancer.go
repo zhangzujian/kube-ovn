@@ -9,7 +9,7 @@ type (
 	LoadBalancerProtocol = string
 )
 
-var (
+const (
 	LoadBalancerProtocolTCP  LoadBalancerProtocol = "tcp"
 	LoadBalancerProtocolUDP  LoadBalancerProtocol = "udp"
 	LoadBalancerProtocolSCTP LoadBalancerProtocol = "sctp"

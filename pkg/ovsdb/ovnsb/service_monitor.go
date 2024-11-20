@@ -10,7 +10,7 @@ type (
 	ServiceMonitorStatus   = string
 )
 
-var (
+const (
 	ServiceMonitorProtocolTCP   ServiceMonitorProtocol = "tcp"
 	ServiceMonitorProtocolUDP   ServiceMonitorProtocol = "udp"
 	ServiceMonitorStatusOnline  ServiceMonitorStatus   = "online"

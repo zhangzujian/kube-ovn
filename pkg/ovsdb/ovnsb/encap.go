@@ -9,7 +9,7 @@ type (
 	EncapType = string
 )
 
-var (
+const (
 	EncapTypeGeneve EncapType = "geneve"
 	EncapTypeSTT    EncapType = "stt"
 	EncapTypeVxlan  EncapType = "vxlan"

@@ -11,13 +11,13 @@ type (
 	ACLSeverity  = string
 )
 
-var (
+const (
 	ACLActionAllow          ACLAction    = "allow"
 	ACLActionAllowRelated   ACLAction    = "allow-related"
 	ACLActionAllowStateless ACLAction    = "allow-stateless"
 	ACLActionDrop           ACLAction    = "drop"
-	ACLActionPass           ACLAction    = "pass"
 	ACLActionReject         ACLAction    = "reject"
+	ACLActionPass           ACLAction    = "pass"
 	ACLDirectionFromLport   ACLDirection = "from-lport"
 	ACLDirectionToLport     ACLDirection = "to-lport"
 	ACLSeverityAlert        ACLSeverity  = "alert"

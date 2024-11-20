@@ -37,7 +37,7 @@ const (
 
 type SgPolicy string
 
-var (
+const (
 	PolicyAllow = SgPolicy(ovnnb.ACLActionAllow)
 	PolicyDrop  = SgPolicy(ovnnb.ACLActionDrop)
 )

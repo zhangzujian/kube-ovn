@@ -9,7 +9,7 @@ type (
 	NATType = string
 )
 
-var (
+const (
 	NATTypeDNAT        NATType = "dnat"
 	NATTypeSNAT        NATType = "snat"
 	NATTypeDNATAndSNAT NATType = "dnat_and_snat"

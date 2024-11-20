@@ -9,7 +9,7 @@ type (
 	LogicalRouterStaticRoutePolicy = string
 )
 
-var (
+const (
 	LogicalRouterStaticRoutePolicySrcIP LogicalRouterStaticRoutePolicy = "src-ip"
 	LogicalRouterStaticRoutePolicyDstIP LogicalRouterStaticRoutePolicy = "dst-ip"
 )

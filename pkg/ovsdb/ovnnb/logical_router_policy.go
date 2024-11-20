@@ -9,7 +9,7 @@ type (
 	LogicalRouterPolicyAction = string
 )
 
-var (
+const (
 	LogicalRouterPolicyActionAllow   LogicalRouterPolicyAction = "allow"
 	LogicalRouterPolicyActionDrop    LogicalRouterPolicyAction = "drop"
 	LogicalRouterPolicyActionReroute LogicalRouterPolicyAction = "reroute"

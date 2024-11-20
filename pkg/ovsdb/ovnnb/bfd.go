@@ -9,7 +9,7 @@ type (
 	BFDStatus = string
 )
 
-var (
+const (
 	BFDStatusDown      BFDStatus = "down"
 	BFDStatusInit      BFDStatus = "init"
 	BFDStatusUp        BFDStatus = "up"

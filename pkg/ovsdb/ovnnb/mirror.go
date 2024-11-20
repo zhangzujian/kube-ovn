@@ -10,7 +10,7 @@ type (
 	MirrorType   = string
 )
 
-var (
+const (
 	MirrorFilterFromLport MirrorFilter = "from-lport"
 	MirrorFilterToLport   MirrorFilter = "to-lport"
 	MirrorFilterBoth      MirrorFilter = "both"
