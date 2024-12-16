@@ -108,6 +108,10 @@ func (c *FakeKubeovnV1) VpcEgressGateways(namespace string) v1.VpcEgressGatewayI
 	return newFakeVpcEgressGateways(c, namespace)
 }
 
+func (c *FakeKubeovnV1) VpcGateways(namespace string) v1.VpcGatewayInterface {
+	return newFakeVpcGateways(c, namespace)
+}
+
 func (c *FakeKubeovnV1) VpcNatGateways() v1.VpcNatGatewayInterface {
 	return newFakeVpcNatGateways(c)
 }

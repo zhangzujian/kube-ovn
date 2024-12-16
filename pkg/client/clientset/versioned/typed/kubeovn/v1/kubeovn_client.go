@@ -48,6 +48,7 @@ type KubeovnV1Interface interface {
 	VpcsGetter
 	VpcDnsesGetter
 	VpcEgressGatewaysGetter
+	VpcGatewaysGetter
 	VpcNatGatewaysGetter
 }
 
@@ -134,6 +135,10 @@ func (c *KubeovnV1Client) VpcDnses() VpcDnsInterface {
 
 func (c *KubeovnV1Client) VpcEgressGateways(namespace string) VpcEgressGatewayInterface {
 	return newVpcEgressGateways(c, namespace)
+}
+
+func (c *KubeovnV1Client) VpcGateways(namespace string) VpcGatewayInterface {
+	return newVpcGateways(c, namespace)
 }
 
 func (c *KubeovnV1Client) VpcNatGateways() VpcNatGatewayInterface {
