@@ -294,7 +294,8 @@ define add_docker_iptables_rule
 endef
 
 define kind_create_cluster
-	kind create cluster --config $(1) --name $(2)
+	@unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY no_proxy NO_PROXY && \
+		kind create cluster --config $(1) --name $(2)
 	@if [ "x$(3)" = "x1" ]; then \
 		kubectl delete --ignore-not-found sc standard; \
 		kubectl delete --ignore-not-found -n local-path-storage deploy local-path-provisioner; \
