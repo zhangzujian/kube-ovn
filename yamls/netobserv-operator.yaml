@@ -9952,7 +9952,6 @@ kind: ValidatingWebhookConfiguration
 metadata:
   annotations:
     cert-manager.io/inject-ca-from: netobserv/netobserv-serving-cert
-  creationTimestamp: null
   labels:
     app.kubernetes.io/component: webhook
     app.kubernetes.io/created-by: netobserv-operator

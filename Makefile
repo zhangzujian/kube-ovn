@@ -67,6 +67,19 @@ SUBMARINER_LIGHTHOUSE_COREDNS = quay.io/submariner/lighthouse-coredns:$(SUBMARIN
 SUBMARINER_ROUTE_AGENT = quay.io/submariner/submariner-route-agent:$(SUBMARINER_VERSION)
 SUBMARINER_NETTEST = quay.io/submariner/nettest:$(SUBMARINER_VERSION)
 
+LOKI_VERSION = 3.3.1
+GRAFANA_VERSION = 11.4.0
+KUBE_RBAC_PROXY_VERSION = v0.18.2
+LOKI_IMAGE = grafana/loki:$(LOKI_VERSION)
+GRAFANA_IMAGE = grafana/grafana:$(GRAFANA_VERSION)
+KUBE_RBAC_PROXY_IMAGE = quay.io/brancz/kube-rbac-proxy:$(KUBE_RBAC_PROXY_VERSION)
+
+NETOBSERV_VERSION = 1.6.2-community
+NETOBSERV_OPERATOR_IMAGE = quay.io/netobserv/network-observability-operator:${NETOBSERV_VERSION}
+NETOBSERV_LOKI_NODE_PORT = 32100
+NETOBSERV_GRAFANA_NODE_PORT = 32000
+NETOBSERV_MAPPED_PORTS = $(NETOBSERV_LOKI_NODE_PORT),$(NETOBSERV_GRAFANA_NODE_PORT)
+
 KWOK_VERSION = v0.6.1
 KWOK_IMAGE = registry.k8s.io/kwok/kwok:$(KWOK_VERSION)
 
@@ -436,6 +449,11 @@ kind-init-cilium-chaining-%: kind-network-create-underlay
 kind-init-ovn-submariner: kind-clean-ovn-submariner kind-init
 	@pod_cidr_v4=10.18.0.0/16 svc_cidr_v4=10.112.0.0/12 $(MAKE) kind-generate-config
 	$(call kind_create_cluster,yamls/kind.yaml,kube-ovn1,1)
+
+.PHONY: kind-init-netobserv
+kind-init-netobserv: kind-clean
+	@mapped_ports=$(NETOBSERV_MAPPED_PORTS) $(MAKE) kind-generate-config
+	$(call kind_create_cluster,yamls/kind.yaml,kube-ovn,0)
 
 .PHONY: kind-init-iptables
 kind-init-iptables:
@@ -908,6 +926,20 @@ kind-install-bgp-ha: kind-install
 	kubectl -n kube-system rollout status ds kube-ovn-speaker --timeout 60s
 	docker exec clab-bgp-router-1 vtysh -c "show ip route bgp"
 	docker exec clab-bgp-router-2 vtysh -c "show ip route bgp"
+
+.PHONY: kind-install-netobserv
+kind-install-netobserv: kind-install-cert-manager
+	$(call kind_load_image,kube-ovn,$(KUBE_RBAC_PROXY_IMAGE),1)
+	$(call kind_load_image,kube-ovn,$(NETOBSERV_OPERATOR_IMAGE),1)
+	$(call kind_load_image,kube-ovn,$(LOKI_IMAGE),1)
+	$(call kind_load_image,kube-ovn,$(GRAFANA_IMAGE),1)
+	kubectl create namespace netobserv --dry-run=client -o yaml | kubectl apply -f -
+	kubectl apply --server-side -f yamls/netobserv-operator.yaml
+	kubectl -n netobserv rollout status deployment netobserv-controller-manager --timeout 180s
+	kubectl apply -f yamls/netobserv-loki.yaml
+	kubectl -n netobserv wait --for=condition=ready pod -l app=loki --timeout=180s 
+	kubectl apply -f yamls/netobserv-grafana.yaml
+	kubectl -n netobserv rollout status deployment grafana --timeout 180s
 
 .PHONY: kind-install-kwok
 kind-install-kwok:
