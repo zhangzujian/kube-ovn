@@ -67,17 +67,6 @@ SUBMARINER_LIGHTHOUSE_COREDNS = quay.io/submariner/lighthouse-coredns:$(SUBMARIN
 SUBMARINER_ROUTE_AGENT = quay.io/submariner/submariner-route-agent:$(SUBMARINER_VERSION)
 SUBMARINER_NETTEST = quay.io/submariner/nettest:$(SUBMARINER_VERSION)
 
-DEEPFLOW_VERSION = v6.4
-DEEPFLOW_CHART_VERSION = 6.4.013
-DEEPFLOW_CHART_REPO = https://deepflow-ce.oss-cn-beijing.aliyuncs.com/chart/stable
-DEEPFLOW_IMAGE_REPO = registry.cn-beijing.aliyuncs.com/deepflow-ce
-DEEPFLOW_SERVER_NODE_PORT = 30417
-DEEPFLOW_SERVER_GRPC_PORT = 30035
-DEEPFLOW_SERVER_HTTP_PORT = 20417
-DEEPFLOW_GRAFANA_NODE_PORT = 30080
-DEEPFLOW_MAPPED_PORTS = $(DEEPFLOW_SERVER_NODE_PORT),$(DEEPFLOW_SERVER_GRPC_PORT),$(DEEPFLOW_SERVER_HTTP_PORT),$(DEEPFLOW_GRAFANA_NODE_PORT)
-DEEPFLOW_CTL_URL = https://deepflow-ce.oss-cn-beijing.aliyuncs.com/bin/ctl/$(DEEPFLOW_VERSION)/linux/$(shell arch | sed 's|x86_64|amd64|' | sed 's|aarch64|arm64|')/deepflow-ctl
-
 KWOK_VERSION = v0.6.1
 KWOK_IMAGE = registry.k8s.io/kwok/kwok:$(KWOK_VERSION)
 
@@ -446,11 +435,6 @@ kind-init-cilium-chaining-%: kind-network-create-underlay
 kind-init-ovn-submariner: kind-clean-ovn-submariner kind-init
 	@pod_cidr_v4=10.18.0.0/16 svc_cidr_v4=10.112.0.0/12 $(MAKE) kind-generate-config
 	$(call kind_create_cluster,yamls/kind.yaml,kube-ovn1,1)
-
-.PHONY: kind-init-deepflow
-kind-init-deepflow: kind-clean
-	@mapped_ports=$(DEEPFLOW_MAPPED_PORTS) $(MAKE) kind-generate-config
-	$(call kind_create_cluster,yamls/kind.yaml,kube-ovn,0)
 
 .PHONY: kind-init-iptables
 kind-init-iptables:
@@ -837,8 +821,8 @@ kind-install-lb-svc:
 	@$(MAKE) ENABLE_LB_SVC=true CNI_CONFIG_PRIORITY=10 kind-install
 	@$(MAKE) kind-install-multus
 
-.PHONY: kind-install-webhook
-kind-install-webhook: kind-install
+.PHONY: kind-install-cert-manager
+kind-install-cert-manager:
 	$(call kind_load_image,kube-ovn,$(CERT_MANAGER_CONTROLLER),1)
 	$(call kind_load_image,kube-ovn,$(CERT_MANAGER_CAINJECTOR),1)
 	$(call kind_load_image,kube-ovn,$(CERT_MANAGER_WEBHOOK),1)
@@ -848,6 +832,8 @@ kind-install-webhook: kind-install
 	kubectl rollout status deployment/cert-manager-cainjector -n cert-manager --timeout 120s
 	kubectl rollout status deployment/cert-manager-webhook -n cert-manager --timeout 120s
 
+.PHONY: kind-install-webhook
+kind-install-webhook: kind-install-cert-manager
 	sed 's#image: .*#image: $(REGISTRY)/kube-ovn:$(VERSION)#' yamls/webhook.yaml | kubectl apply -f -
 	kubectl rollout status deployment/kube-ovn-webhook -n kube-system --timeout 120s
 
@@ -921,33 +907,6 @@ kind-install-bgp-ha: kind-install
 	kubectl -n kube-system rollout status ds kube-ovn-speaker --timeout 60s
 	docker exec clab-bgp-router-1 vtysh -c "show ip route bgp"
 	docker exec clab-bgp-router-2 vtysh -c "show ip route bgp"
-
-.PHONY: kind-install-deepflow
-kind-install-deepflow: kind-install
-	helm repo add deepflow $(DEEPFLOW_CHART_REPO)
-	helm repo update deepflow
-	$(eval CLICKHOUSE_PERSISTENCE = $(shell helm show values --version $(DEEPFLOW_CHART_VERSION) --jsonpath '{.clickhouse.storageConfig.persistence}' deepflow/deepflow | sed 's/0Gi/Gi/g'))
-	helm install deepflow deepflow/deepflow --wait \
-		--version $(DEEPFLOW_CHART_VERSION) \
-		--namespace deepflow \
-		--create-namespace \
-		--set global.image.repository=$(DEEPFLOW_IMAGE_REPO) \
-		--set global.image.pullPolicy=IfNotPresent \
-		--set deepflow-agent.clusterNAME=kind-kube-ovn \
-		--set grafana.image.registry=$(DEEPFLOW_IMAGE_REPO) \
-		--set grafana.image.pullPolicy=IfNotPresent \
-		--set grafana.service.nodePort=$(DEEPFLOW_GRAFANA_NODE_PORT) \
-		--set mysql.storageConfig.persistence.size=5Gi \
-		--set mysql.image.pullPolicy=IfNotPresent \
-		--set clickhouse.image.pullPolicy=IfNotPresent \
-		--set-json 'clickhouse.storageConfig.persistence=$(CLICKHOUSE_PERSISTENCE)'
-	echo -e "\nGrafana URL: http://127.0.0.1:$(DEEPFLOW_GRAFANA_NODE_PORT)\nGrafana auth: admin:deepflow\n"
-
-.PHONY: kind-install-deepflow-ctl
-kind-install-deepflow-ctl:
-	curl -so /usr/local/bin/deepflow-ctl $(DEEPFLOW_CTL_URL)
-	chmod a+x /usr/local/bin/deepflow-ctl
-	/usr/local/bin/deepflow-ctl -v
 
 .PHONY: kind-install-kwok
 kind-install-kwok:
