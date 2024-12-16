@@ -1948,9 +1948,11 @@ jobs:
           pipx install jinjanator
           make kind-init
 
-      - name: Install Kube-OVN with webhook
+      - name: Install Kube-OVN and webhook
         id: install
-        run: make kind-install-webhook
+        run: |
+          make kind-install
+          make kind-install-webhook
 
       - name: Run E2E
         id: e2e
