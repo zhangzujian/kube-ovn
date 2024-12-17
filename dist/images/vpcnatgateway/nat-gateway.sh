@@ -280,7 +280,7 @@ function eip_ingress_qos_add() {
         if [ "$?" -eq 0 ];then
             delete_tc_u32_filter $dev $qdisc_id $v4ip $matchDirection
         fi
-        exec_cmd "tc filter add dev $dev parent $qdisc_id protocol ip prio $priority u32 match ip $matchDirection $v4ip police rate "$rate"Mbit burst "$burst"Mb drop flowid :1"
+        exec_cmd "tc filter add dev $dev parent $qdisc_id protocol ip prio $priority u32 match ip $matchDirection $v4ip police rate "$rate"Mbit burst "$burst"Mbit drop flowid :1"
     done
 }
 
@@ -304,7 +304,7 @@ function eip_egress_qos_add() {
         if [ "$?" -eq 0 ];then
             delete_tc_u32_filter $dev $qdisc_id $v4ip $matchDirection
         fi
-        exec_cmd "tc filter add dev $dev parent $qdisc_id protocol ip prio $priority u32 match ip $matchDirection $v4ip police rate "$rate"Mbit burst "$burst"Mb drop flowid :1"
+        exec_cmd "tc filter add dev $dev parent $qdisc_id protocol ip prio $priority u32 match ip $matchDirection $v4ip police rate "$rate"Mbit burst "$burst"Mbit drop flowid :1"
     done
 }
 
@@ -334,12 +334,12 @@ function qos_add() {
         if [ "$classifierType" == "u32" ];then
             tc -p -s -d filter show dev $dev parent $qdisc_id | grep -w $cidr
             if [ "$?" -ne 0 ];then
-                exec_cmd "tc filter add dev $dev parent $qdisc_id protocol ip prio $priority u32 match $matchType $matchDirection $cidr police rate "$rate"Mbit burst "$burst"Mb drop flowid :1"
+                exec_cmd "tc filter add dev $dev parent $qdisc_id protocol ip prio $priority u32 match $matchType $matchDirection $cidr police rate "$rate"Mbit burst "$burst"Mbit drop flowid :1"
             fi
         elif [ "$classifierType" == "matchall" ];then
             tc -p -s -d filter show dev $dev parent $qdisc_id | grep -w matchall
             if [ "$?" -ne 0 ];then
-                exec_cmd "tc filter add dev $dev parent $qdisc_id protocol ip prio $priority matchall action police rate "$rate"Mbit burst "$burst"Mb drop flowid :1"
+                exec_cmd "tc filter add dev $dev parent $qdisc_id protocol ip prio $priority matchall action police rate "$rate"Mbit burst "$burst"Mbit drop flowid :1"
             fi
         fi
     done
