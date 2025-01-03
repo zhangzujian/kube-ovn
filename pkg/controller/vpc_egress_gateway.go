@@ -580,6 +580,7 @@ func (c *Controller) reconcileVpcEgressGatewayOVNRoutes(gw *kubeovnv1.VpcEgressG
 				matches.Delete(policy.Match)
 				continue
 			}
+			klog.Infof("deleting lr policy with priority = %d, match = %q amd nexthops = %v", policy.Priority, policy.Match, policy.Nexthops)
 			if err = c.OVNNbClient.DeleteLogicalRouterPolicyByUUID(lrName, policy.UUID); err != nil {
 				err = fmt.Errorf("failed to delete ovn lr policy %q: %w", policy.Match, err)
 				klog.Error(err)
@@ -588,6 +589,7 @@ func (c *Controller) reconcileVpcEgressGatewayOVNRoutes(gw *kubeovnv1.VpcEgressG
 		}
 		bfdSessions := bfdIDs.UnsortedList()
 		for _, match := range matches.UnsortedList() {
+			klog.Infof("adding lr policy with priority = %d, match = %q amd nexthops = %v", util.EgressGatewayPolicyPriority, match, nextHops.UnsortedList())
 			if err := c.OVNNbClient.AddLogicalRouterPolicy(lrName, util.EgressGatewayPolicyPriority, match,
 				ovnnb.LogicalRouterPolicyActionReroute, nextHops.UnsortedList(), bfdSessions, externalIDs); err != nil {
 				klog.Error(err)
