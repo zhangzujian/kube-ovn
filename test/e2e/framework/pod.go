@@ -174,6 +174,21 @@ func CheckPodEgressRoutes(ns, pod string, ipv4, ipv6 bool, ttl int, expectedHops
 
 			lines := strings.Split(strings.TrimSpace(output), "\n")
 			fields := strings.Fields(lines[len(lines)-1])
+			if !(len(fields) > 2 && slices.Contains(expectedHops, fields[1])) {
+				stdout, stderr, err := NBExec("ovn-nbctl", "lr-route-list", "ovn-cluster")
+				if err != nil {
+					Logf("Failed to run lr-route-list: %v, %s", err, stderr)
+				} else {
+					Logf("lr-route-list:\n%s", stdout)
+				}
+				stdout, stderr, err = NBExec("ovn-nbctl", "lr-policy-list", "ovn-cluster")
+				if err != nil {
+					Logf("Failed to run lr-roupolicyte-list: %v, %s", err, stderr)
+				} else {
+					Logf("lr-policy-list:\n%s", stdout)
+				}
+				return false, nil
+			}
 			return len(fields) > 2 && slices.Contains(expectedHops, fields[1]), nil
 		}, fmt.Sprintf("expected hops: %s", strings.Join(expectedHops, ", ")))
 	}
