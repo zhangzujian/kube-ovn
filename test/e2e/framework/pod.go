@@ -187,6 +187,12 @@ func CheckPodEgressRoutes(ns, pod string, ipv4, ipv6 bool, ttl int, expectedHops
 				} else {
 					Logf("lr-policy-list:\n%s", stdout)
 				}
+				stdout, stderr, err = NBExec("ovn-nbctl", "list", "bfd")
+				if err != nil {
+					Logf("Failed to list bfd: %v, %s", err, stderr)
+				} else {
+					Logf("ovn bfd:\n%s", stdout)
+				}
 				return false, nil
 			}
 			return len(fields) > 2 && slices.Contains(expectedHops, fields[1]), nil
