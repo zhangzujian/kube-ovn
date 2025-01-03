@@ -667,9 +667,6 @@ func (suite *OvnClientTestSuite) testDeleteRouterPolicy() {
 	require.NoError(t, err)
 	require.Len(t, policyList, 1)
 	require.Contains(t, lr.Policies, policyList[0].UUID)
-
-	err = nbClient.DeleteRouterPolicy(lr, policyList[0].UUID)
-	require.NoError(t, err)
 }
 
 func (suite *OvnClientTestSuite) testDeleteLogicalRouterPolicyByNexthop() {
