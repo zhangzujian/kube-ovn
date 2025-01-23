@@ -12,10 +12,12 @@ require (
 	github.com/containerd/containerd v1.7.22
 	github.com/containernetworking/cni v1.2.3
 	github.com/containernetworking/plugins v1.6.0
+	github.com/coredns/coredns v1.12.0
 	github.com/docker/docker v27.5.0+incompatible
 	github.com/emicklei/go-restful/v3 v3.12.1
 	github.com/evanphx/json-patch/v5 v5.9.0
 	github.com/go-logr/stdr v1.2.2
+	github.com/google/gopacket v1.1.19
 	github.com/google/uuid v1.6.0
 	github.com/httprunner/httprunner/v4 v4.3.7-0.20240124083022-402b74876a59
 	github.com/k8snetworkplumbingwg/network-attachment-definition-client v1.7.5
@@ -25,6 +27,8 @@ require (
 	github.com/kubeovn/gonetworkmanager/v2 v2.0.0-20230905082151-e28c4d73a589
 	github.com/kubeovn/ovsdb v0.0.0-20240410091831-5dd26006c475
 	github.com/mdlayher/arp v0.0.0-20220512170110-6706a2966875
+	github.com/mdlayher/packet v1.1.2
+	github.com/miekg/dns v1.1.62
 	github.com/moby/sys/mountinfo v0.7.2
 	github.com/onsi/ginkgo/v2 v2.22.2
 	github.com/onsi/gomega v1.36.2
@@ -42,6 +46,7 @@ require (
 	github.com/vishvananda/netlink v1.3.1-0.20240905180732-b1ce50cfa9be
 	go.uber.org/mock v0.5.0
 	golang.org/x/mod v0.22.0
+	golang.org/x/net v0.34.0
 	golang.org/x/sys v0.29.0
 	golang.org/x/time v0.9.0
 	golang.org/x/tools v0.29.0
@@ -93,6 +98,7 @@ require (
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/containerd/ttrpc v1.2.5 // indirect
 	github.com/containerd/typeurl/v2 v2.2.3 // indirect
+	github.com/coredns/caddy v1.1.2-0.20241029205200-8de985351a98 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
 	github.com/cyphar/filepath-securejoin v0.3.4 // indirect
@@ -111,6 +117,7 @@ require (
 	github.com/fatih/camelcase v1.0.0 // indirect
 	github.com/fatih/color v1.16.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
+	github.com/flynn/go-shlex v0.0.0-20150515145356-3f9db97f8568 // indirect
 	github.com/fsnotify/fsnotify v1.8.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
 	github.com/getsentry/sentry-go v0.13.0 // indirect
@@ -173,7 +180,6 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.14 // indirect
 	github.com/mdlayher/ethernet v0.0.0-20220221185849-529eae5b6118 // indirect
-	github.com/mdlayher/packet v1.1.2 // indirect
 	github.com/mdlayher/socket v0.5.1 // indirect
 	github.com/mistifyio/go-zfs v2.1.2-0.20190413222219-f784269be439+incompatible // indirect
 	github.com/mitchellh/go-testing-interface v1.14.1 // indirect
@@ -255,7 +261,6 @@ require (
 	gocv.io/x/gocv v0.39.0 // indirect
 	golang.org/x/crypto v0.32.0 // indirect
 	golang.org/x/exp v0.0.0-20250106191152-7588d65b2ba8 // indirect
-	golang.org/x/net v0.34.0 // indirect
 	golang.org/x/oauth2 v0.25.0 // indirect
 	golang.org/x/sync v0.10.0 // indirect
 	golang.org/x/term v0.28.0 // indirect
