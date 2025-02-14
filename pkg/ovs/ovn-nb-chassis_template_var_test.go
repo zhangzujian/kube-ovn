@@ -3,9 +3,11 @@ package ovs
 import (
 	"testing"
 
-	"github.com/kubeovn/kube-ovn/pkg/util"
-	"github.com/stretchr/testify/require"
 	"k8s.io/utils/ptr"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/kubeovn/kube-ovn/pkg/util"
 )
 
 func (suite *OvnClientTestSuite) testCreateChassisTemplateVar() {
