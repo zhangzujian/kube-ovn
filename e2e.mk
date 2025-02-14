@@ -7,7 +7,12 @@ E2E_IP_FAMILY := $(shell echo $${E2E_IP_FAMILY:-ipv4})
 E2E_NETWORK_MODE := $(shell echo $${E2E_NETWORK_MODE:-overlay})
 E2E_CILIUM_CHAINING = $(shell echo $${E2E_CILIUM_CHAINING:-false})
 
-K8S_CONFORMANCE_E2E_FOCUS = "sig-network.*Conformance" "sig-network.*Feature:NoSNAT"
+K8S_CONFORMANCE_E2E_FOCUS = "sig-network.*Conformance" "sig-network.*Feature:NoSNAT" \
+	"should preserve source pod IP for traffic thru service cluster IP" \
+	"should allow pods to hairpin back to themselves through services" \
+	"should be able to up and down services" \
+	"should work after the service has been recreated" \
+
 K8S_CONFORMANCE_E2E_SKIP =
 K8S_NETPOL_E2E_FOCUS = "sig-network.*Feature:NetworkPolicy"
 K8S_NETPOL_E2E_SKIP = "sig-network.*NetworkPolicyLegacy"
@@ -29,12 +34,14 @@ endif
 
 # support for internalTrafficPolicy=Local was added in v1.14
 ifeq ($(shell test $(VER_MAJOR) -gt 1 -o \( $(VER_MAJOR) -eq 1 -a $(VER_MINOR) -gt 13 \) && echo true),true)
-K8S_CONFORMANCE_E2E_FOCUS += "should respect internalTrafficPolicy=Local Pod to Pod"
+K8S_CONFORMANCE_E2E_FOCUS += "should respect internalTrafficPolicy=Local Pod to Pod" \
+	"should respect internalTrafficPolicy=Local Pod and Node, to Pod  (hostNetwork: true)"
 endif
 
 else
-K8S_CONFORMANCE_E2E_FOCUS += "sig-network.*Networking.*Feature:SCTPConnectivity"
-K8S_CONFORMANCE_E2E_FOCUS += "should respect internalTrafficPolicy=Local Pod to Pod"
+K8S_CONFORMANCE_E2E_FOCUS += "sig-network.*Networking.*Feature:SCTPConnectivity" \
+	"should respect internalTrafficPolicy=Local Pod to Pod" \
+	"should respect internalTrafficPolicy=Local Pod and Node, to Pod  (hostNetwork: true)"
 endif
 
 ifneq ($(E2E_IP_FAMILY),ipv6)
