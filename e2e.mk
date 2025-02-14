@@ -19,14 +19,22 @@ ifeq ($(shell echo $(E2E_BRANCH) | grep -o ^release-),release-)
 VERSION_NUM = $(subst release-,,$(E2E_BRANCH))
 VER_MAJOR = $(shell echo $(VERSION_NUM) | cut -f1 -d.)
 VER_MINOR = $(shell echo $(VERSION_NUM) | cut -f2 -d.)
+
 ifeq ($(shell test $(VER_MAJOR) -lt 1 -o \( $(VER_MAJOR) -eq 1 -a $(VER_MINOR) -lt 12 \) && echo true),true)
 K8S_CONFORMANCE_E2E_SKIP += "sig-network.*Services.*session affinity"
 K8S_CONFORMANCE_E2E_SKIP += "sig-network.*Feature:SCTPConnectivity"
 else
 K8S_CONFORMANCE_E2E_FOCUS += "sig-network.*Networking.*Feature:SCTPConnectivity"
 endif
+
+# support for internalTrafficPolicy=Local was added in v1.14
+ifeq ($(shell test $(VER_MAJOR) -gt 1 -o \( $(VER_MAJOR) -eq 1 -a $(VER_MINOR) -gt 13 \) && echo true),true)
+K8S_CONFORMANCE_E2E_FOCUS += "should respect internalTrafficPolicy=Local Pod to Pod"
+endif
+
 else
 K8S_CONFORMANCE_E2E_FOCUS += "sig-network.*Networking.*Feature:SCTPConnectivity"
+K8S_CONFORMANCE_E2E_FOCUS += "should respect internalTrafficPolicy=Local Pod to Pod"
 endif
 
 ifneq ($(E2E_IP_FAMILY),ipv6)
