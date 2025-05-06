@@ -8,7 +8,7 @@ ARG SRC_DIR='/usr/src'
 
 ADD patches/22ea22c40b46ee5adeae977ff6cfca81b3ff25d7.patch $SRC_DIR
 ADD patches/a432b1eb496cc1606873068c26716977a02029e2.patch $SRC_DIR
-ADD patches/38c59e078d69b343f56ab0f380fb9f42b94b7c02.patch $SRC_DIR
+ADD patches/f61283c8934589fe6de2b1e86041204dfc31a3e3.patch $SRC_DIR
 
 RUN apt update && apt install build-essential git libnuma-dev autoconf curl \
     python3 libmnl-dev libpcap-dev libtool libcap-ng-dev libssl-dev pkg-config \
