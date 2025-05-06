@@ -1,0 +1,24 @@
+From a432b1eb496cc1606873068c26716977a02029e2 Mon Sep 17 00:00:00 2001
+From: wanglong <wang.long@99cloud.net>
+Date: Mon, 15 Aug 2022 19:40:19 -0400
+Subject: [PATCH] add DKDK_NETDEV for ovn compile
+
+---
+ lib/dp-packet.h | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/lib/dp-packet.h b/lib/dp-packet.h
+index 55eeaab2ce8..3d689950a4f 100644
+--- a/lib/dp-packet.h
++++ b/lib/dp-packet.h
+@@ -20,6 +20,10 @@
+ #include <stddef.h>
+ #include <stdint.h>
+ 
++#ifndef DPDK_NETDEV
++#define DPDK_NETDEV 1
++#endif
++
+ #ifdef DPDK_NETDEV
+ #include <rte_config.h>
+ #include <rte_mbuf.h>
