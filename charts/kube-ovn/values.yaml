@@ -10,8 +10,6 @@ global:
       repository: kube-ovn
       vpcRepository: vpc-nat-gateway
       tag: v1.14.0
-      support_arm: true
-      thirdparty: true
 
 image:
   pullPolicy: IfNotPresent

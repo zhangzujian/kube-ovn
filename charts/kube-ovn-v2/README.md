@@ -730,9 +730,7 @@ false
   "images": {
     "kubeovn": {
       "repository": "kube-ovn",
-      "support_arm": true,
       "tag": "v1.14.0",
-      "thirdparty": true,
       "vpcRepository": "vpc-nat-gateway"
     }
   },

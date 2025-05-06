@@ -9,8 +9,6 @@ global:
       repository: kube-ovn
       vpcRepository: vpc-nat-gateway
       tag: v1.14.0
-      support_arm: true
-      thirdparty: true
 
 # -- Image configuration.
 # @section -- Global parameters
@@ -62,9 +60,6 @@ networking:
   # @section -- Network parameters of the CNI
   # @default -- "{}"
   pods:
-    # -- Name of the pod subnet once it gets generated in the cluster.
-    # @section -- Network parameters of the CNI
-    subnetName: "ovn-default"
     # -- CIDR used by the pods subnet.
     # @section -- Network parameters of the CNI
     # @default -- "{}"
@@ -75,22 +70,36 @@ networking:
       # -- IPv6 CIDR.
       # @section -- Network parameters of the CNI
       v6: "fd00:10:16::/112"
-    # -- Gateways used in the pod subnet.
-    # @section -- Network parameters of the CNI
-    # @default -- "{}"
-    gateways:
-      # -- IPv4 gateway.
+    # -- The default subnet once it gets generated in the cluster.
+    subnet:
+      # -- Name of the default subnet.
       # @section -- Network parameters of the CNI
-      v4: "10.16.0.1"
-      # -- IPv6 gateway.
+      name: "ovn-default"
+      # -- Gateways used used by the default subnet.
       # @section -- Network parameters of the CNI
-      v6: "fd00:10:16::1"
-    # -- Enable default gateway checks
-    # @section -- Network parameters of the CNI
-    enableGatewayChecks: true
-    # -- Enable logical gateways
-    # @section -- Network parameters of the CNI
-    enableLogicalGateways: false
+      # @default -- "{}"
+      gateways:
+        # -- IPv4 gateway.
+        # @section -- Network parameters of the CNI
+        v4: "10.16.0.1"
+        # -- IPv6 gateway.
+        # @section -- Network parameters of the CNI
+        v6: "fd00:10:16::1"
+        # -- Enable default gateway checks
+        # @section -- Network parameters of the CNI
+        enableGatewayCheck: true
+        # -- Enable logical gateways
+        # @section -- Network parameters of the CNI
+        logicalGateway: false
+      # -- Underlay configuration used by the default subnet
+      # @section -- Network parameters of the CNI
+      vlan:
+        providerName: "provider"
+        exchangeLinkName: false
+        interfaceName: ""
+        name: "ovn-vlan"
+        id: "100"
+
   # -- Configuration for the service subnet.
   # If .networking.stack is set to IPv4, only the .v4 key is used.
   # If .networking.stack is set to IPv6, only the .v6 key is used.
@@ -115,9 +124,11 @@ networking:
   # @section -- Network parameters of the CNI
   # @default -- "{}"
   join:
-    # -- Name of the join subnet once it gets generated in the cluster.
-    # @section -- Network parameters of the CNI
-    subnetName: "join"
+    # -- The join subnet once it gets generated in the cluster.
+    subnet:
+      # -- Name of the join subnet.
+      # @section -- Network parameters of the CNI
+      name: "join"
     # -- CIDR used by the join subnet.
     # @section -- Network parameters of the CNI
     # @default -- "{}"
@@ -135,7 +146,7 @@ networking:
   defaultVpcName: "ovn-cluster"
   # -- Deploy the CNI with SSL encryption in between components.
   # @section -- Network parameters of the CNI
-  enableSsl: false
+  enableSSL: false
   # -- Network type can be "geneve" or "vlan".
   # @section -- Network parameters of the CNI
   networkType: geneve
@@ -158,20 +169,9 @@ networking:
   # @section -- Network parameters of the CNI
   enableMetrics: true
 
-  # -- Configuration if we're running on top of a VLAN.
-  # @section -- Network parameters of the CNI
-  vlan:
-    providerName: "provider"
-    interfaceName: ""
-    name: "ovn-vlan"
-    id: "100"
-
   # -- ""
   # @section -- Network parameters of the CNI
-  exchangeLinkName: false
-  # -- ""
-  # @section -- Network parameters of the CNI
-  enableEcmp: false
+  enableECMP: false
   # -- ""
   # @section -- Network parameters of the CNI
   enableCompact: false
@@ -179,24 +179,24 @@ networking:
 # -- Features of Kube-OVN we wish to enable/disable.
 # @section -- Opt-in/out Features
 features:
-  # -- Enable Kube-OVN loadbalancers
+  # -- Enable OVN load Balancers
   # @section -- Opt-in/out Features
-  enableLoadbalancer: true
+  enableLoadBalancers: true
   # -- Enable Kube-OVN network policies
   # @section -- Opt-in/out Features
   enableNetworkPolicies: true
   # -- Enable external VPCs
   # @section -- Opt-in/out Features
-  enableExternalVpcs: true
+  enableExternalVPCs: true
   # -- Enable hardware offloads
   # @section -- Opt-in/out Features
   enableHardwareOffload: false
   # -- Enable Kube-OVN loadbalancer services
   # @section -- Opt-in/out Features
-  enableLoadbalancerService: false
+  enableLoadBalancerServices: false
   # -- Enable persistent VM IPs
   # @section -- Opt-in/out Features
-  enableKeepVmIps: true
+  enableKeepVirtualMachineIPs: true
   # -- Enable secure serving
   # @section -- Opt-in/out Features
   enableSecureServing: false
@@ -208,16 +208,16 @@ features:
   enableTproxy: false
   # -- Enable OVN interconnections
   # @section -- Opt-in/out Features
-  enableOvnInterconnections: false
+  enableOvnInterconnection: false
   # -- Enable NAT gateways
   # @section -- Opt-in/out Features
   enableNatGateways: true
   # -- Enable IPSEC
   # @section -- Opt-in/out Features
-  enableOvnIpsec: false
+  enableIPSec: false
   # -- Enable optimized live migrations for VMs
   # @section -- Opt-in/out Features
-  enableLiveMigrationOptimization: true
+  enableVMLiveMigrationOptimization: true
 
   ENABLE_BIND_LOCAL_IP: true
   LS_DNAT_MOD_DL_DST: true
@@ -274,10 +274,10 @@ validatingWebhook:
   # @section -- Validating webhook configuration
   podLabels: {}
 
-# -- Configuration for the NAT gateways.
-# @section -- NAT gateways configuration
+# -- Configuration for the VPC NAT gateways.
+# @section -- VPC NAT gateways configuration
 # @default -- "{}"
-natGw:
+vpcNATGateway:
   # -- Prefix appended to the name of the NAT gateways when generating the Pods.
   # If this value is changed after NAT GWs have been provisioned, every NAT gateway will need to be
   # manually destroyed and recreated.
