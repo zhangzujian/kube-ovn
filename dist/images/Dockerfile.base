@@ -2,6 +2,24 @@
 # renovate: datasource=golang-version depName=go
 ARG GO_VERSION=1.24.4
 
+FROM ubuntu:24.04 AS openssl-builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN sed -i 's/^Types: deb$/Types: deb deb-src/g' /etc/apt/sources.list.d/ubuntu.sources && \
+    apt update && \
+    apt install -y apt-src && \
+    apt-src update && \
+    apt-src install openssl && \
+    cd openssl-* && \
+    sed -i '/^CONFARGS/a CONFARGS += enable-fips' debian/rules && \
+    echo 'usr/lib/ssl/fipsmodule.cnf' >> debian/libssl3t64.install && \
+    DEB_BUILD_OPTIONS='nocheck' fakeroot debian/rules binary && \
+    mkdir /packages/ && \
+    cd - && \
+    cp /*.deb /packages && \
+    rm -fv /packages/*doc*
+
 FROM ubuntu:24.04 AS ovs-builder
 
 ARG ARCH
@@ -35,6 +53,9 @@ ADD patches/03e35ed9c5b4de0fa8acbc2c057cdd5957a8d605.patch $SRC_DIR
 ADD patches/b5e2975eb65f37315545300254fc0f58a9df52b1.patch $SRC_DIR
 ADD patches/e7d3ba53cdcbc524bb29c54ddb07b83cc4258ed7.patch $SRC_DIR
 ADD patches/a9e009136a42cf6d985f97e2bf1ec41df6b5ca29.patch $SRC_DIR
+
+RUN --mount=type=bind,target=/packages,from=openssl-builder,source=/packages \
+    dpkg -i /packages/*.deb
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
@@ -140,16 +161,6 @@ RUN cd /usr/src/openbfdd && \
     ./configure --enable-silent-rules && \
     make
 
-ENV OPENSSL_FIPS_LIBDIR=/usr/local/openssl-fips/lib
-ENV LD_LIBRARY_PATH=$OPENSSL_FIPS_LIBDIR:$LD_LIBRARY_PATH
-RUN wget https://www.openssl.org/source/openssl-3.0.13.tar.gz && \
-    tar -xzf openssl-3.0.13.tar.gz && \
-    cd openssl-3.0.13 && \
-    ./config --prefix=/usr/local/openssl-fips --libdir=lib enable-fips && \
-    make -j8 && \
-    make install && \
-    /usr/local/openssl-fips/bin/openssl fipsinstall -module $OPENSSL_FIPS_LIBDIR/ossl-modules/fips.so -out /usr/local/openssl-fips/ssl/fipsmodule.cnf
-
 RUN mkdir /packages/ && \
     mv /usr/src/openbfdd/bfdd-beacon /usr/src/openbfdd/bfdd-control /packages/ && \
     cp /usr/src/openvswitch-*deb /packages && \
@@ -181,6 +192,9 @@ RUN --mount=type=bind,target=/trivy,from=trivy,source=/godeps \
     bash -x /rebuild-go-deps.sh
 
 FROM ubuntu:24.04
+
+RUN --mount=type=bind,target=/packages,from=openssl-builder,source=/packages \
+    dpkg -i /packages/*.deb && dpkg --purge libssl-doc
 
 ARG DEBIAN_FRONTEND=noninteractive
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -226,7 +240,7 @@ RUN --mount=type=bind,target=/godeps,from=go-deps,source=/godeps \
 
 ARG DEBUG=false
 
-RUN --mount=type=bind,target=/packages,from=ovs-builder,source=/packages  \
+RUN --mount=type=bind,target=/packages,from=ovs-builder,source=/packages \
     cp /packages/bfdd-beacon /packages/bfdd-control /usr/bin/ && \
     cp /packages/ovs-sandbox /usr/bin/ && chmod +x /usr/bin/ovs-sandbox && \
     setcap CAP_NET_BIND_SERVICE+eip /usr/bin/bfdd-beacon && \
@@ -242,19 +256,6 @@ RUN --mount=type=bind,target=/packages,from=ovs-builder,source=/packages  \
         apt update && apt install -y --no-install-recommends gdb valgrind && \
         rm -rf /var/lib/apt/lists/* && \
         dpkg -i --ignore-depends=openvswitch-switch,openvswitch-common /packages/*.ddeb; \
-    fi
-
-RUN if [ "$ARCH" = "amd64" ]; then \
-      # env OPENSSL_CONF is only work when user is root, not effect when user is nobody, maybe openssl bug, so we copy openssl binary and libraries to /usr/bin and /usr/lib/x86_64-linux-gnu 
-      cp /usr/local/openssl-fips/bin/openssl /usr/bin/openssl && \
-      cp /usr/local/openssl-fips/lib/libssl.so.3 /usr/lib/x86_64-linux-gnu/libssl.so.3 && \
-      cp /usr/local/openssl-fips/lib/libcrypto.so.3 /usr/lib/x86_64-linux-gnu/libcrypto.so.3 && \
-      cp /usr/local/openssl-fips/lib/ossl-modules/fips.so /usr/lib/x86_64-linux-gnu/ossl-modules/; \
-    elif [ "$ARCH" = "arm64" ]; then \
-      cp /usr/local/openssl-fips/bin/openssl /usr/bin/openssl && \
-      cp /usr/local/openssl-fips/lib/libssl.so.3 /usr/lib/aarch64-linux-gnu/libssl.so.3 && \
-      cp /usr/local/openssl-fips/lib/libcrypto.so.3 /usr/lib/aarch64-linux-gnu/libcrypto.so.3 && \
-      cp /usr/local/openssl-fips/lib/ossl-modules/fips.so /usr/lib/aarch64-linux-gnu/ossl-modules/; \
     fi
 
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
