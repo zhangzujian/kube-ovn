@@ -261,6 +261,10 @@ RUN --mount=type=bind,target=/packages,from=ovs-builder,source=/packages \
 RUN --mount=type=bind,target=/packages,from=openssl-builder,source=/packages \
     dpkg -i /packages/*.deb && \
     openssl fipsinstall -out /usr/lib/ssl/fipsmodule.cnf -module $(find / -name fips.so) && \
-    sed -i --follow-symlinks -e '/^\[provider_sect\]/a fips = fips_sect' -e '$a \\n.include /usr/lib/ssl/fipsmodule.cnf' /usr/lib/ssl/openssl.cnf
+    sed -i --follow-symlinks \
+        -e '/^\[provider_sect\]/a fips = fips_sect' \
+        -e '/^\[default_sect\]/a activate = 1' \
+        -e '$a \\n.include /usr/lib/ssl/fipsmodule.cnf' \
+        /usr/lib/ssl/openssl.cnf
 
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
