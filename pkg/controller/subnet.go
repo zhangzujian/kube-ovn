@@ -33,7 +33,14 @@ import (
 )
 
 func (c *Controller) enqueueAddSubnet(obj any) {
-	key := cache.MetaObjectToName(obj.(*kubeovnv1.Subnet)).String()
+	subnet := obj.(*kubeovnv1.Subnet)
+	if !subnet.DeletionTimestamp.IsZero() {
+		klog.V(3).Infof("enqueue delete subnet %s", subnet.Name)
+		c.deleteSubnetQueue.Add(subnet)
+		return
+	}
+
+	key := cache.MetaObjectToName(subnet).String()
 	klog.V(3).Infof("enqueue add subnet %s", key)
 	c.addOrUpdateSubnetQueue.Add(key)
 }
