@@ -823,6 +823,66 @@ func (c *Controller) reconcileVpcEgressGatewayOVNRoutes(gw *kubeovnv1.VpcEgressG
 		}
 	}
 
+	// finally, reconcile static routes if the vpc is not the default one
+	if lrName != c.config.ClusterRouter {
+		// calculate the static routes for the egress gateway
+		// for cidr  := range sources {
+		// 	if util.CIDROverlap()
+		// }
+
+		// sources
+
+		// subnetNames.Delete("")
+		// cidrMap := make(map[string]string, subnetNames.Len())
+
+		// for _,
+
+		// for _, subnet := range subnets.UnsortedList() {
+		// 	s, err := c.subnetsLister.Get(subnet)
+		// 	if err != nil {
+		// 		klog.Error(err)
+		// 		return err
+		// 	}
+
+		// 	cidrV4, cidrV6 := util.SplitStringIP(s.Spec.CIDRBlock)
+		// 	gwV4, gwV6 := util.SplitStringIP(s.Spec.Gateway)
+		// 	if cidrV4 != "" && gwV4 != "" {
+		// 		if err = c.OVNNbClient.AddLogicalRouterStaticRoute(
+		// 			name, route.RouteTable, convertPolicy(route.Policy), route.CIDR, nil, nil, route.NextHopIP,
+		// 		); err != nil {
+		// 			klog.Errorf("failed to add normal static route to vpc %s , %v", name, err)
+		// 			return err
+		// 		}
+		// 	}
+		// }
+
+		routes, err := c.OVNNbClient.ListLogicalRouterStaticRoutes(lrName, nil, nil, "", externalIDs)
+		if err != nil {
+			klog.Error(err)
+			return err
+		}
+
+		// subnets.Delete("")
+		// for _, subnet := range subnets.UnsortedList() {
+		// 	s, err := c.subnetsLister.Get(subnet)
+		// 	if err != nil {
+		// 		klog.Error(err)
+		// 		return err
+		// 	}
+
+		// 	cidrV4, cidrV6 := util.SplitStringIP(s.Spec.CIDRBlock)
+		// 	gwV4, gwV6 := util.SplitStringIP(s.Spec.Gateway)
+		// 	if cidrV4 != "" && gwV4 != "" {
+		// 		if err = c.OVNNbClient.AddLogicalRouterStaticRoute(
+		// 			name, route.RouteTable, convertPolicy(route.Policy), route.CIDR, nil, nil, route.NextHopIP,
+		// 		); err != nil {
+		// 			klog.Errorf("failed to add normal static route to vpc %s , %v", name, err)
+		// 			return err
+		// 		}
+		// 	}
+		// }
+	}
+
 	return nil
 }
 
