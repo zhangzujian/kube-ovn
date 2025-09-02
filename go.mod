@@ -408,7 +408,7 @@ replace (
 	k8s.io/mount-utils => k8s.io/mount-utils v0.34.0
 	k8s.io/pod-security-admission => k8s.io/pod-security-admission v0.34.0
 	k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.34.0
-	kubevirt.io/client-go => github.com/kubeovn/kubevirt-client-go v0.0.0-20250902052910-7969b667173d
+	kubevirt.io/client-go => github.com/kubeovn/kubevirt-client-go v0.0.0-20250902065734-b1fa2304d8ab
 )
 
 tool go.uber.org/mock/mockgen
