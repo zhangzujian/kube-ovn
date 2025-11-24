@@ -154,7 +154,7 @@ func convertExcludeIps(excludeIps []string) IPRangeList {
 
 func splitRange(a, b *IPRange) IPRangeList {
 	if b.End.LessThan(a.Start) || b.Start.GreaterThan(a.End) {
-		return IPRangeList{a}
+		return IPRangeList{a.Clone()}
 	}
 
 	if (a.Start.Equal(b.Start) || a.Start.GreaterThan(b.Start)) &&
