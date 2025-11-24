@@ -14,6 +14,13 @@ type IPRange struct {
 	End   IP
 }
 
+func (ipr *IPRange) Clone() *IPRange {
+	return &IPRange{
+		Start: ipr.Start,
+		End:   ipr.End,
+	}
+}
+
 func (a IP) Equal(b IP) bool {
 	return a == b
 }
@@ -55,7 +62,7 @@ func splitIPRangeList(iprl IPRangeList, ip IP) (bool, IPRangeList) {
 	split := false
 	for _, ipr := range iprl {
 		if split {
-			newIPRangeList = append(newIPRangeList, ipr)
+			newIPRangeList = append(newIPRangeList, ipr.Clone())
 			continue
 		}
 
@@ -84,7 +91,7 @@ func splitIPRangeList(iprl IPRangeList, ip IP) (bool, IPRangeList) {
 			continue
 		}
 
-		newIPRangeList = append(newIPRangeList, ipr)
+		newIPRangeList = append(newIPRangeList, ipr.Clone())
 	}
 	return split, newIPRangeList
 }
@@ -98,12 +105,12 @@ func mergeIPRangeList(iprl IPRangeList, ip IP) (bool, IPRangeList) {
 
 	for _, ipr := range iprl {
 		if inserted || ipr.Start.LessThan(ip) {
-			insertIPRangeList = append(insertIPRangeList, ipr)
+			insertIPRangeList = append(insertIPRangeList, ipr.Clone())
 			continue
 		}
 
 		if ipr.Start.GreaterThan(ip) {
-			insertIPRangeList = append(insertIPRangeList, &IPRange{Start: ip, End: ip}, ipr)
+			insertIPRangeList = append(insertIPRangeList, &IPRange{Start: ip, End: ip}, ipr.Clone())
 			inserted = true
 			continue
 		}
@@ -116,14 +123,14 @@ func mergeIPRangeList(iprl IPRangeList, ip IP) (bool, IPRangeList) {
 	mergedIPRangeList := []*IPRange{}
 	for _, ipr := range insertIPRangeList {
 		if len(mergedIPRangeList) == 0 {
-			mergedIPRangeList = append(mergedIPRangeList, ipr)
+			mergedIPRangeList = append(mergedIPRangeList, ipr.Clone())
 			continue
 		}
 
 		if mergedIPRangeList[len(mergedIPRangeList)-1].End.Add(1).Equal(ipr.Start) {
 			mergedIPRangeList[len(mergedIPRangeList)-1].End = ipr.End
 		} else {
-			mergedIPRangeList = append(mergedIPRangeList, ipr)
+			mergedIPRangeList = append(mergedIPRangeList, ipr.Clone())
 		}
 	}
 
