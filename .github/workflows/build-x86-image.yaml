@@ -2965,7 +2965,9 @@ jobs:
 
       - name: Install Kube-OVN
         id: install
-        run: make kind-install-debug-valgrind-${{ matrix.ip-family }}
+        env:
+          UNTAINT_CONTROL_PLANE: "false"
+        run: n_worker=2 make kind-install-debug-valgrind-${{ matrix.ip-family }}
 
       - name: Install Multus
         run: make kind-install-multus

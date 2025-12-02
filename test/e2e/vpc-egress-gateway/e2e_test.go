@@ -472,6 +472,16 @@ func vegTest(f *framework.Framework, bfd bool, provider, nadName, vpcName, inter
 		SNAT:     false,
 		IPBlocks: strings.Split(forwardSubnet.Spec.CIDRBlock, ","),
 	}}
+	veg.Spec.NodeSelector = []apiv1.VpcEgressGatewayNodeSelector{{
+		MatchLabels: map[string]string{
+			controlPlaneLabel: "",
+		},
+	}}
+	veg.Spec.Tolerations = []corev1.Toleration{{
+		Key:      controlPlaneLabel,
+		Operator: corev1.TolerationOpExists,
+		Effect:   corev1.TaintEffectNoSchedule,
+	}}
 	if vpcName == util.DefaultVpc {
 		veg.Spec.VPC = "" // test whether the veg works without specifying VPC
 		veg.Spec.TrafficPolicy = apiv1.TrafficPolicyLocal
@@ -522,7 +532,27 @@ func vegTest(f *framework.Framework, bfd bool, provider, nadName, vpcName, inter
 	framework.ExpectHaveLen(workloadPods.Items, int(replicas))
 	podNodes := make([]string, 0, len(workloadPods.Items))
 	intIPs := make(map[string][]string, len(workloadPods.Items))
+	nodeSelector := &corev1.NodeSelector{}
+	for _, selector := range veg.Spec.NodeSelector {
+		matchExpressions := make([]corev1.NodeSelectorRequirement, 0, len(selector.MatchLabels))
+		for key, value := range selector.MatchLabels {
+			matchExpressions = append(matchExpressions, corev1.NodeSelectorRequirement{
+				Key:      key,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{value},
+			})
+		}
+		nodeSelector.NodeSelectorTerms = append(nodeSelector.NodeSelectorTerms, corev1.NodeSelectorTerm{
+			MatchExpressions: matchExpressions,
+		})
+	}
+	podAntiAffinity := &corev1.PodAffinityTerm{}
 	for _, pod := range workloadPods.Items {
+		framework.ExpectNil(pod.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution)
+		framework.ExpectEqual(pod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution, nodeSelector)
+		framework.ExpectEqual(pod.Spec.Affinity.PodAffinity, nil)
+		framework.ExpectEqual(pod.Spec.Affinity.PodAntiAffinity, nil)
+		framework.ExpectEqual(pod.Spec.Tolerations, veg.Spec.Tolerations)
 		framework.ExpectNotContainElement(podNodes, pod.Spec.NodeName)
 		podNodes = append(podNodes, pod.Spec.NodeName)
 		intIPs[pod.Spec.NodeName] = util.PodIPs(pod)
