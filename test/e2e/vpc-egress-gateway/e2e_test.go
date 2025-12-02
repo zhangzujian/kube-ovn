@@ -546,12 +546,16 @@ func vegTest(f *framework.Framework, bfd bool, provider, nadName, vpcName, inter
 			MatchExpressions: matchExpressions,
 		})
 	}
-	podAntiAffinity := &corev1.PodAffinityTerm{}
+	podAntiAffinity := &corev1.PodAffinityTerm{
+		LabelSelector: &metav1.LabelSelector{
+			MatchLabels: maps.Clone(deploy.Spec.Selector.MatchLabels),
+		},
+	}
 	for _, pod := range workloadPods.Items {
 		framework.ExpectNil(pod.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution)
 		framework.ExpectEqual(pod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution, nodeSelector)
 		framework.ExpectEqual(pod.Spec.Affinity.PodAffinity, nil)
-		framework.ExpectEqual(pod.Spec.Affinity.PodAntiAffinity, nil)
+		framework.ExpectEqual(pod.Spec.Affinity.PodAntiAffinity, podAntiAffinity)
 		framework.ExpectEqual(pod.Spec.Tolerations, veg.Spec.Tolerations)
 		framework.ExpectNotContainElement(podNodes, pod.Spec.NodeName)
 		podNodes = append(podNodes, pod.Spec.NodeName)
