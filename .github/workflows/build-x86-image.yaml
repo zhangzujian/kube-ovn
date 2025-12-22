@@ -515,7 +515,7 @@ jobs:
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          sudo ulimit -c unlimited
+          # sudo ulimit -c unlimited
           echo '/run/ovn/coredump/%e.%p' | sudo tee /proc/sys/kernel/core_pattern
           pipx install jinjanator
           make kind-init
