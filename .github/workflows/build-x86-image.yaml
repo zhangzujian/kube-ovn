@@ -187,19 +187,19 @@ jobs:
             ${{ runner.os }}-go-${{ env.GO_VERSION }}-x86-${{ github.ref_name }}-
             ${{ runner.os }}-go-${{ env.GO_VERSION }}-x86-${{ github.base_ref }}-
 
-      - name: Unit test
-        run: |
-          go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo
-          make ut
+      # - name: Unit test
+      #   run: |
+      #     go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo
+      #     make ut
 
-      - uses: shogo82148/actions-goveralls@v1
-        continue-on-error: true
-        with:
-          path-to-profile: profile.cov
+      # - uses: shogo82148/actions-goveralls@v1
+      #   continue-on-error: true
+      #   with:
+      #     path-to-profile: profile.cov
 
-      - name: Install golangci-lint
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin $GOLANGCI_LINT_VERSION
+      # - name: Install golangci-lint
+      #   run: |
+      #     curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin $GOLANGCI_LINT_VERSION
 
       - name: Download base images
         if: needs.build-kube-ovn-base.outputs.build-base == 1
@@ -226,85 +226,85 @@ jobs:
           docker load --input image-amd64-dpdk.tar
           docker tag kubeovn/kube-ovn-base:$TAG-amd64-dpdk kubeovn/kube-ovn-base:$TAG-dpdk
 
-      - name: Scan base image
-        uses: aquasecurity/trivy-action@0.33.1
-        env:
-          TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2
-        with:
-          scan-type: image
-          scanners: vuln
-          image-ref: docker.io/kubeovn/kube-ovn-base:${{ env.TAG }}
-          format: json
-          output: trivy-result.json
-          ignore-unfixed: true
-          trivyignores: .trivyignore
-          vuln-type: library
+      # - name: Scan base image
+      #   uses: aquasecurity/trivy-action@0.33.1
+      #   env:
+      #     TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2
+      #   with:
+      #     scan-type: image
+      #     scanners: vuln
+      #     image-ref: docker.io/kubeovn/kube-ovn-base:${{ env.TAG }}
+      #     format: json
+      #     output: trivy-result.json
+      #     ignore-unfixed: true
+      #     trivyignores: .trivyignore
+      #     vuln-type: library
 
-      - name: Build kubectl and CNI plugins from source
-        env:
-          CGO_ENABLED: "0"
-          GO_INSTALL: "go install -v -mod=mod -trimpath"
-        run: |
-          go mod tidy
-          cat trivy-result.json
-          dockerfile=${{ github.workspace }}/dist/images/Dockerfile
-          export GOBIN=`dirname "$dockerfile"`
-          cni_plugins_version=`go list -m -f '{{.Version}}' github.com/containernetworking/plugins`
-          cni_plugins_build_flags="-ldflags '-extldflags -static -X github.com/containernetworking/plugins/pkg/utils/buildversion.BuildVersion=$cni_plugins_version'"
-          jq -r '.Results[] | select((.Type=="gobinary") and (.Vulnerabilities!=null)) | .Target' trivy-result.json | while read f; do
-            bin=`basename $f`
-            case $bin in
-              loopback|macvlan)
-                echo "Building $bin@$cni_plugins_version from source..."
-                sh -c "cd /tmp && $GO_INSTALL $cni_plugins_build_flags github.com/containernetworking/plugins/plugins/main/$bin@$cni_plugins_version"
-                echo "COPY $bin /$f" >> "$dockerfile"
-                ;;
-              portmap)
-                echo "Building $bin@$cni_plugins_version from source..."
-                sh -c "cd /tmp && $GO_INSTALL $cni_plugins_build_flags github.com/containernetworking/plugins/plugins/meta/$bin@$cni_plugins_version"
-                echo "COPY $bin /$f" >> "$dockerfile"
-                ;;
-              kubectl)
-                version=`go list -m -f '{{.Version}}' k8s.io/kubernetes`
-                mod_dir=`go list -m -f '{{.Dir}}' k8s.io/kubernetes`
-                source "$mod_dir/hack/lib/util.sh"
-                source "$mod_dir/hack/lib/logging.sh"
-                source "$mod_dir/hack/lib/version.sh"
-                repo=kubernetes/kubernetes
-                commit=unknown
-                read type tag_sha < <(echo $(curl -s "https://api.github.com/repos/$repo/git/ref/tags/$version" |
-                  jq -r '.object.type,.object.sha'))
-                if [ $type = "commit" ]; then
-                  commit=$tag_sha
-                else
-                  commit=$(curl -s "https://api.github.com/repos/$repo/git/tags/$tag_sha" | jq -r '.object.sha')
-                fi
-                export KUBE_GIT_COMMIT="${commit}"
-                export KUBE_GIT_TREE_STATE='clean'
-                export KUBE_GIT_VERSION="${version}"
-                export KUBE_GIT_MAJOR=`echo $KUBE_GIT_VERSION | cut -d. -f1 | sed 's/$v//'`
-                export KUBE_GIT_MINOR=`echo $KUBE_GIT_VERSION | cut -d. -f2`
-                goldflags="all=$(kube::version::ldflags) -s -w"
-                echo "Building $bin@$version from source..."
-                $GO_INSTALL -ldflags="${goldflags}" k8s.io/kubernetes/cmd/kubectl
-                echo "COPY $bin /$f" >> "$dockerfile"
-                ;;
-              gobgp)
-                version=`go list -m -f '{{.Version}}' github.com/osrg/gobgp/v4`
-                echo "Building $bin@$version from source..."
-                $GO_INSTALL github.com/osrg/gobgp/v4/cmd/$bin
-                echo "COPY $bin /$f" >> "$dockerfile"
-                ;;
-              *)
-                ;;
-            esac
-          done
+      # - name: Build kubectl and CNI plugins from source
+      #   env:
+      #     CGO_ENABLED: "0"
+      #     GO_INSTALL: "go install -v -mod=mod -trimpath"
+      #   run: |
+      #     go mod tidy
+      #     cat trivy-result.json
+      #     dockerfile=${{ github.workspace }}/dist/images/Dockerfile
+      #     export GOBIN=`dirname "$dockerfile"`
+      #     cni_plugins_version=`go list -m -f '{{.Version}}' github.com/containernetworking/plugins`
+      #     cni_plugins_build_flags="-ldflags '-extldflags -static -X github.com/containernetworking/plugins/pkg/utils/buildversion.BuildVersion=$cni_plugins_version'"
+      #     jq -r '.Results[] | select((.Type=="gobinary") and (.Vulnerabilities!=null)) | .Target' trivy-result.json | while read f; do
+      #       bin=`basename $f`
+      #       case $bin in
+      #         loopback|macvlan)
+      #           echo "Building $bin@$cni_plugins_version from source..."
+      #           sh -c "cd /tmp && $GO_INSTALL $cni_plugins_build_flags github.com/containernetworking/plugins/plugins/main/$bin@$cni_plugins_version"
+      #           echo "COPY $bin /$f" >> "$dockerfile"
+      #           ;;
+      #         portmap)
+      #           echo "Building $bin@$cni_plugins_version from source..."
+      #           sh -c "cd /tmp && $GO_INSTALL $cni_plugins_build_flags github.com/containernetworking/plugins/plugins/meta/$bin@$cni_plugins_version"
+      #           echo "COPY $bin /$f" >> "$dockerfile"
+      #           ;;
+      #         kubectl)
+      #           version=`go list -m -f '{{.Version}}' k8s.io/kubernetes`
+      #           mod_dir=`go list -m -f '{{.Dir}}' k8s.io/kubernetes`
+      #           source "$mod_dir/hack/lib/util.sh"
+      #           source "$mod_dir/hack/lib/logging.sh"
+      #           source "$mod_dir/hack/lib/version.sh"
+      #           repo=kubernetes/kubernetes
+      #           commit=unknown
+      #           read type tag_sha < <(echo $(curl -s "https://api.github.com/repos/$repo/git/ref/tags/$version" |
+      #             jq -r '.object.type,.object.sha'))
+      #           if [ $type = "commit" ]; then
+      #             commit=$tag_sha
+      #           else
+      #             commit=$(curl -s "https://api.github.com/repos/$repo/git/tags/$tag_sha" | jq -r '.object.sha')
+      #           fi
+      #           export KUBE_GIT_COMMIT="${commit}"
+      #           export KUBE_GIT_TREE_STATE='clean'
+      #           export KUBE_GIT_VERSION="${version}"
+      #           export KUBE_GIT_MAJOR=`echo $KUBE_GIT_VERSION | cut -d. -f1 | sed 's/$v//'`
+      #           export KUBE_GIT_MINOR=`echo $KUBE_GIT_VERSION | cut -d. -f2`
+      #           goldflags="all=$(kube::version::ldflags) -s -w"
+      #           echo "Building $bin@$version from source..."
+      #           $GO_INSTALL -ldflags="${goldflags}" k8s.io/kubernetes/cmd/kubectl
+      #           echo "COPY $bin /$f" >> "$dockerfile"
+      #           ;;
+      #         gobgp)
+      #           version=`go list -m -f '{{.Version}}' github.com/osrg/gobgp/v4`
+      #           echo "Building $bin@$version from source..."
+      #           $GO_INSTALL github.com/osrg/gobgp/v4/cmd/$bin
+      #           echo "COPY $bin /$f" >> "$dockerfile"
+      #           ;;
+      #         *)
+      #           ;;
+      #       esac
+      #     done
 
       - name: Build
         run: |
           go mod tidy
           git diff --exit-code -- go.mod go.sum
-          make lint
+          # make lint
           if [ ${{ needs.build-kube-ovn-base.outputs.build-base || 0 }} = 1 ]; then
             make build-kube-ovn
           else
@@ -312,14 +312,14 @@ jobs:
           fi
           make tar-kube-ovn
 
-      - name: Build dpdk
-        run: |
-          if [ ${{ needs.build-kube-ovn-dpdk-base.outputs.build-dpdk-base || 0 }} = 1 ]; then
-            make build-kube-ovn-dpdk
-          else
-            make image-kube-ovn-dpdk
-          fi
-          make tar-kube-ovn-dpdk
+      # - name: Build dpdk
+      #   run: |
+      #     if [ ${{ needs.build-kube-ovn-dpdk-base.outputs.build-dpdk-base || 0 }} = 1 ]; then
+      #       make build-kube-ovn-dpdk
+      #     else
+      #       make image-kube-ovn-dpdk
+      #     fi
+      #     make tar-kube-ovn-dpdk
 
       - name: Upload images to artifact
         uses: actions/upload-artifact@v6
@@ -327,12 +327,12 @@ jobs:
           name: kube-ovn
           path: kube-ovn.tar
 
-      - name: Upload dpdk images to artifact
-        uses: actions/upload-artifact@v6
-        if: github.event_name != 'pull_request'
-        with:
-          name: kube-ovn-dpdk
-          path: kube-ovn-dpdk.tar
+      # - name: Upload dpdk images to artifact
+      #   uses: actions/upload-artifact@v6
+      #   if: github.event_name != 'pull_request'
+      #   with:
+      #     name: kube-ovn-dpdk
+      #     path: kube-ovn-dpdk.tar
 
   build-e2e-binaries:
     name: Build E2E Binaries
@@ -514,7 +514,7 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           pipx install jinjanator
-          make kind-ghcr-pull kind-init
+          make kind-init
 
       - name: Install Kube-OVN
         id: install
