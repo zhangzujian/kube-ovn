@@ -311,7 +311,7 @@ jobs:
           #   make image-kube-ovn
           # fi
           # make tar-kube-ovn
-          docker pull kubeovn/kube-ovn:v1.15.0-debug
+          # docker pull kubeovn/kube-ovn:v1.15.0-debug
 
       # - name: Build dpdk
       #   run: |
@@ -322,11 +322,11 @@ jobs:
       #     fi
       #     make tar-kube-ovn-dpdk
 
-      - name: Upload images to artifact
-        uses: actions/upload-artifact@v6
-        with:
-          name: kube-ovn
-          path: kube-ovn.tar
+      # - name: Upload images to artifact
+      #   uses: actions/upload-artifact@v6
+      #   with:
+      #     name: kube-ovn
+      #     path: kube-ovn.tar
 
       # - name: Upload dpdk images to artifact
       #   uses: actions/upload-artifact@v6
@@ -502,13 +502,14 @@ jobs:
         working-directory: ${{ env.E2E_DIR }}
         run: go install -v -mod=mod github.com/onsi/ginkgo/v2/ginkgo
 
-      - name: Download kube-ovn image
-        uses: actions/download-artifact@v7
-        with:
-          name: kube-ovn
+      # - name: Download kube-ovn image
+      #   uses: actions/download-artifact@v7
+      #   with:
+      #     name: kube-ovn
 
-      - name: Load images
-        run: docker load -i kube-ovn.tar
+      # - name: Load images
+      #   run: docker load -i kube-ovn.tar
+      - run: docker pull kubeovn/kube-ovn:v1.15.0-debug
 
       - name: Create kind cluster
         env:
