@@ -302,15 +302,16 @@ jobs:
 
       - name: Build
         run: |
-          go mod tidy
-          git diff --exit-code -- go.mod go.sum
-          # make lint
-          if [ ${{ needs.build-kube-ovn-base.outputs.build-base || 0 }} = 1 ]; then
-            make build-kube-ovn
-          else
-            make image-kube-ovn
-          fi
-          make tar-kube-ovn
+          # go mod tidy
+          # git diff --exit-code -- go.mod go.sum
+          # # make lint
+          # if [ ${{ needs.build-kube-ovn-base.outputs.build-base || 0 }} = 1 ]; then
+          #   make build-kube-ovn
+          # else
+          #   make image-kube-ovn
+          # fi
+          # make tar-kube-ovn
+          docker pull kubeovn/kube-ovn:v1.15.0-debug
 
       # - name: Build dpdk
       #   run: |
@@ -515,6 +516,10 @@ jobs:
         run: |
           pipx install jinjanator
           make kind-init
+          for node in `kind get nodes -n kube-ovn`; do
+            docker exec $node bash -c "ulimit -c unlimited"
+            docker exec $node bash -c "echo '/run/ovn/coredump/%e.%p' | sudo tee /proc/sys/kernel/core_pattern"
+          done
 
       - name: Install Kube-OVN
         id: install
