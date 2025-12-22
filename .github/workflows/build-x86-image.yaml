@@ -578,6 +578,7 @@ jobs:
         run: |
           make kubectl-ko-log
           mv kubectl-ko-log.tar.gz ovn-vpc-nat-gw-conformance-e2e-ko-log.tar.gz
+          ls -lh /run/ovn
 
       - name: upload kubectl ko log
         uses: actions/upload-artifact@v6
