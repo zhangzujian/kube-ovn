@@ -515,11 +515,12 @@ jobs:
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # echo '/run/ovn/coredump/%e.%p' | sudo tee /proc/sys/kernel/core_pattern
           pipx install jinjanator
           make kind-init
-          for node in `kind get nodes -n kube-ovn`; do
-            docker exec $node bash -c "ulimit -c unlimited"
-            docker exec $node bash -c "echo '/run/ovn/coredump/%e.%p' | sudo tee /proc/sys/kernel/core_pattern"
+          for node in `kind get nodes -n kube-ovn`; do \
+            docker exec $node bash -c "ulimit -c unlimited"; \
+            docker exec $node bash -c "echo '/run/ovn/coredump/%e.%p' | tee /proc/sys/kernel/core_pattern"; \
           done
 
       - name: Install Kube-OVN
