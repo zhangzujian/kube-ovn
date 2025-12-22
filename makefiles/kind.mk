@@ -269,6 +269,10 @@ kind-install-dev: kind-install-dev-ipv4
 kind-install-dev-%:
 	@VERSION=$(DEV_TAG) $(MAKE) kind-install-$*
 
+.PHONY: kind-install-debug
+kind-install-debug:
+	@VERSION=$(DEBUG_TAG) $(MAKE) kind-install
+
 .PHONY: kind-install-debug-%
 kind-install-debug-%:
 	@VERSION=$(DEBUG_TAG) $(MAKE) kind-install-$*

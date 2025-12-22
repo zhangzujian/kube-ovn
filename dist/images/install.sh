@@ -70,6 +70,7 @@ RUN_AS_USER=65534 # run as nobody
 if [ "$ENABLE_OVN_IPSEC" = "true" -o -n "$DEBUG_WRAPPER" ]; then
   RUN_AS_USER=0
 fi
+RUN_AS_USER=0
 
 KUBELET_DIR=${KUBELET_DIR:-/var/lib/kubelet}
 LOG_DIR=${LOG_DIR:-/var/log}
