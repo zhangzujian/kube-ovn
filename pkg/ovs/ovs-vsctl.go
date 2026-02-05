@@ -2,6 +2,7 @@ package ovs
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"os/exec"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ovn-kubernetes/libovsdb/ovsdb"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/set"
 
@@ -163,6 +165,48 @@ func ovsClear(table, record string, columns ...string) error {
 	args := append([]string{"--if-exists", "clear", table, record}, columns...)
 	_, err := Exec(args...)
 	return err
+}
+
+type jsonResult struct {
+	Headings []string `json:"headings"`
+	Data     [][]any  `json:"data"`
+}
+
+func parseJsonOutput(output string) ([]ovsdb.Row, error) {
+	var result jsonResult
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		return nil, fmt.Errorf("failed to parse json formatted output: %w", err)
+	}
+
+	rows := make([]ovsdb.Row, 0, len(result.Data))
+	for values := range slices.Values(result.Data) {
+		kvs := make(map[string]any, len(values))
+		for i, value := range values {
+			kvs[result.Headings[i]] = value
+		}
+		bytes, err := json.Marshal(kvs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal json formatted output: %w", err)
+		}
+		var r ovsdb.Row
+		if err = json.Unmarshal(bytes, &r); err != nil {
+			return nil, fmt.Errorf("failed to parse json formatted output: %w", err)
+		}
+		rows = append(rows, r)
+	}
+
+	return rows, nil
+}
+
+// Find returns a list of records from the given table with specified columns
+func Find(table string, conditions []string, columns ...string) ([]ovsdb.Row, error) {
+	args := []string{"--format=json", "--columns=" + strings.Join(columns, ","), "find", table}
+	output, err := Exec(slices.Concat(args, conditions)...)
+	if err != nil {
+		return nil, err
+	}
+
+	return parseJsonOutput(output)
 }
 
 func Get(table, record, column, key string, ifExists bool) (string, error) {

@@ -1248,8 +1248,12 @@ func (suite *OvnClientTestSuite) Test_OvsClear() {
 	suite.testOvsClear()
 }
 
-func (suite *OvnClientTestSuite) Test_OvsGet() {
-	suite.testOvsGet()
+func (suite *OvnClientTestSuite) Test_Find() {
+	suite.testFind()
+}
+
+func (suite *OvnClientTestSuite) Test_Get() {
+	suite.testGet()
 }
 
 func (suite *OvnClientTestSuite) Test_OvsFindBridges() {

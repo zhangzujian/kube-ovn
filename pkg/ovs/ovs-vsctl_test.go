@@ -104,7 +104,17 @@ func (suite *OvnClientTestSuite) testOvsClear() {
 	require.Error(t, err)
 }
 
-func (suite *OvnClientTestSuite) testOvsGet() {
+func (suite *OvnClientTestSuite) testFind() {
+	t := suite.T()
+	t.Parallel()
+
+	ret, err := Find("port", nil, "name", "qos")
+	// ovs-vsctl cmd is not available in the test environment
+	require.Error(t, err)
+	require.Empty(t, ret)
+}
+
+func (suite *OvnClientTestSuite) testGet() {
 	t := suite.T()
 	t.Parallel()
 

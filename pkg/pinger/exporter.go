@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kubeovn/kube-ovn/pkg/ovs"
 	"github.com/kubeovn/ovsdb"
 	"k8s.io/klog/v2"
 )
@@ -139,8 +140,8 @@ func (e *Exporter) exportOvsInfoGauge() {
 func (e *Exporter) exportOvsLogFileSizeGauge() {
 	metricLogFileSize.Reset()
 	components := []string{
-		"ovsdb-server",
-		"ovs-vswitchd",
+		ovs.OvsdbServer,
+		ovs.OvsVswitchd,
 	}
 	for _, component := range components {
 		file, err := e.Client.GetLogFileInfo(component)

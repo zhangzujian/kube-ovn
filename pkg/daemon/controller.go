@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	nadutils "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/utils"
@@ -78,6 +79,10 @@ type Controller struct {
 	ControllerRuntime
 
 	k8sExec k8sexec.Interface
+
+	// channel used for fdb sync
+	fdbSyncChan  chan struct{}
+	fdbSyncMutex sync.Mutex
 }
 
 func newTypedRateLimitingQueue[T comparable](name string, rateLimiter workqueue.TypedRateLimiter[T]) workqueue.TypedRateLimitingInterface[T] {
@@ -142,6 +147,8 @@ func NewController(config *Configuration,
 
 		recorder: recorder,
 		k8sExec:  k8sexec.New(),
+
+		fdbSyncChan: make(chan struct{}, 1),
 	}
 
 	node, err := config.KubeClient.CoreV1().Nodes().Get(context.Background(), config.NodeName, metav1.GetOptions{})
@@ -611,6 +618,7 @@ func (c *Controller) processNextSubnetWorkItem() bool {
 
 	err := func(obj *subnetEvent) error {
 		defer c.subnetQueue.Done(obj)
+		c.requestFdbSync()
 		if err := c.reconcileRouters(obj); err != nil {
 			c.subnetQueue.AddRateLimited(obj)
 			return fmt.Errorf("error syncing %v: %w, requeuing", obj, err)
@@ -895,6 +903,9 @@ func (c *Controller) Run(stopCh <-chan struct{}) {
 
 	// Start OpenFlow sync loop
 	go c.runFlowSync(stopCh)
+
+	// start fdb sync loop
+	go c.runFdbSync(stopCh)
 
 	<-stopCh
 	klog.Info("Shutting down workers")
