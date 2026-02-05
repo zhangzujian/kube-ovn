@@ -172,7 +172,7 @@ type jsonResult struct {
 	Data     [][]any  `json:"data"`
 }
 
-func parseJsonOutput(output string) ([]ovsdb.Row, error) {
+func parseJSONOutput(output string) ([]ovsdb.Row, error) {
 	var result jsonResult
 	if err := json.Unmarshal([]byte(output), &result); err != nil {
 		return nil, fmt.Errorf("failed to parse json formatted output: %w", err)
@@ -180,19 +180,11 @@ func parseJsonOutput(output string) ([]ovsdb.Row, error) {
 
 	rows := make([]ovsdb.Row, 0, len(result.Data))
 	for values := range slices.Values(result.Data) {
-		kvs := make(map[string]any, len(values))
+		row := make(ovsdb.Row, len(values))
 		for i, value := range values {
-			kvs[result.Headings[i]] = value
+			row[result.Headings[i]] = value
 		}
-		bytes, err := json.Marshal(kvs)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal json formatted output: %w", err)
-		}
-		var r ovsdb.Row
-		if err = json.Unmarshal(bytes, &r); err != nil {
-			return nil, fmt.Errorf("failed to parse json formatted output: %w", err)
-		}
-		rows = append(rows, r)
+		rows = append(rows, row)
 	}
 
 	return rows, nil
@@ -206,7 +198,7 @@ func Find(table string, conditions []string, columns ...string) ([]ovsdb.Row, er
 		return nil, err
 	}
 
-	return parseJsonOutput(output)
+	return parseJSONOutput(output)
 }
 
 func Get(table, record, column, key string, ifExists bool) (string, error) {

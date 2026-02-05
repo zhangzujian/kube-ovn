@@ -52,8 +52,14 @@ func parseStaticFdbEntries(bridge, output string, ports map[int]string) fdbEntri
 			continue
 		}
 		klog.V(3).Infof("found static fdb entry on bridge %s: %s", bridge, s)
-		ofport, _ := strconv.Atoi(fields[0])
-		vlan, _ := strconv.Atoi(fields[1])
+
+		ofport, err1 := strconv.Atoi(fields[0])
+		vlan, err2 := strconv.Atoi(fields[1])
+		if err1 != nil || err2 != nil {
+			klog.Warningf("failed to parse ofport/vlan from fdb entry on bridge %s: %s", bridge, s)
+			continue
+		}
+
 		mac := fields[2]
 		if port := ports[ofport]; port != "" {
 			klog.V(3).Infof("parsed static fdb entry on bridge %s: vlan %d mac %s port %s", bridge, vlan, mac, port)
@@ -98,10 +104,14 @@ func (c *Controller) syncFdb() {
 	}
 
 	patchInterfaces := make(map[string]int, len(interfaces))
-	for intf := range slices.Values(interfaces) {
-		name := intf["name"].(string)
-		ofport := int(intf["ofport"].(float64))
-		patchInterfaces[name] = ofport
+	for iface := range slices.Values(interfaces) {
+		name, ok1 := iface["name"].(string)
+		ofport, ok2 := iface["ofport"].(float64)
+		if !ok1 || !ok2 {
+			klog.Warningf("failed to parse name or ofport for interface: %v", iface)
+			continue
+		}
+		patchInterfaces[name] = int(ofport)
 	}
 	patchPorts := make(map[string]map[int]string, len(ports))
 	for port := range slices.Values(ports) {
