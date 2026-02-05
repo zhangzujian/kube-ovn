@@ -94,14 +94,16 @@ func (c *Controller) syncFdb() {
 	}
 	ports, err := ovs.Find("Port", []string{`external-ids:ovn-localnet-port!=""`}, "_uuid", "name")
 	if err != nil {
-		klog.Errorf("failed to list ovs ports: %v", err)
+		klog.Errorf("failed to list ovs patch ports: %v", err)
 		return
 	}
+	klog.V(3).Infof("found ovs patch ports: %v", ports)
 	interfaces, err := ovs.Find("Interface", []string{"type=patch"}, "name", "ofport")
 	if err != nil {
-		klog.Errorf("failed to list ovs interfaces: %v", err)
+		klog.Errorf("failed to list ovs patch interfaces: %v", err)
 		return
 	}
+	klog.V(3).Infof("found ovs patch interfaces: %v", interfaces)
 
 	patchInterfaces := make(map[string]int, len(interfaces))
 	for iface := range slices.Values(interfaces) {

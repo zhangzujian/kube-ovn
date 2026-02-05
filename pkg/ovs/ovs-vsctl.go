@@ -180,9 +180,18 @@ func parseJSONOutput(output string) ([]ovsdb.Row, error) {
 
 	rows := make([]ovsdb.Row, 0, len(result.Data))
 	for values := range slices.Values(result.Data) {
-		row := make(ovsdb.Row, len(values))
+		// convert key-value pairs to ovsdb.Row by json marshal and unmarshal
+		kvs := make(map[string]any, len(values))
 		for i, value := range values {
-			row[result.Headings[i]] = value
+			kvs[result.Headings[i]] = value
+		}
+		bytes, err := json.Marshal(kvs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal json formatted output: %w", err)
+		}
+		var row ovsdb.Row
+		if err = json.Unmarshal(bytes, &row); err != nil {
+			return nil, fmt.Errorf("failed to parse json formatted output: %w", err)
 		}
 		rows = append(rows, row)
 	}
