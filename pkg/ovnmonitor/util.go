@@ -137,8 +137,8 @@ func lspAddress(addresses []ovsdb.OvnLogicalSwitchPortAddress) (mac, ip string) 
 	if addresses[0].MacAddress != nil {
 		mac = addresses[0].MacAddress.String()
 	}
-	ips := make([]string, 0, len(addresses[0].IpAddresses))
-	for _, address := range addresses[0].IpAddresses {
+	ips := make([]string, 0, len(addresses[0].IPAddresses))
+	for _, address := range addresses[0].IPAddresses {
 		ips = append(ips, address.String())
 	}
 	ip = strings.Join(ips, " ")

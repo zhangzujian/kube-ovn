@@ -17,6 +17,7 @@ import (
 	ovs "github.com/kubeovn/kube-ovn/pkg/ovs"
 	ovnnb "github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
 	ovnsb "github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnsb"
+	vswitch "github.com/kubeovn/kube-ovn/pkg/ovsdb/vswitch"
 	util "github.com/kubeovn/kube-ovn/pkg/util"
 	ovsdb "github.com/ovn-kubernetes/libovsdb/ovsdb"
 	gomock "go.uber.org/mock/gomock"
@@ -24,6 +25,75 @@ import (
 	v1alpha1 "sigs.k8s.io/network-policy-api/apis/v1alpha1"
 	v1alpha2 "sigs.k8s.io/network-policy-api/apis/v1alpha2"
 )
+
+// MockVswitch is a mock of Vswitch interface.
+type MockVswitch struct {
+	ctrl     *gomock.Controller
+	recorder *MockVswitchMockRecorder
+	isgomock struct{}
+}
+
+// MockVswitchMockRecorder is the mock recorder for MockVswitch.
+type MockVswitchMockRecorder struct {
+	mock *MockVswitch
+}
+
+// NewMockVswitch creates a new mock instance.
+func NewMockVswitch(ctrl *gomock.Controller) *MockVswitch {
+	mock := &MockVswitch{ctrl: ctrl}
+	mock.recorder = &MockVswitchMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockVswitch) EXPECT() *MockVswitchMockRecorder {
+	return m.recorder
+}
+
+// ListBridge mocks base method.
+func (m *MockVswitch) ListBridge(needVendorFilter bool, filter func(*vswitch.Bridge) bool) ([]vswitch.Bridge, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListBridge", needVendorFilter, filter)
+	ret0, _ := ret[0].([]vswitch.Bridge)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListBridge indicates an expected call of ListBridge.
+func (mr *MockVswitchMockRecorder) ListBridge(needVendorFilter, filter any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListBridge", reflect.TypeOf((*MockVswitch)(nil).ListBridge), needVendorFilter, filter)
+}
+
+// ListInterface mocks base method.
+func (m *MockVswitch) ListInterface(filter func(*vswitch.Interface) bool) ([]vswitch.Interface, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListInterface", filter)
+	ret0, _ := ret[0].([]vswitch.Interface)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListInterface indicates an expected call of ListInterface.
+func (mr *MockVswitchMockRecorder) ListInterface(filter any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListInterface", reflect.TypeOf((*MockVswitch)(nil).ListInterface), filter)
+}
+
+// ListPort mocks base method.
+func (m *MockVswitch) ListPort(filter func(*vswitch.Port) bool) ([]vswitch.Port, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListPort", filter)
+	ret0, _ := ret[0].([]vswitch.Port)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListPort indicates an expected call of ListPort.
+func (mr *MockVswitchMockRecorder) ListPort(filter any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListPort", reflect.TypeOf((*MockVswitch)(nil).ListPort), filter)
+}
 
 // MockNBGlobal is a mock of NBGlobal interface.
 type MockNBGlobal struct {

@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ovn-kubernetes/libovsdb/ovsdb"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/klog/v2"
 
 	"github.com/kubeovn/kube-ovn/pkg/ovs"
+	"github.com/kubeovn/kube-ovn/pkg/ovsdb/vswitch"
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
 
@@ -87,74 +87,67 @@ func (c *Controller) syncFdb() {
 	c.fdbSyncMutex.Lock()
 	defer c.fdbSyncMutex.Unlock()
 
-	bridges, err := ovs.Find("Bridge", []string{"external-ids:vendor=" + util.CniTypeName}, "name", "ports")
+	client, err := ovs.NewVswitchClient("unix:/var/run/openvswitch/db.sock", 1, 3)
+	if err != nil {
+		klog.Errorf("failed to create ovs vswitch client: %v", err)
+		return
+	}
+	defer client.Close()
+
+	bridges, err := client.ListBridge(true, nil)
 	if err != nil {
 		klog.Errorf("failed to list ovs bridges: %v", err)
 		return
 	}
-	ports, err := ovs.Find("Port", []string{`external-ids:ovn-localnet-port!=""`}, "_uuid", "name")
+	ports, err := client.ListPort(func(port *vswitch.Port) bool {
+		return len(port.ExternalIDs) != 0 && port.ExternalIDs["ovn-localnet-port"] != ""
+	})
 	if err != nil {
 		klog.Errorf("failed to list ovs patch ports: %v", err)
 		return
 	}
-	klog.V(3).Infof("found ovs patch ports: %v", ports)
-	interfaces, err := ovs.Find("Interface", []string{"type=patch"}, "name", "ofport")
+	interfaces, err := client.ListInterface(func(iface *vswitch.Interface) bool {
+		return iface.Type == "patch"
+	})
 	if err != nil {
 		klog.Errorf("failed to list ovs patch interfaces: %v", err)
 		return
 	}
-	klog.V(3).Infof("found ovs patch interfaces: %v", interfaces)
 
-	patchInterfaces := make(map[string]int, len(interfaces))
+	patchInterfaces := make(map[string]*int, len(interfaces))
 	for iface := range slices.Values(interfaces) {
-		name, ok1 := iface["name"].(string)
-		ofport, ok2 := iface["ofport"].(float64)
-		if !ok1 || !ok2 {
-			klog.Warningf("failed to parse name or ofport for interface: %v", iface)
+		if iface.Ofport == nil {
+			klog.Warningf("ofport of interface %s is empty", iface.Name)
 			continue
 		}
-		patchInterfaces[name] = int(ofport)
+		patchInterfaces[iface.Name] = iface.Ofport
 	}
 	patchPorts := make(map[string]map[int]string, len(ports))
 	for port := range slices.Values(ports) {
-		uuid := port["_uuid"].(ovsdb.UUID).GoUUID
-		name := port["name"].(string)
-		ofport, ok := patchInterfaces[name]
-		if !ok {
-			klog.V(3).Infof("port %s is not a patch port", name)
-			continue
+		if ofport := patchInterfaces[port.Name]; ofport != nil {
+			patchPorts[port.UUID] = map[int]string{*ofport: port.Name}
 		}
-		patchPorts[uuid] = map[int]string{ofport: name}
-	}
-	klog.V(3).Infof("found patch ports: %v", patchPorts)
-
-	bridgePatchPorts := make(map[string]map[int]string, len(bridges))
-	for bridge := range slices.Values(bridges) {
-		name := bridge["name"].(string)
-		portUUIDs := bridge["ports"].(ovsdb.OvsSet).GoSet
-		for portUUID := range slices.Values(portUUIDs) {
-			uuid := portUUID.(ovsdb.UUID).GoUUID
-			klog.V(3).Infof("checking port with uuid %s on bridge %s", uuid, name)
-			if ofportNameMap := patchPorts[uuid]; len(ofportNameMap) != 0 {
-				if bridgePatchPorts[name] == nil {
-					bridgePatchPorts[name] = make(map[int]string, 1)
-				}
-				maps.Insert(bridgePatchPorts[name], maps.All(ofportNameMap))
-			}
-		}
-		klog.V(3).Infof("found patch ports on bridge %s: %v", name, bridgePatchPorts[name])
 	}
 
 	current := make(map[string]fdbEntries)
+	bridgePatchPorts := make(map[string]map[int]string, len(bridges))
 	for bridge := range slices.Values(bridges) {
-		name := bridge["name"].(string)
-		output, err := ovs.Appctl(ovs.OvsVswitchd, "fdb/show", name)
+		for uuid := range slices.Values(bridge.Ports) {
+			if ofportNameMap := patchPorts[uuid]; len(ofportNameMap) != 0 {
+				if bridgePatchPorts[bridge.Name] == nil {
+					bridgePatchPorts[bridge.Name] = make(map[int]string, 1)
+				}
+				maps.Insert(bridgePatchPorts[bridge.Name], maps.All(ofportNameMap))
+			}
+		}
+		klog.V(3).Infof("found patch ports on bridge %s: %v", bridge.Name, bridgePatchPorts[bridge.Name])
+		output, err := ovs.Appctl(ovs.OvsVswitchd, "fdb/show", bridge.Name)
 		if err != nil {
-			klog.Errorf("failed to show fdb for bridge %s: %v", name, err)
+			klog.Errorf("failed to show fdb for bridge %s: %v", bridge.Name, err)
 			return
 		}
-		current[name] = parseStaticFdbEntries(name, output, bridgePatchPorts[name])
-		klog.V(3).Infof("current static fdb entries on bridge %s: %v", name, current[name])
+		current[bridge.Name] = parseStaticFdbEntries(bridge.Name, output, bridgePatchPorts[bridge.Name])
+		klog.V(3).Infof("current static fdb entries on bridge %s: %v", bridge.Name, current[bridge.Name])
 	}
 
 	subnets, err := c.subnetsLister.List(labels.Everything())
