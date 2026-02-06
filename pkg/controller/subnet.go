@@ -2051,8 +2051,8 @@ func getIPSuffix(protocol string) string {
 
 func buildPolicyRouteExternalIDs(subnetName string, extraIDs map[string]string) map[string]string {
 	externalIDs := map[string]string{
-		"vendor": util.CniTypeName,
-		"subnet": subnetName,
+		ovs.ExternalIDVendor: util.CniTypeName,
+		"subnet":             subnetName,
 	}
 	maps.Copy(externalIDs, extraIDs)
 	return externalIDs
@@ -2121,10 +2121,10 @@ func (c *Controller) createPortGroupForDistributedSubnet(node *v1.Node, subnet *
 
 	pgName := getOverlaySubnetsPortGroupName(subnet.Name, node.Name)
 	externalIDs := map[string]string{
-		"subnet":         subnet.Name,
-		"node":           node.Name,
-		"vendor":         util.CniTypeName,
-		networkPolicyKey: subnet.Name + "/" + node.Name,
+		"subnet":             subnet.Name,
+		"node":               node.Name,
+		ovs.ExternalIDVendor: util.CniTypeName,
+		networkPolicyKey:     subnet.Name + "/" + node.Name,
 	}
 	if err := c.OVNNbClient.CreatePortGroup(pgName, externalIDs); err != nil {
 		klog.Errorf("create port group for subnet %s and node %s: %v", subnet.Name, node.Name, err)
@@ -2440,9 +2440,9 @@ func (c *Controller) deletePolicyRouteForU2OInterconn(subnet *kubeovnv1.Subnet) 
 		return nil
 	}
 	policies, err := c.OVNNbClient.ListLogicalRouterPolicies(subnet.Spec.Vpc, -1, map[string]string{
-		"isU2ORoutePolicy": "true",
-		"vendor":           util.CniTypeName,
-		"subnet":           subnet.Name,
+		"isU2ORoutePolicy":   "true",
+		ovs.ExternalIDVendor: util.CniTypeName,
+		"subnet":             subnet.Name,
 	}, true)
 	if err != nil {
 		klog.Errorf("failed to list logical router policies: %v", err)
@@ -2643,8 +2643,8 @@ func (c *Controller) reconcilePolicyRouteForCidrChangedSubnet(subnet *kubeovnv1.
 	}
 
 	policies, err := c.OVNNbClient.ListLogicalRouterPolicies(subnet.Spec.Vpc, priority, map[string]string{
-		"vendor": util.CniTypeName,
-		"subnet": subnet.Name,
+		ovs.ExternalIDVendor: util.CniTypeName,
+		"subnet":             subnet.Name,
 	}, true)
 	if err != nil {
 		klog.Errorf("failed to list logical router policies: %v", err)
@@ -2780,7 +2780,7 @@ func (c *Controller) deletePolicyRouteForU2ONoLoadBalancer(subnet *kubeovnv1.Sub
 	}
 	policies, err := c.OVNNbClient.ListLogicalRouterPolicies(subnet.Spec.Vpc, -1, map[string]string{
 		"isU2ONoLBRoutePolicy": "true",
-		"vendor":               util.CniTypeName,
+		ovs.ExternalIDVendor:   util.CniTypeName,
 		"subnet":               subnet.Name,
 	}, true)
 	if err != nil {

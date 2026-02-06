@@ -9,6 +9,7 @@ import (
 	"k8s.io/klog/v2"
 
 	v1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
+	"github.com/kubeovn/kube-ovn/pkg/ovs"
 	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
@@ -83,7 +84,7 @@ func (c *Controller) syncExternalVpc() {
 func (c *Controller) getNonKubeovnRouterStatus() (logicalRouters map[string]util.LogicalRouter, err error) {
 	logicalRouters = make(map[string]util.LogicalRouter)
 	nonKubeovnRouters, err := c.OVNNbClient.ListLogicalRouter(false, func(lr *ovnnb.LogicalRouter) bool {
-		return len(lr.ExternalIDs) == 0 || lr.ExternalIDs["vendor"] != util.CniTypeName
+		return len(lr.ExternalIDs) == 0 || lr.ExternalIDs[ovs.ExternalIDVendor] != util.CniTypeName
 	})
 	if err != nil {
 		klog.Errorf("failed to list non kubeovn logical router, %v", err)

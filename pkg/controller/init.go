@@ -863,8 +863,8 @@ func buildNodeRoute(af int, nodeName, nexthop, ip string, addPolicies, delPolici
 		match       = fmt.Sprintf("ip%d.dst == %s", af, ip)
 		action      = kubeovnv1.PolicyRouteActionReroute
 		externalIDs = map[string]string{
-			"vendor": util.CniTypeName,
-			"node":   nodeName,
+			ovs.ExternalIDVendor: util.CniTypeName,
+			"node":               nodeName,
 		}
 	)
 	*addPolicies = append(*addPolicies, &kubeovnv1.PolicyRoute{

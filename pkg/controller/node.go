@@ -207,9 +207,9 @@ func (c *Controller) handleAddNode(key string) error {
 				match       = fmt.Sprintf("ip%d.dst == %s", af, nodeIP)
 				action      = kubeovnv1.PolicyRouteActionReroute
 				externalIDs = map[string]string{
-					"vendor":         util.CniTypeName,
-					"node":           node.Name,
-					"address-family": strconv.Itoa(af),
+					ovs.ExternalIDVendor: util.CniTypeName,
+					"node":               node.Name,
+					"address-family":     strconv.Itoa(af),
 				}
 			)
 			klog.Infof("add policy route for router: %s, match %s, action %s, nexthop %s, externalID %v", c.config.ClusterRouter, match, action, ip, externalIDs)
@@ -907,7 +907,7 @@ func (c *Controller) UpdateChassisTag(node *v1.Node) error {
 		return err
 	}
 
-	if chassis.ExternalIDs == nil || chassis.ExternalIDs["vendor"] != util.CniTypeName {
+	if chassis.ExternalIDs == nil || chassis.ExternalIDs[ovs.ExternalIDVendor] != util.CniTypeName {
 		klog.Infof("init tag %s for node %s chassis %s", util.CniTypeName, node.Name, chassis.Name)
 		if err = c.OVNSbClient.UpdateChassisTag(chassis.Name, node.Name); err != nil {
 			err := fmt.Errorf("failed to init chassis tag, %w", err)
@@ -1120,10 +1120,10 @@ func (c *Controller) addPolicyRouteForLocalDNSCacheOnNode(dnsIPs []string, nodeP
 
 	var (
 		externalIDs = map[string]string{
-			"vendor":          util.CniTypeName,
-			"node":            nodeName,
-			"address-family":  strconv.Itoa(af),
-			"isLocalDnsCache": "true",
+			ovs.ExternalIDVendor: util.CniTypeName,
+			"node":               nodeName,
+			"address-family":     strconv.Itoa(af),
+			"isLocalDnsCache":    "true",
 		}
 		pgAs     = strings.ReplaceAll(fmt.Sprintf("%s_ip%d", nodePortName, af), "-", ".")
 		action   = kubeovnv1.PolicyRouteActionReroute
@@ -1141,7 +1141,7 @@ func (c *Controller) addPolicyRouteForLocalDNSCacheOnNode(dnsIPs []string, nodeP
 	}
 
 	for _, policy := range policies {
-		if len(policy.ExternalIDs) == 0 || policy.ExternalIDs["vendor"] != util.CniTypeName || policy.ExternalIDs["isLocalDnsCache"] != "true" {
+		if len(policy.ExternalIDs) == 0 || policy.ExternalIDs[ovs.ExternalIDVendor] != util.CniTypeName || policy.ExternalIDs["isLocalDnsCache"] != "true" {
 			continue
 		}
 		if policy.Priority == util.NodeRouterPolicyPriority && policy.Action == string(action) && slices.Equal(policy.Nexthops, nextHops) && matches.Has(policy.Match) {
@@ -1178,10 +1178,10 @@ func (c *Controller) addPolicyRouteForLocalDNSCacheOnNode(dnsIPs []string, nodeP
 
 func (c *Controller) deletePolicyRouteForLocalDNSCacheOnNode(nodeName string, af int) error {
 	policies, err := c.OVNNbClient.ListLogicalRouterPolicies(c.config.ClusterRouter, -1, map[string]string{
-		"vendor":          util.CniTypeName,
-		"node":            nodeName,
-		"address-family":  strconv.Itoa(af),
-		"isLocalDnsCache": "true",
+		ovs.ExternalIDVendor: util.CniTypeName,
+		"node":               nodeName,
+		"address-family":     strconv.Itoa(af),
+		"isLocalDnsCache":    "true",
 	}, true)
 	if err != nil {
 		klog.Errorf("failed to list logical router policies: %v", err)

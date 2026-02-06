@@ -35,7 +35,7 @@ func buildLogicalSwitchPort(lspName, lsName, ip, mac, podName, namespace string,
 
 	// addresses is the first element of addresses
 	lsp.Addresses = []string{strings.TrimSpace(strings.Join(addresses, " "))}
-	lsp.ExternalIDs["vendor"] = util.CniTypeName
+	lsp.ExternalIDs[ExternalIDVendor] = util.CniTypeName
 
 	lsp.PortSecurity = nil
 	if portSecurity {
@@ -74,7 +74,7 @@ func buildLogicalSwitchPort(lspName, lsName, ip, mac, podName, namespace string,
 
 	// attach necessary info
 	lsp.ExternalIDs[LogicalSwitchKey] = lsName
-	lsp.ExternalIDs["vendor"] = util.CniTypeName
+	lsp.ExternalIDs[ExternalIDVendor] = util.CniTypeName
 
 	// set dhcp options
 	if enableDHCP && dhcpOptions != nil {
@@ -145,7 +145,7 @@ func (c *OVNNbClient) CreateLocalnetLogicalSwitchPort(lsName, lspName, provider,
 
 	if lsp != nil {
 		externalIDs[LogicalSwitchKey] = lsName
-		externalIDs["vendor"] = util.CniTypeName
+		externalIDs[ExternalIDVendor] = util.CniTypeName
 		if !maps.Equal(lsp.ExternalIDs, externalIDs) {
 			lsp.ExternalIDs = externalIDs
 			if err = c.UpdateLogicalSwitchPort(lsp, &lsp.ExternalIDs); err != nil {
@@ -743,7 +743,7 @@ func (c *OVNNbClient) ListLogicalSwitchPortsWithLegacyExternalIDs() ([]ovnnb.Log
 
 	lspList := make([]ovnnb.LogicalSwitchPort, 0)
 	if err := c.WhereCache(func(lsp *ovnnb.LogicalSwitchPort) bool {
-		return len(lsp.ExternalIDs) == 0 || lsp.ExternalIDs[LogicalSwitchKey] == "" || lsp.ExternalIDs["vendor"] == ""
+		return len(lsp.ExternalIDs) == 0 || lsp.ExternalIDs[LogicalSwitchKey] == "" || lsp.ExternalIDs[ExternalIDVendor] == ""
 	}).List(ctx, &lspList); err != nil {
 		klog.Error(err)
 		return nil, fmt.Errorf("failed to list logical switch ports with legacy external-ids: %w", err)
@@ -784,7 +784,7 @@ func (c *OVNNbClient) CreateLogicalSwitchPortOp(lsp *ovnnb.LogicalSwitchPort, ls
 
 	// attach necessary info
 	lsp.ExternalIDs[LogicalSwitchKey] = lsName
-	lsp.ExternalIDs["vendor"] = util.CniTypeName
+	lsp.ExternalIDs[ExternalIDVendor] = util.CniTypeName
 
 	/* create logical switch port */
 	klog.V(3).Infof("create logical switch port %s in logical switch %s", lsp.Name, lsName)
@@ -848,7 +848,7 @@ func (c *OVNNbClient) UpdateLogicalSwitchPortOp(lsp *ovnnb.LogicalSwitchPort, fi
 // logicalSwitchPortFilter filter logical_switch_port which match the given externalIDs and the custom filter
 func logicalSwitchPortFilter(needVendorFilter bool, externalIDs map[string]string, filter func(lsp *ovnnb.LogicalSwitchPort) bool) func(lsp *ovnnb.LogicalSwitchPort) bool {
 	return func(lsp *ovnnb.LogicalSwitchPort) bool {
-		if needVendorFilter && (len(lsp.ExternalIDs) == 0 || lsp.ExternalIDs["vendor"] != util.CniTypeName) {
+		if needVendorFilter && (len(lsp.ExternalIDs) == 0 || lsp.ExternalIDs[ExternalIDVendor] != util.CniTypeName) {
 			return false
 		}
 		if len(lsp.ExternalIDs) < len(externalIDs) {

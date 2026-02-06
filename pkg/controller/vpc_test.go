@@ -11,6 +11,7 @@ import (
 	"k8s.io/utils/keymutex"
 
 	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
+	"github.com/kubeovn/kube-ovn/pkg/ovs"
 	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
@@ -28,7 +29,7 @@ func Test_handleAddOrUpdateVpc_staticRoutes(t *testing.T) {
 	internalStaticRoute := &ovnnb.LogicalRouterStaticRoute{
 		UUID: "internal-static-route-uuid",
 		ExternalIDs: map[string]string{
-			"vendor": util.CniTypeName,
+			ovs.ExternalIDVendor: util.CniTypeName,
 		},
 		IPPrefix:   "10.0.0.0/24",
 		Nexthop:    "1.2.3.4",
@@ -40,7 +41,7 @@ func Test_handleAddOrUpdateVpc_staticRoutes(t *testing.T) {
 	managedStaticRoute := &ovnnb.LogicalRouterStaticRoute{
 		UUID: "managed-static-route-uuid",
 		ExternalIDs: map[string]string{
-			"vendor": util.CniTypeName,
+			ovs.ExternalIDVendor: util.CniTypeName,
 		},
 		IPPrefix:   "192.168.0.0/24",
 		Nexthop:    "10.0.0.1",
@@ -89,7 +90,7 @@ func Test_handleAddOrUpdateVpc_staticRoutes(t *testing.T) {
 			internalStaticRoute,
 		}
 
-		externalIDs := map[string]string{"vendor": util.CniTypeName}
+		externalIDs := map[string]string{ovs.ExternalIDVendor: util.CniTypeName}
 
 		mockOvnClient.EXPECT().CreateLogicalRouter(vpcName).Return(nil)
 		mockOvnClient.EXPECT().UpdateLogicalRouter(gomock.Any(), gomock.Any()).Return(nil)
@@ -158,7 +159,7 @@ func Test_handleAddOrUpdateVpc_staticRoutes(t *testing.T) {
 			managedStaticRoute,
 		}
 
-		externalIDs := map[string]string{"vendor": util.CniTypeName}
+		externalIDs := map[string]string{ovs.ExternalIDVendor: util.CniTypeName}
 
 		mockOvnClient.EXPECT().CreateLogicalRouter(vpcName).Return(nil)
 		mockOvnClient.EXPECT().UpdateLogicalRouter(gomock.Any(), gomock.Any()).Return(nil)
@@ -211,7 +212,7 @@ func Test_handleAddOrUpdateVpc_staticRoutes(t *testing.T) {
 			managedStaticRoute,
 		}
 
-		externalIDs := map[string]string{"vendor": util.CniTypeName}
+		externalIDs := map[string]string{ovs.ExternalIDVendor: util.CniTypeName}
 
 		mockOvnClient.EXPECT().CreateLogicalRouter(vpcName).Return(nil)
 		mockOvnClient.EXPECT().UpdateLogicalRouter(gomock.Any(), gomock.Any()).Return(nil)
@@ -267,7 +268,7 @@ func Test_handleAddOrUpdateVpc_staticRoutes(t *testing.T) {
 		err = fakeinformers.vpcInformer.Informer().GetStore().Add(vpc)
 		require.NoError(t, err)
 
-		externalIDs := map[string]string{"vendor": util.CniTypeName}
+		externalIDs := map[string]string{ovs.ExternalIDVendor: util.CniTypeName}
 
 		mockOvnClient.EXPECT().CreateLogicalRouter(vpcName).Return(nil)
 		mockOvnClient.EXPECT().UpdateLogicalRouter(gomock.Any(), gomock.Any()).Return(nil)

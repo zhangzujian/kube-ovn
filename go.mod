@@ -24,7 +24,7 @@ require (
 	github.com/kubeovn/felix v0.0.0-20240506083207-ed396be1b6cf
 	github.com/kubeovn/go-iptables v0.0.0-20230322103850-8619a8ab3dca
 	github.com/kubeovn/gonetworkmanager/v3 v3.0.0-20260127125406-1297b522ba92
-	github.com/kubeovn/ovsdb v0.0.0-20240410091831-5dd26006c475
+	github.com/kubeovn/ovsdb v0.0.0-20260205105526-d4d93be8de8e
 	github.com/mdlayher/arp v0.0.0-20220512170110-6706a2966875
 	github.com/mdlayher/ndp v1.1.0
 	github.com/mdlayher/netx v0.0.0-20230430222610-7e21880baee8

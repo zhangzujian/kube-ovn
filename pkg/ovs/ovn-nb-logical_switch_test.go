@@ -395,7 +395,7 @@ func (suite *OvnClientTestSuite) testListLogicalSwitch() {
 		name := fmt.Sprintf("%s%d", namePrefix, i)
 		ls := &ovnnb.LogicalSwitch{
 			Name:        name,
-			ExternalIDs: map[string]string{"vendor": "test-vendor"},
+			ExternalIDs: map[string]string{ExternalIDVendor: "test-vendor"},
 		}
 
 		err := createLogicalSwitch(nbClient, ls)
@@ -443,7 +443,7 @@ func (suite *OvnClientTestSuite) testListLogicalSwitch() {
 	t.Run("has custom filter", func(t *testing.T) {
 		t.Parallel()
 		filter := func(ls *ovnnb.LogicalSwitch) bool {
-			return len(ls.ExternalIDs) == 0 || ls.ExternalIDs["vendor"] != util.CniTypeName
+			return len(ls.ExternalIDs) == 0 || ls.ExternalIDs[ExternalIDVendor] != util.CniTypeName
 		}
 		lss, err := nbClient.ListLogicalSwitch(false, filter)
 		require.NoError(t, err)
@@ -776,7 +776,7 @@ func (suite *OvnClientTestSuite) testCreateBareLogicalSwitch() {
 		ls, err := nbClient.GetLogicalSwitch(lsName, false)
 		require.NoError(t, err)
 		require.Equal(t, lsName, ls.Name)
-		require.Equal(t, util.CniTypeName, ls.ExternalIDs["vendor"])
+		require.Equal(t, util.CniTypeName, ls.ExternalIDs[ExternalIDVendor])
 	})
 
 	t.Run("create existing logical switch", func(t *testing.T) {

@@ -18,6 +18,7 @@ import (
 	"k8s.io/klog/v2"
 
 	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
+	"github.com/kubeovn/kube-ovn/pkg/ovs"
 	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
@@ -617,7 +618,7 @@ func (c *Controller) syncOneRouteToPolicy(key, value string) {
 			match = util.MatchV6Dst + " == " + prefix
 		}
 
-		if err = c.OVNNbClient.AddLogicalRouterPolicy(lr.Name, util.OvnICPolicyPriority, match, ovnnb.LogicalRouterPolicyActionAllow, nil, nil, map[string]string{key: value, "vendor": util.CniTypeName}); err != nil {
+		if err = c.OVNNbClient.AddLogicalRouterPolicy(lr.Name, util.OvnICPolicyPriority, match, ovnnb.LogicalRouterPolicyActionAllow, nil, nil, map[string]string{key: value, ovs.ExternalIDVendor: util.CniTypeName}); err != nil {
 			klog.Errorf("failed to add router policy: %v", err)
 		}
 

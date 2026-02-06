@@ -36,8 +36,8 @@ func (suite *OvnClientTestSuite) testCreateAddressSet() {
 		require.Equal(t, asName, as.Name)
 		// vendor is automatically added by CreateAddressSet
 		require.Equal(t, map[string]string{
-			sgKey:    "test-sg",
-			"vendor": util.CniTypeName,
+			sgKey:            "test-sg",
+			ExternalIDVendor: util.CniTypeName,
 		}, as.ExternalIDs)
 	})
 

@@ -156,7 +156,7 @@ func (c *OVNSbClient) UpdateChassisTag(chassisName, nodeName string) error {
 	if chassis.ExternalIDs == nil || chassis.ExternalIDs["node"] != nodeName {
 		externalIDs := make(map[string]string, len(chassis.ExternalIDs)+2)
 		maps.Copy(externalIDs, chassis.ExternalIDs)
-		externalIDs["vendor"] = util.CniTypeName
+		externalIDs[ExternalIDVendor] = util.CniTypeName
 		// externalIDs["node"] = nodeName
 		// not need filter chassis by node name if we use libovsdb
 		chassis.ExternalIDs = externalIDs
@@ -175,7 +175,7 @@ func (c *OVNSbClient) GetKubeOvnChassises() (*[]ovnsb.Chassis, error) {
 
 	chassisList := make([]ovnsb.Chassis, 0)
 	if err := c.ovsDbClient.WhereCache(func(chassis *ovnsb.Chassis) bool {
-		if chassis.ExternalIDs != nil && chassis.ExternalIDs["vendor"] == util.CniTypeName {
+		if chassis.ExternalIDs != nil && chassis.ExternalIDs[ExternalIDVendor] == util.CniTypeName {
 			return true
 		}
 		return false

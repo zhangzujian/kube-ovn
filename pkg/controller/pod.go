@@ -867,8 +867,8 @@ func (c *Controller) reconcileRouteSubnets(pod *v1.Pod, needRoutePodNets []*kube
 						NextHopIP: nextHop,
 					},
 					map[string]string{
-						"vendor": util.CniTypeName,
-						"subnet": subnet.Name,
+						ovs.ExternalIDVendor: util.CniTypeName,
+						"subnet":             subnet.Name,
 					},
 				); err != nil {
 					klog.Errorf("failed to add policy route, %v", err)
@@ -934,8 +934,8 @@ func (c *Controller) reconcileRouteSubnets(pod *v1.Pod, needRoutePodNets []*kube
 								NextHopIP: pod.Annotations[util.NorthGatewayAnnotation],
 							},
 							map[string]string{
-								"vendor": util.CniTypeName,
-								"subnet": subnet.Name,
+								ovs.ExternalIDVendor: util.CniTypeName,
+								"subnet":             subnet.Name,
 							},
 						); err != nil {
 							klog.Errorf("failed to add policy route, %v", err)

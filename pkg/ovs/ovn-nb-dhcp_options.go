@@ -309,7 +309,7 @@ func newDHCPOptions(lsName, cidr, options string) (*ovnnb.DHCPOptions, error) {
 		ExternalIDs: map[string]string{
 			LogicalSwitchKey: lsName,
 			"protocol":       protocol,
-			"vendor":         util.CniTypeName,
+			ExternalIDVendor: util.CniTypeName,
 		},
 		Options: parseDHCPOptions(options),
 	}, nil
@@ -320,7 +320,7 @@ func newDHCPOptions(lsName, cidr, options string) (*ovnnb.DHCPOptions, error) {
 // result should include all dhcp options which externalIDs[key] is not empty when externalIDs[key] is ""
 func dhcpOptionsFilter(needVendorFilter bool, externalIDs map[string]string) func(dhcpOpt *ovnnb.DHCPOptions) bool {
 	return func(dhcpOpt *ovnnb.DHCPOptions) bool {
-		if needVendorFilter && (len(dhcpOpt.ExternalIDs) == 0 || dhcpOpt.ExternalIDs["vendor"] != util.CniTypeName) {
+		if needVendorFilter && (len(dhcpOpt.ExternalIDs) == 0 || dhcpOpt.ExternalIDs[ExternalIDVendor] != util.CniTypeName) {
 			return false
 		}
 

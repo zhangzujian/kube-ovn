@@ -526,7 +526,7 @@ func (suite *OvnClientTestSuite) testCreateLogicalRouterPortOp() {
 		require.Equal(t, ovsdb.OvsMap{
 			GoMap: map[any]any{
 				logicalRouterKey: lrName,
-				"vendor":         util.CniTypeName,
+				ExternalIDVendor: util.CniTypeName,
 				"pod":            lrpName,
 			},
 		}, ops[0].Row["external_ids"])
@@ -561,7 +561,7 @@ func (suite *OvnClientTestSuite) testCreateLogicalRouterPortOp() {
 		require.Equal(t, ovsdb.OvsMap{
 			GoMap: map[any]any{
 				logicalRouterKey: lrName,
-				"vendor":         util.CniTypeName,
+				ExternalIDVendor: util.CniTypeName,
 			},
 		}, ops[0].Row["external_ids"])
 

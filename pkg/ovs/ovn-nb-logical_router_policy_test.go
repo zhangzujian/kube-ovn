@@ -211,7 +211,7 @@ func (suite *OvnClientTestSuite) testDeleteLogicalRouterPolicies() {
 	nextHops := []string{"100.64.0.2"}
 
 	externalIDs := map[string]string{
-		"vendor":           util.CniTypeName,
+		ExternalIDVendor:   util.CniTypeName,
 		"subnet":           "test-subnet",
 		"isU2ORoutePolicy": "true",
 	}
@@ -447,7 +447,7 @@ func (suite *OvnClientTestSuite) testGetLogicalRouterPolicyByExtID() {
 	action := ovnnb.LogicalRouterPolicyActionAllow
 	nextHops := []string{"100.64.0.2"}
 	extID := map[string]string{
-		"vendor": "kube-ovn",
+		ExternalIDVendor: "kube-ovn",
 	}
 
 	err := nbClient.CreateLogicalRouter(lrName)
@@ -467,7 +467,7 @@ func (suite *OvnClientTestSuite) testGetLogicalRouterPolicyByExtID() {
 	t.Run("get lrp with right extID", func(t *testing.T) {
 		t.Parallel()
 
-		pList, err := nbClient.GetLogicalRouterPoliciesByExtID(lrName, "vendor", "kube-ovn")
+		pList, err := nbClient.GetLogicalRouterPoliciesByExtID(lrName, ExternalIDVendor, "kube-ovn")
 		require.NoError(t, err)
 		require.Len(t, pList, 1)
 	})
@@ -475,7 +475,7 @@ func (suite *OvnClientTestSuite) testGetLogicalRouterPolicyByExtID() {
 	t.Run("get lrp with wrong extID", func(t *testing.T) {
 		t.Parallel()
 
-		pList, err := nbClient.GetLogicalRouterPoliciesByExtID(lrName, "vendor", "other")
+		pList, err := nbClient.GetLogicalRouterPoliciesByExtID(lrName, ExternalIDVendor, "other")
 		require.NoError(t, err)
 		require.Len(t, pList, 0)
 	})
@@ -495,7 +495,7 @@ func (suite *OvnClientTestSuite) testGetLogicalRouterPolicyByExtID() {
 		err = nbClient.CreateLogicalRouterPolicies(lrName, emptyExtIDPolicy)
 		require.NoError(t, err)
 
-		pList, err := nbClient.GetLogicalRouterPoliciesByExtID(lrName, "vendor", "kube-ovn")
+		pList, err := nbClient.GetLogicalRouterPoliciesByExtID(lrName, ExternalIDVendor, "kube-ovn")
 		require.NoError(t, err)
 		require.Len(t, pList, 1)
 	})

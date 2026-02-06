@@ -25,7 +25,7 @@ func (suite *OvnClientTestSuite) testCreateHAChassisGroup() {
 	group, err := nbClient.GetHAChassisGroup(name, false)
 	require.NoError(t, err)
 	require.NotNil(t, group)
-	require.Equal(t, group.ExternalIDs, map[string]string{"vendor": util.CniTypeName, "k1": "v1"})
+	require.Equal(t, group.ExternalIDs, map[string]string{ExternalIDVendor: util.CniTypeName, "k1": "v1"})
 	require.Len(t, group.HaChassis, len(chassises))
 	for _, uuid := range group.HaChassis {
 		chassis := &ovnnb.HAChassis{UUID: uuid}
@@ -33,7 +33,7 @@ func (suite *OvnClientTestSuite) testCreateHAChassisGroup() {
 		require.NoError(t, err)
 		require.Contains(t, chassises, chassis.ChassisName)
 		require.Equal(t, chassis.Priority, 100-slices.Index(chassises, chassis.ChassisName))
-		require.Equal(t, chassis.ExternalIDs, map[string]string{"group": name, "vendor": util.CniTypeName})
+		require.Equal(t, chassis.ExternalIDs, map[string]string{"group": name, ExternalIDVendor: util.CniTypeName})
 	}
 
 	// update the ha chassis group
@@ -44,7 +44,7 @@ func (suite *OvnClientTestSuite) testCreateHAChassisGroup() {
 	group, err = nbClient.GetHAChassisGroup(name, false)
 	require.NoError(t, err)
 	require.NotNil(t, group)
-	require.Equal(t, group.ExternalIDs, map[string]string{"vendor": util.CniTypeName, "k2": "v2"})
+	require.Equal(t, group.ExternalIDs, map[string]string{ExternalIDVendor: util.CniTypeName, "k2": "v2"})
 	require.Len(t, group.HaChassis, len(chassises))
 	for _, uuid := range group.HaChassis {
 		chassis := &ovnnb.HAChassis{UUID: uuid}
@@ -52,7 +52,7 @@ func (suite *OvnClientTestSuite) testCreateHAChassisGroup() {
 		require.NoError(t, err)
 		require.Contains(t, chassises, chassis.ChassisName)
 		require.Equal(t, chassis.Priority, 100-slices.Index(chassises, chassis.ChassisName))
-		require.Equal(t, chassis.ExternalIDs, map[string]string{"group": name, "vendor": util.CniTypeName})
+		require.Equal(t, chassis.ExternalIDs, map[string]string{"group": name, ExternalIDVendor: util.CniTypeName})
 	}
 }
 

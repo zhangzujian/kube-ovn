@@ -382,7 +382,7 @@ func (suite *OvnClientTestSuite) testUpdateChassisTag() {
 		updatedChassis, err := sbClient.GetChassis("chassis-update-tag", false)
 		require.NoError(t, err)
 		require.NotNil(t, updatedChassis)
-		require.Equal(t, util.CniTypeName, updatedChassis.ExternalIDs["vendor"])
+		require.Equal(t, util.CniTypeName, updatedChassis.ExternalIDs[ExternalIDVendor])
 	})
 
 	t.Run("test update chassis tag with existing ExternalIDs", func(t *testing.T) {
@@ -396,7 +396,7 @@ func (suite *OvnClientTestSuite) testUpdateChassisTag() {
 		updatedChassis, err := sbClient.GetChassis("chassis-update-tag", false)
 		require.NoError(t, err)
 		require.NotNil(t, updatedChassis)
-		require.Equal(t, util.CniTypeName, updatedChassis.ExternalIDs["vendor"])
+		require.Equal(t, util.CniTypeName, updatedChassis.ExternalIDs[ExternalIDVendor])
 		require.Equal(t, "value", updatedChassis.ExternalIDs["existing"])
 	})
 
@@ -420,7 +420,7 @@ func (suite *OvnClientTestSuite) testUpdateChassisTag() {
 		require.NoError(t, err)
 		require.NotNil(t, updatedChassis)
 		require.Equal(t, "", updatedChassis.ExternalIDs["node"])
-		require.Equal(t, util.CniTypeName, updatedChassis.ExternalIDs["vendor"])
+		require.Equal(t, util.CniTypeName, updatedChassis.ExternalIDs[ExternalIDVendor])
 	})
 }
 
@@ -451,10 +451,10 @@ func (suite *OvnClientTestSuite) testGetKubeOvnChassises() {
 		require.False(t, names["mixed-chassis"])
 	})
 
-	kubeOvnChassis1 := newChassis(0, "host-1", "kube-ovn-chassis-1", nil, nil, nil, map[string]string{"vendor": util.CniTypeName}, nil)
-	kubeOvnChassis2 := newChassis(0, "host-2", "kube-ovn-chassis-2", nil, nil, nil, map[string]string{"vendor": util.CniTypeName}, nil)
-	nonKubeOvnChassis := newChassis(0, "host-none", "non-kube-ovn-chassis", nil, nil, nil, map[string]string{"vendor": "other"}, nil)
-	mixedChassis := newChassis(0, "host-4", "mixed-chassis", nil, nil, nil, map[string]string{"vendor": util.CniTypeName, "other": "value"}, nil)
+	kubeOvnChassis1 := newChassis(0, "host-1", "kube-ovn-chassis-1", nil, nil, nil, map[string]string{ExternalIDVendor: util.CniTypeName}, nil)
+	kubeOvnChassis2 := newChassis(0, "host-2", "kube-ovn-chassis-2", nil, nil, nil, map[string]string{ExternalIDVendor: util.CniTypeName}, nil)
+	nonKubeOvnChassis := newChassis(0, "host-none", "non-kube-ovn-chassis", nil, nil, nil, map[string]string{ExternalIDVendor: "other"}, nil)
+	mixedChassis := newChassis(0, "host-4", "mixed-chassis", nil, nil, nil, map[string]string{ExternalIDVendor: util.CniTypeName, "other": "value"}, nil)
 
 	ops1, err := sbClient.Create(kubeOvnChassis1)
 	require.NoError(t, err)
@@ -484,7 +484,7 @@ func (suite *OvnClientTestSuite) testGetKubeOvnChassises() {
 	names := make(map[string]bool)
 	for _, chassis := range *chassisList {
 		names[chassis.Name] = true
-		require.Equal(t, util.CniTypeName, chassis.ExternalIDs["vendor"])
+		require.Equal(t, util.CniTypeName, chassis.ExternalIDs[ExternalIDVendor])
 	}
 	require.True(t, names["kube-ovn-chassis-1"])
 	require.True(t, names["kube-ovn-chassis-2"])

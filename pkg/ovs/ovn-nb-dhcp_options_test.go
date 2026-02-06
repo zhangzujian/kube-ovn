@@ -525,7 +525,7 @@ func (suite *OvnClientTestSuite) testDhcpOptionsFilter() {
 		// create three ipv4 dhcp options with other vendor
 		for _, cidr := range v4CidrBlock {
 			dhcpOpt, err := newDHCPOptions(lsName, cidr, "")
-			dhcpOpt.ExternalIDs["vendor"] = util.CniTypeName + "-test"
+			dhcpOpt.ExternalIDs[ExternalIDVendor] = util.CniTypeName + "-test"
 			require.NoError(t, err)
 			dhcpOpts = append(dhcpOpts, dhcpOpt)
 		}

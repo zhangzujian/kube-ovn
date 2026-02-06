@@ -1002,8 +1002,8 @@ func (c *OVNNbClient) newACL(parent, direction, priority, match, action string, 
 		Match:     match,
 		Priority:  intPriority,
 		ExternalIDs: map[string]string{
-			aclParentKey: parent,
-			"vendor":     util.CniTypeName,
+			aclParentKey:     parent,
+			ExternalIDVendor: util.CniTypeName,
 		},
 		Tier: tier,
 	}
@@ -1036,8 +1036,8 @@ func (c *OVNNbClient) newACLWithoutCheck(parent, direction, priority, match, act
 		Match:     match,
 		Priority:  intPriority,
 		ExternalIDs: map[string]string{
-			aclParentKey: parent,
-			"vendor":     util.CniTypeName,
+			aclParentKey:     parent,
+			ExternalIDVendor: util.CniTypeName,
 		},
 		Tier: tier,
 	}
@@ -1735,7 +1735,7 @@ func (c *OVNNbClient) CleanNoParentKeyAcls() error {
 			return false
 		}
 		// Skip ACLs that don't belong to kube-ovn
-		if acl.ExternalIDs["vendor"] != util.CniTypeName {
+		if acl.ExternalIDs[ExternalIDVendor] != util.CniTypeName {
 			return false
 		}
 		// Only target kube-ovn ACLs that are missing the parent key

@@ -43,7 +43,7 @@ func (suite *OvnClientTestSuite) testCreateLogicalRouter() {
 		require.NoError(t, err)
 		require.Equal(t, name, lr.Name)
 		require.NotEmpty(t, lr.UUID)
-		require.Equal(t, util.CniTypeName, lr.ExternalIDs["vendor"])
+		require.Equal(t, util.CniTypeName, lr.ExternalIDs[ExternalIDVendor])
 	})
 
 	t.Run("test create existing logical router", func(t *testing.T) {
@@ -62,7 +62,7 @@ func (suite *OvnClientTestSuite) testCreateLogicalRouter() {
 
 		lr := &ovnnb.LogicalRouter{
 			Name:        name,
-			ExternalIDs: map[string]string{"vendor": "test-vendor"},
+			ExternalIDs: map[string]string{ExternalIDVendor: "test-vendor"},
 		}
 
 		err := createLogicalRouter(nbClient, lr)
@@ -146,7 +146,7 @@ func (suite *OvnClientTestSuite) testDeleteLogicalRouter() {
 
 		lr := &ovnnb.LogicalRouter{
 			Name:        name,
-			ExternalIDs: map[string]string{"vendor": "test-vendor"},
+			ExternalIDs: map[string]string{ExternalIDVendor: "test-vendor"},
 		}
 
 		err := createLogicalRouter(nbClient, lr)
@@ -210,7 +210,7 @@ func (suite *OvnClientTestSuite) testListLogicalRouter() {
 		name := fmt.Sprintf("%s-%d", namePrefix, i)
 		lr := &ovnnb.LogicalRouter{
 			Name:        name,
-			ExternalIDs: map[string]string{"vendor": "test-vendor"},
+			ExternalIDs: map[string]string{ExternalIDVendor: "test-vendor"},
 		}
 
 		err := createLogicalRouter(nbClient, lr)
@@ -258,7 +258,7 @@ func (suite *OvnClientTestSuite) testListLogicalRouter() {
 		t.Parallel()
 
 		filter := func(lr *ovnnb.LogicalRouter) bool {
-			return len(lr.ExternalIDs) == 0 || lr.ExternalIDs["vendor"] != util.CniTypeName
+			return len(lr.ExternalIDs) == 0 || lr.ExternalIDs[ExternalIDVendor] != util.CniTypeName
 		}
 		lrs, err := nbClient.ListLogicalRouter(false, filter)
 		require.NoError(t, err)

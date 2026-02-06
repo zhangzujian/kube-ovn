@@ -6,6 +6,7 @@ import (
 	"github.com/scylladb/go-set/strset"
 	"github.com/stretchr/testify/require"
 
+	"github.com/kubeovn/kube-ovn/pkg/ovs"
 	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
@@ -16,8 +17,8 @@ func newLogicalRouterPort(lrName, lrpName, mac string, networks []string) *ovnnb
 		MAC:      mac,
 		Networks: networks,
 		ExternalIDs: map[string]string{
-			"lr":     lrName,
-			"vendor": util.CniTypeName,
+			"lr":                 lrName,
+			ovs.ExternalIDVendor: util.CniTypeName,
 		},
 	}
 }

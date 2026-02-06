@@ -24,6 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
+	"github.com/kubeovn/kube-ovn/pkg/ovs"
 	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
@@ -339,7 +340,7 @@ func (c *Controller) handleAddOrUpdateVpc(key string) error {
 		staticExistedRoutes []*ovnnb.LogicalRouterStaticRoute
 		staticTargetRoutes  []*kubeovnv1.StaticRoute
 		staticRouteMapping  map[string][]*kubeovnv1.StaticRoute
-		externalIDs         = map[string]string{"vendor": util.CniTypeName}
+		externalIDs         = map[string]string{ovs.ExternalIDVendor: util.CniTypeName}
 	)
 
 	// only manage static routes which are kube-ovn managed, by filtering for vendor util.CniTypeName
@@ -949,7 +950,7 @@ func (c *Controller) batchDeletePolicyRouteFromVpc(name string, policies []*kube
 }
 
 func (c *Controller) addStaticRouteToVpc(name string, route *kubeovnv1.StaticRoute) error {
-	externalIDs := map[string]string{"vendor": util.CniTypeName}
+	externalIDs := map[string]string{ovs.ExternalIDVendor: util.CniTypeName}
 	if route.BfdID != "" {
 		klog.Infof("vpc %s add static ecmp route: %+v", name, route)
 		if err := c.OVNNbClient.AddLogicalRouterStaticRoute(

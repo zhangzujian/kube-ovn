@@ -92,7 +92,7 @@ func (c *OVNNbClient) CreateBareLogicalSwitch(lsName string) error {
 
 	ls := &ovnnb.LogicalSwitch{
 		Name:        lsName,
-		ExternalIDs: map[string]string{"vendor": util.CniTypeName},
+		ExternalIDs: map[string]string{ExternalIDVendor: util.CniTypeName},
 	}
 
 	op, err := c.Create(ls)
@@ -276,7 +276,7 @@ func (c *OVNNbClient) ListLogicalSwitch(needVendorFilter bool, filter func(ls *o
 	lsList := make([]ovnnb.LogicalSwitch, 0)
 
 	if err := c.ovsDbClient.WhereCache(func(ls *ovnnb.LogicalSwitch) bool {
-		if needVendorFilter && (len(ls.ExternalIDs) == 0 || ls.ExternalIDs["vendor"] != util.CniTypeName) {
+		if needVendorFilter && (len(ls.ExternalIDs) == 0 || ls.ExternalIDs[ExternalIDVendor] != util.CniTypeName) {
 			return false
 		}
 
