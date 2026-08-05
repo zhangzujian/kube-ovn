@@ -155,6 +155,32 @@ raise SystemExit(f"connection failed: {last_error}")
 ' "$address" "$port"
 }
 
+tcp_peer_in_vrf() {
+  local name=$1
+  local vrf=$2
+  local address=$3
+  local port=$4
+
+  ns "$name" ip vrf exec "$vrf" python3 -c '
+import socket
+import sys
+import time
+
+address = sys.argv[1]
+port = int(sys.argv[2])
+last_error = None
+for _ in range(50):
+    try:
+        with socket.create_connection((address, port), timeout=1) as connection:
+            print(connection.recv(128).decode().strip())
+            raise SystemExit(0)
+    except OSError as error:
+        last_error = error
+        time.sleep(0.05)
+raise SystemExit(f"connection failed: {last_error}")
+' "$address" "$port"
+}
+
 assert_equal() {
   local actual=$1
   local expected=$2
@@ -188,14 +214,6 @@ ns host ip link set vrf1 up
 ns host ip link set vrf2 up
 ns host ip link set h1vpc master vrf1
 ns host ip link set h2vpc master vrf2
-ns host ip link add leak1v type veth peer name leak1m
-ns host ip link add leak2v type veth peer name leak2m
-ns host ip link set leak1v master vrf1
-ns host ip link set leak2v master vrf2
-ns host ip link set leak1v up
-ns host ip link set leak1m up
-ns host ip link set leak2v up
-ns host ip link set leak2m up
 
 ns pod1 ip address add 10.10.1.2/24 dev p1eth
 ns pod1 ip route add default via 10.10.1.1
@@ -210,35 +228,40 @@ ns vpc2 ip address add 172.31.2.1/30 dev v2host
 ns vpc2 ip route add default via 172.31.2.2
 
 ns host ip address add 172.31.1.2/30 dev h1vpc
-ns host ip address add 198.18.1.1/30 dev leak1v
-ns host ip address add 198.18.1.2/30 dev leak1m
 ns host ip route add table 1001 10.10.1.0/24 via 172.31.1.1 dev h1vpc
-ns host ip route add table 1001 203.0.113.0/24 via 198.18.1.2 dev leak1v
-ns host ip route add 10.10.1.0/24 via 198.18.1.1 dev leak1m
+ns host ip route add table 1001 unreachable default metric 4278198272
 
 ns host ip address add 172.31.2.2/30 dev h2vpc
-ns host ip address add 198.18.2.1/30 dev leak2v
-ns host ip address add 198.18.2.2/30 dev leak2m
 ns host ip route add table 1002 10.10.2.0/24 via 172.31.2.1 dev h2vpc
-ns host ip route add table 1002 203.0.113.0/24 via 198.18.2.2 dev leak2v
-ns host ip route add 10.10.2.0/24 via 198.18.2.1 dev leak2m
+ns host ip route add table 1002 unreachable default metric 4278198272
 
 ns host ip address add 203.0.113.1/24 dev uplink0
 ns external ip address add 203.0.113.2/24 dev ext0
 ns external ip route add 10.10.1.0/24 via 203.0.113.1
 ns external ip route add 10.10.2.0/24 via 203.0.113.1
 
+# The narrow egress rules run first. The ingress guards then keep every other
+# packet from a VPC in its original table, before the destination rules make
+# Pod CIDRs reachable to locally generated host traffic and external returns.
+ns host ip rule add priority 40 from 10.10.1.0/24 to 203.0.113.0/24 lookup main
+ns host ip rule add priority 41 from 10.10.2.0/24 to 203.0.113.0/24 lookup main
+ns host ip rule add priority 50 iif h1vpc lookup 1001
+ns host ip rule add priority 51 iif h2vpc lookup 1002
+ns host ip rule add priority 100 to 10.10.1.0/24 lookup 1001
+ns host ip rule add priority 101 to 10.10.2.0/24 lookup 1002
+
 for name in host vpc1 vpc2 external; do
   ns "$name" sysctl -qw net.ipv4.ip_forward=1
   disable_rp_filter "$name"
 done
+ns host sysctl -qw net.ipv4.tcp_l3mdev_accept=0
 
 printf '\nSimulated host state:\n'
 ns host ip -brief link show
 printf '\nVRF routes:\n'
 ns host ip route show table 1001
 ns host ip route show table 1002
-printf '\nMain-table VPC routes and the automatic l3mdev rule:\n'
+printf '\nMain-table routes and policy rules:\n'
 ns host ip route show table main
 ns host ip rule show
 
@@ -247,35 +270,48 @@ ns pod1 ping -q -c 2 -W 1 172.31.1.2 >/dev/null
 pass "VPC 1 Pod reaches its host-transit address"
 ns pod2 ping -q -c 2 -W 1 172.31.2.2 >/dev/null
 pass "VPC 2 Pod reaches its host-transit address"
+ns pod1 ping -q -c 2 -W 1 203.0.113.1 >/dev/null
+pass "VPC 1 Pod reaches a main-domain host-local address through the local table"
+ns pod2 ping -q -c 2 -W 1 203.0.113.1 >/dev/null
+pass "VPC 2 Pod reaches a main-domain host-local address through the local table"
 
-start_echo_server host 0.0.0.0 18081 2 "$scratch_dir/host.log"
+start_echo_server host 0.0.0.0 18081 1 "$scratch_dir/host.log"
 if peer=$(tcp_peer pod1 172.31.1.2 18081 2>/dev/null); then
   fail "plain host listener unexpectedly accepted VRF traffic while tcp_l3mdev_accept=0 from $peer"
 fi
-pass "default tcp_l3mdev_accept=0 keeps a plain wildcard listener outside the VPC VRFs"
+pass "tcp_l3mdev_accept=0 keeps a plain wildcard listener outside the VPC VRFs"
 kill "${server_pids[-1]}" 2>/dev/null || true
 wait "${server_pids[-1]}" 2>/dev/null || true
 
-ns host sysctl -qw net.ipv4.tcp_l3mdev_accept=1
-start_echo_server host 0.0.0.0 18081 2 "$scratch_dir/host-l3mdev.log"
-assert_equal "$(tcp_peer pod1 172.31.1.2 18081)" "10.10.1.2" \
-  "plain host listener accepts VPC 1 after host-wide l3mdev opt-in"
-assert_equal "$(tcp_peer pod2 172.31.2.2 18081)" "10.10.2.2" \
-  "the same plain host listener accepts VPC 2 after host-wide l3mdev opt-in"
-
-ns host ip vrf exec vrf1 ping -q -c 2 -W 1 10.10.1.2 >/dev/null
-pass "host reaches VPC 1 Pod through VRF 1 routes"
-ns host ip vrf exec vrf2 ping -q -c 2 -W 1 10.10.2.2 >/dev/null
-pass "host reaches VPC 2 Pod through VRF 2 routes"
+start_echo_server pod1 10.10.1.2 18091 1 "$scratch_dir/pod1.log"
+start_echo_server pod2 10.10.2.2 18092 1 "$scratch_dir/pod2.log"
+ns host ip route get 10.10.1.2
+ns host ip route get 10.10.2.2
+ns host ping -q -c 2 -W 1 10.10.1.2 >/dev/null
+pass "an ordinary host ICMP socket reaches VPC 1 Pod through the destination policy rule"
+ns host ping -q -c 2 -W 1 10.10.2.2 >/dev/null
+pass "an ordinary host ICMP socket reaches VPC 2 Pod through the destination policy rule"
+if peer=$(tcp_peer host 10.10.1.2 18091 2>/dev/null); then
+  fail "a VRF-unaware host TCP socket unexpectedly reached VPC 1 Pod from $peer"
+fi
+pass "a VRF-unaware host TCP socket remains isolated from VPC 1 while tcp_l3mdev_accept=0"
+if peer=$(tcp_peer host 10.10.2.2 18092 2>/dev/null); then
+  fail "a VRF-unaware host TCP socket unexpectedly reached VPC 2 Pod from $peer"
+fi
+pass "a VRF-unaware host TCP socket remains isolated from VPC 2 while tcp_l3mdev_accept=0"
+assert_equal "$(tcp_peer_in_vrf host vrf1 10.10.1.2 18091)" "172.31.1.2" \
+  "a VRF-scoped host TCP socket reaches VPC 1 Pod"
+assert_equal "$(tcp_peer_in_vrf host vrf2 10.10.2.2 18092)" "172.31.2.2" \
+  "a VRF-scoped host TCP socket reaches VPC 2 Pod"
 
 if ns pod1 ping -q -c 1 -W 1 10.10.2.2 >/dev/null 2>&1; then
   fail "VPC 1 unexpectedly reached VPC 2"
 fi
-pass "selected-prefix VRF routing blocks VPC 1 to VPC 2 traffic"
+pass "the VPC 1 ingress guard and unreachable default block traffic to VPC 2"
 if ns pod2 ping -q -c 1 -W 1 10.10.1.2 >/dev/null 2>&1; then
   fail "VPC 2 unexpectedly reached VPC 1"
 fi
-pass "selected-prefix VRF routing blocks VPC 2 to VPC 1 traffic"
+pass "the VPC 2 ingress guard and unreachable default block traffic to VPC 1"
 
 printf '\nValidating routed external egress...\n'
 start_echo_server external 203.0.113.2 18080 2 "$scratch_dir/external.log"
@@ -286,6 +322,8 @@ assert_equal "$(tcp_peer pod2 203.0.113.2 18080)" "10.10.2.2" \
 
 root_after=$(root_network_fingerprint)
 assert_equal "$root_after" "$root_before" "root network namespace remains unchanged"
+assert_equal "$(ns host sysctl -n net.ipv4.tcp_l3mdev_accept)" "0" \
+  "the simulated host keeps tcp_l3mdev_accept disabled"
 
-printf '\nVERDICT: the IPv4, non-overlapping VRF plus selected-prefix route data path is feasible.\n'
-printf 'A plain wildcard TCP listener requires the host-wide tcp_l3mdev_accept opt-in; no service-specific VRF argument is used.\n'
+printf '\nVERDICT: policy rules replace the leak veths for ICMP and routed forwarding without consuming extra addresses.\n'
+printf 'With tcp_l3mdev_accept disabled, transparent host TCP sockets remain unavailable; an explicitly VRF-scoped client works.\n'
