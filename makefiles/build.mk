@@ -185,4 +185,4 @@ scan:
 
 .PHONY: build-kubectl-ko
 build-kubectl-ko:
-	CGO_ENABLED=0 go build $(GO_BUILD_FLAGS) -o $(CURDIR)/dist/images/kubectl-ko ./cmd/kubectl-ko
+	CGO_ENABLED=0 go build $(GO_BUILD_FLAGS) -o $(CURDIR)/dist/images/kubectl-ko$(if $(filter windows,$(shell go env GOOS)),.exe) ./cmd/kubectl-ko

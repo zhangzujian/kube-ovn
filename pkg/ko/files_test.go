@@ -71,6 +71,10 @@ func TestArchiveExtractionAndLimit(t *testing.T) {
 	data, err := root.ReadFile("sub/log")
 	require.NoError(t, err)
 	require.Equal(t, "log\x00\n", string(data))
+	require.NoError(t, extractTar(root, bytes.NewReader(archive(t, "sub/log", tar.TypeReg, "updated\x00\n")), 100))
+	data, err = root.ReadFile("sub/log")
+	require.NoError(t, err)
+	require.Equal(t, "updated\x00\n", string(data), "subsequent collections must replace files on every platform")
 	require.ErrorContains(t, extractTar(root, bytes.NewReader(archive(t, "large", tar.TypeReg, "too large")), 2), "byte limit")
 }
 
@@ -88,7 +92,7 @@ func TestBackupTransferChecksIntegrityAndDoesNotOverwrite(t *testing.T) {
 				return err
 			}}
 			client := &Client{Executor: executor}
-			destination := filepath.Join(t.TempDir(), "backup")
+			destination := filepath.Join(t.TempDir(), "backup with spaces")
 			_, err := client.downloadFile(t.Context(), Target{}, "/backup", destination)
 			if remoteHash != hash {
 				require.Error(t, err)

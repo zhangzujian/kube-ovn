@@ -89,6 +89,7 @@ __pycache__/
 *$py.class
 
 dist/images/kubectl-ko
+dist/images/kubectl-ko.exe
 dist/kubectl-ko/
 kubectl-ko-recovery-*.json
 ovnnb_db.*.backup.json

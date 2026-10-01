@@ -27,7 +27,7 @@ func extractTar(root *os.Root, input io.Reader, limit int64) error {
 			return err
 		}
 		name := path.Clean(header.Name)
-		if path.IsAbs(header.Name) || name == ".." || strings.HasPrefix(name, "../") || strings.Contains(name, "\\") {
+		if path.IsAbs(header.Name) || !filepath.IsLocal(name) || name == ".." || strings.HasPrefix(name, "../") || strings.Contains(name, "\\") {
 			return fmt.Errorf("unsafe archive path %q", header.Name)
 		}
 		if name == "." && header.Typeflag == tar.TypeDir {

@@ -9,14 +9,38 @@ in the cluster. No local Bash, OVN, OVS, tar, or kubectl subprocess is required.
 
 Kube-OVN images and the CNI installer install the binary at the existing
 `/usr/local/bin/kubectl-ko` path. For a separate workstation, download the
-`kubectl-ko-<os>-<arch>.tar.gz` asset and `kubectl-ko-checksums.txt` from the
+`kubectl-ko-<os>-<arch>.tar.gz` (Linux/macOS) or
+`kubectl-ko-windows-<arch>.zip` asset and `kubectl-ko-checksums.txt` from the
 matching Kube-OVN GitHub release, verify its SHA256, and put the extracted
-`kubectl-ko` on PATH. Linux and macOS, amd64 and arm64, are built independently.
-Do not copy a Linux pod binary to a macOS workstation. Windows is not supported.
+`kubectl-ko` on PATH. Linux, macOS and Windows, each on amd64 and arm64, are
+built independently. Do not copy a Linux pod binary to a macOS or Windows
+workstation. The Kubernetes nodes and remote OVN/OVS tools remain Linux-based.
+
+On Windows, use the ZIP matching the workstation architecture. Verify its
+SHA256 with `Get-FileHash`, extract it with `Expand-Archive`, and place
+`kubectl-ko.exe` in a directory on PATH alongside the existing `kubectl.exe`
+installation. PowerShell can also run it directly:
+
+```powershell
+Get-FileHash .\kubectl-ko-windows-arm64.zip -Algorithm SHA256
+Expand-Archive .\kubectl-ko-windows-arm64.zip .\kubectl-ko-windows-arm64
+.\kubectl-ko-windows-arm64\kubectl-ko.exe version
+.\kubectl-ko-windows-arm64\kubectl-ko.exe --context staging nbctl show
+```
+
+Use the amd64 archive instead on x64 Windows. `kubectl ko version` and
+`kubectl plugin list` confirm discovery once its directory is on PATH. WSL,
+Bash and local OVN/OVS installations are not required. Use PowerShell 7.4 or
+later (or cmd.exe) when redirecting binary stdout such as `tcpdump -w -`;
+older PowerShell versions can decode and corrupt native command output.
 
 For a source checkout, run `make build-kubectl-ko`; the result is
 `dist/images/kubectl-ko`. The module uses replacements, so installing release
 binaries is preferred to `go install ...@version`.
+On Windows, build from the checkout with
+`go build -o kubectl-ko.exe ./cmd/kubectl-ko`. Cross-builds via
+`GOOS=windows GOARCH=amd64 make build-kubectl-ko` produce
+`dist/images/kubectl-ko.exe`; substitute `arm64` for Windows on ARM.
 
 Use `kubectl plugin list` to detect older copies shadowing the new binary.
 `kubectl ko version` prints the local build without accessing a cluster.
@@ -88,7 +112,11 @@ Central files on the same node occupy an `ovn/central-<pod>` child directory.
 `manifest.json` records every item and failure. `--concurrency`, `--item-timeout`
 and `--max-bytes` limit each run; the byte limit is per item. Use `--strict` to
 make any failed item fail the command. Archives cannot write outside their
-collection root, and extracted files are private. XFRM state is collected with
+collection root. On Unix, extracted files use private permissions. On Windows,
+use a destination directory protected by your user ACL; Unix permission bits
+do not configure Windows ACLs. Backup destinations must support hard links
+(for example, NTFS) for atomic publication without overwriting existing files.
+XFRM state is collected with
 `nokeys`. Treat database and network diagnostics as sensitive local artifacts.
 
 `nb restore` preserves the old operation meaning: reconstruct from a database
@@ -137,8 +165,9 @@ make build-kubectl-ko
 make lint
 ```
 
-The dedicated workflow tests real exec streams and builds all four workstation
-platforms. Existing `[group:kubectl-ko]` E2E exercises trace, capture, logs,
+The dedicated workflow tests real exec streams, builds all six workstation
+platforms and runs file/streaming tests natively on Windows amd64 and arm64.
+Existing `[group:kubectl-ko]` E2E exercises trace, capture, logs,
 diagnostics and backup against a cluster. Recovery, rollout and disruption
 validation belong in disposable test clusters, never in the production CI
 control plane. New CLI paths select the existing full E2E matrix.
