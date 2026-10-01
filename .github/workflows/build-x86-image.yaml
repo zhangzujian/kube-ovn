@@ -2,6 +2,7 @@ name: Build x86 Image
 
 run-name: ${{ github.event_name == 'workflow_dispatch' && format('x86-e2e pr={0} head={1} approval={2} generation={3} mode={4} groups={5} labels={6} full={7}', inputs.prNumber, inputs.headSHA, inputs.approvalGeneration, inputs.dispatchGeneration, inputs.automatic && 'automatic' || 'approved', inputs.requestedGroupNames, inputs.controlledLabelNames, inputs.full && '1' || '0') || '' }}
 
+# Keep x86 jobs on the Ubuntu 24.04 hosted runner.
 permissions:
   contents: read
   packages: read
