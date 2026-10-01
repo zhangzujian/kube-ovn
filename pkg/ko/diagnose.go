@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -13,7 +14,10 @@ import (
 	"github.com/spf13/cobra"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
@@ -79,7 +83,7 @@ func (a *Application) diagnose(ctx context.Context, client *Client, args []strin
 			return err
 		}
 	}
-	configurationErr := a.checkConfiguration(ctx, client)
+	configurationErr := errors.Join(a.checkConfiguration(ctx, client), a.diagnoseOVN(ctx, client))
 	if readOnly {
 		return configurationErr
 	}
@@ -101,24 +105,39 @@ func (a *Application) diagnose(ctx context.Context, client *Client, args []strin
 	if mode == "node" {
 		node = value
 	}
-	pingers, err := client.targets(ctx, "app=kube-ovn-pinger", node, "pinger", true)
+	selector, container := "app=kube-ovn-pinger", "pinger"
+	if mode == "subnet" {
+		selector, container = labels.Set(run.labels()).String(), "probe"
+	}
+	pingers, err := client.targets(ctx, selector, node, container, true)
 	if err != nil {
 		return errors.Join(configurationErr, err)
 	}
 	if len(pingers) == 0 {
 		return errors.Join(configurationErr, errors.New("no ready pinger containers matched the diagnostic target"))
 	}
-	failures := []error{configurationErr}
+	return errors.Join(configurationErr, a.runDiagnosticProbes(ctx, client, pingers, mode, targets))
+}
+
+func (a *Application) runDiagnosticProbes(ctx context.Context, client *Client, pingers []Target, mode, targets string) error {
+	var failures []error
 	for _, target := range pingers {
 		if _, err := fmt.Fprintf(a.streams.Out, "Diagnosing node %s\n", target.Node); err != nil {
 			return err
 		}
-		argv := []string{"/kube-ovn/kube-ovn-pinger", "--mode=job", "--target-ip-ports=" + targets}
+		if mode == "all" || mode == "node" {
+			for _, argv := range [][]string{{"tail", "/var/log/ovn/ovn-controller.log"}, {"tail", "/var/log/openvswitch/ovs-vswitchd.log"}, {"ovs-vsctl", "show"}} {
+				if err := client.Executor.Exec(ctx, target, argv, a.outputStreams()); err != nil {
+					failures = append(failures, err)
+				}
+			}
+		}
+		argv := []string{"/kube-ovn/kube-ovn-pinger", "--mode=job", "--exit-code=1", "--target-ip-ports=" + targets}
 		if mode != "IPPorts" {
 			argv = append(argv, "--external-address=1.1.1.1,2606:4700:4700::1111")
 		}
 		if mode == "subnet" {
-			argv = append(argv, "--tcp-conn-check-port="+cmp.Or(os.Getenv("TCP_CONN_CHECK_PORT"), "8100"), "--udp-conn-check-port="+cmp.Or(os.Getenv("UDP_CONN_CHECK_PORT"), "8101"))
+			argv = append(argv, "--network-mode=diagnostic", "--enable-verbose-conn-check=true", "--tcp-conn-check-port="+cmp.Or(os.Getenv("TCP_CONN_CHECK_PORT"), "8100"), "--udp-conn-check-port="+cmp.Or(os.Getenv("UDP_CONN_CHECK_PORT"), "8101"))
 		}
 		if err := client.Executor.Exec(ctx, target, argv, a.outputStreams()); err != nil {
 			failures = append(failures, fmt.Errorf("probe on %s: %w", target.Node, err))
@@ -127,11 +146,13 @@ func (a *Application) diagnose(ctx context.Context, client *Client, args []strin
 	return errors.Join(failures...)
 }
 
+type diagnosticCheck struct {
+	name string
+	run  func() error
+}
+
 func (a *Application) checkConfiguration(ctx context.Context, client *Client) error {
-	checks := []struct {
-		name string
-		run  func() error
-	}{
+	checks := []diagnosticCheck{
 		{"Kubernetes service", func() error {
 			_, err := client.Kubernetes.CoreV1().Services("default").Get(ctx, "kubernetes", metav1.GetOptions{})
 			return err
@@ -141,29 +162,18 @@ func (a *Application) checkConfiguration(ctx context.Context, client *Client) er
 			return err
 		}},
 	}
+	checks = append(checks, client.configurationChecks(ctx)...)
 	for _, name := range []string{"ovn-central", "kube-ovn-controller"} {
-		checks = append(checks, struct {
-			name string
-			run  func() error
-		}{name, func() error { return client.waitDeployment(ctx, name, 30*time.Second) }})
+		checks = append(checks, diagnosticCheck{name, func() error { return client.waitDeployment(ctx, name, 30*time.Second) }})
 	}
 	for _, name := range []string{"kube-ovn-cni", "ovs-ovn"} {
-		checks = append(checks, struct {
-			name string
-			run  func() error
-		}{name, func() error { return client.waitDaemonSet(ctx, name, 30*time.Second) }})
+		checks = append(checks, diagnosticCheck{name, func() error { return client.waitDaemonSet(ctx, name, 30*time.Second) }})
 	}
 	for _, role := range []string{"nb", "sb", "northd"} {
-		checks = append(checks, struct {
-			name string
-			run  func() error
-		}{role + " leader", func() error { _, err := client.leader(ctx, role); return err }})
+		checks = append(checks, diagnosticCheck{role + " leader", func() error { _, err := client.leader(ctx, role); return err }})
 	}
 	if os.Getenv("WITHOUT_KUBE_PROXY") != "true" {
-		checks = append(checks, struct {
-			name string
-			run  func() error
-		}{"kube-proxy", func() error { return client.checkKubeProxy(ctx) }})
+		checks = append(checks, diagnosticCheck{"kube-proxy", func() error { return client.checkKubeProxy(ctx) }})
 	}
 	var failures []error
 	for _, check := range checks {
@@ -187,8 +197,94 @@ func (c *Client) checkKubeProxy(ctx context.Context) error {
 		}
 		return nil
 	}
-	// Do not hide RBAC or transport errors behind a missing-component diagnosis.
-	return fmt.Errorf("get kube-proxy (set WITHOUT_KUBE_PROXY=true for proxy-free installations): %w", err)
+	if !apierrors.IsNotFound(err) {
+		return err
+	}
+	targets, err := c.targets(ctx, "app=kube-ovn-cni", "", "cni-server", true)
+	if err != nil {
+		return err
+	}
+	if len(targets) == 0 {
+		return errors.New("no CNI containers available to probe embedded kube-proxy")
+	}
+	for _, target := range targets {
+		pod, err := c.Kubernetes.CoreV1().Pods(c.Namespace).Get(ctx, target.Pod, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		address := "http://" + net.JoinHostPort(pod.Status.PodIP, "10256") + "/healthz"
+		if _, err := c.capture(ctx, target, "curl", "--globoff", "--fail", "--silent", "--show-error", "--max-time", "3", address); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *Client) configurationChecks(ctx context.Context) []diagnosticCheck {
+	checks := []diagnosticCheck{
+		{"ovn service account", func() error {
+			_, err := c.Kubernetes.CoreV1().ServiceAccounts(c.Namespace).Get(ctx, "ovn", metav1.GetOptions{})
+			return err
+		}},
+		{"ovn cluster role", func() error {
+			_, err := c.Kubernetes.RbacV1().ClusterRoles().Get(ctx, "system:ovn", metav1.GetOptions{})
+			return err
+		}},
+		{"ovn cluster role binding", func() error {
+			_, err := c.Kubernetes.RbacV1().ClusterRoleBindings().Get(ctx, "ovn", metav1.GetOptions{})
+			return err
+		}},
+		{"cluster DNS", func() error {
+			_, err := c.Kubernetes.CoreV1().Services("kube-system").Get(ctx, "kube-dns", metav1.GetOptions{})
+			return err
+		}},
+		{"CoreDNS", func() error {
+			dns := *c
+			dns.Namespace = "kube-system"
+			return dns.waitDeployment(ctx, "coredns", 30*time.Second)
+		}},
+	}
+	resource := schema.GroupVersionResource{Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions"}
+	for _, name := range []string{"vpcs", "vpc-nat-gateways", "vpc-egress-gateways", "subnets", "ips", "vlans", "provider-networks", "security-groups", "vips", "vpc-dnses", "switch-lb-rules", "ippools", "ovn-eips", "ovn-fips", "ovn-dnat-rules", "ovn-snat-rules", "iptables-eips", "iptables-fip-rules", "iptables-snat-rules", "iptables-dnat-rules"} {
+		checks = append(checks, diagnosticCheck{name + " CRD", func() error {
+			_, err := c.Dynamic.Resource(resource).Get(ctx, name+".kubeovn.io", metav1.GetOptions{})
+			return err
+		}})
+	}
+	return checks
+}
+
+func (a *Application) diagnoseOVN(ctx context.Context, client *Client) error {
+	var failures []error
+	nodes, err := client.Kubernetes.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		failures = append(failures, err)
+	} else {
+		for _, node := range nodes.Items {
+			if _, err := fmt.Fprintf(a.streams.Out, "Node %s: %v\n", node.Name, node.Status.Addresses); err != nil {
+				return err
+			}
+		}
+	}
+	for _, role := range []string{"nb", "sb"} {
+		target, err := client.leader(ctx, role)
+		if err != nil {
+			failures = append(failures, err)
+			continue
+		}
+		commands := [][]string{{"ovn-" + role + "ctl", "show"}, databaseCommand(role, "cluster/status"), databaseCommand(role, "ovsdb-server/get-db-storage-status")}
+		if role == "nb" {
+			for _, args := range [][]string{{"lr-policy-list", "ovn-cluster"}, {"lr-route-list", "ovn-cluster"}, {"ls-lb-list", "ovn-default"}, {"list", "address_set"}, {"list", "acl"}} {
+				commands = append(commands, append([]string{"ovn-nbctl"}, args...))
+			}
+		}
+		for _, argv := range commands {
+			if err := client.Executor.Exec(ctx, target, argv, a.outputStreams()); err != nil {
+				failures = append(failures, err)
+			}
+		}
+	}
+	return errors.Join(failures...)
 }
 
 func (r *resourceRun) nodePortProbe(ctx context.Context) (string, error) {

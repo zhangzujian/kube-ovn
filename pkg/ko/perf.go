@@ -194,15 +194,17 @@ func (a *Application) servicePerformance(ctx context.Context, run *resourceRun, 
 		return errors.New("performance server has no logical switch annotation")
 	}
 	argv := []string{"ovn-nbctl", "--", "lb-add", name, pods.service.Spec.ClusterIP, pods.server.Status.PodIP, "--", "ls-lb-add", subnet, name}
-	if _, err := run.client.capture(ctx, target, argv...); err != nil {
-		return err
-	}
+	// Register cleanup before mutation: a transport error does not prove the
+	// remote transaction failed. The random run identity belongs only to us.
 	defer func() {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 		defer cancel()
 		_, err := run.client.capture(cleanupCtx, target, "ovn-nbctl", "--if-exists", "lb-del", name)
 		resultErr = errors.Join(resultErr, err)
 	}()
+	if _, err := run.client.capture(ctx, target, argv...); err != nil {
+		return err
+	}
 	if _, err := fmt.Fprintln(a.streams.Out, "=== Service network ==="); err != nil {
 		return err
 	}

@@ -39,6 +39,9 @@ func (c *Client) targets(ctx context.Context, selector, node, container string, 
 	}
 	result := make([]Target, 0, len(pods.Items))
 	for i := range pods.Items {
+		if node != "" && pods.Items[i].Spec.NodeName != node {
+			continue
+		}
 		if target, ok := podTarget(&pods.Items[i], container, ready); ok {
 			result = append(result, target)
 		}

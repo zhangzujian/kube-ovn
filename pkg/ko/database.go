@@ -67,8 +67,16 @@ func (a *Application) databaseStatus(ctx context.Context, client *Client, _ []st
 			return err
 		}
 		for _, role := range []string{"nb", "sb"} {
-			if err := client.Executor.Exec(ctx, target, databaseCommand(role, "ovsdb-server/get-db-storage-status"), a.outputStreams()); err != nil {
+			status, err := client.capture(ctx, target, databaseCommand(role, "ovsdb-server/get-db-storage-status")...)
+			if err != nil {
 				failures = append(failures, fmt.Errorf("%s %s: %w", target.Pod, role, err))
+				continue
+			}
+			if _, err := fmt.Fprintln(a.streams.Out, status); err != nil {
+				return err
+			}
+			if strings.TrimSpace(status) != "status: ok" {
+				failures = append(failures, fmt.Errorf("%s %s storage is unhealthy: %s", target.Pod, role, strings.TrimSpace(status)))
 			}
 		}
 	}

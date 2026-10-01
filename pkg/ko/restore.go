@@ -15,6 +15,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/exec"
 )
 
 type recoveryRecord struct {
@@ -88,6 +89,11 @@ func (c *Client) planRecovery(ctx context.Context, source string) (*appsv1.Deplo
 	if !slices.Contains(nodes, source) {
 		return nil, nil, fmt.Errorf("source node %s is not a central database member", source)
 	}
+	// start-db.sh bootstraps from the first NODE_IPS address. Placing a standalone
+	// database only on another member would let that first member create an empty DB.
+	if nodes[0] != source {
+		return nil, nil, fmt.Errorf("recovery source must be bootstrap node %s (the first NODE_IPS member)", nodes[0])
+	}
 	record := &recoveryRecord{ID: runID(), Namespace: c.Namespace, SourceNode: source, Replicas: *deployment.Spec.Replicas, Stage: "planned"}
 	record.Directory = "/etc/ovn/kubectl-ko-recovery-" + record.ID
 	for _, node := range nodes {
@@ -106,8 +112,10 @@ func (c *Client) planRecovery(ctx context.Context, source string) (*appsv1.Deplo
 		if ovsPath != hostPath {
 			return nil, nil, fmt.Errorf("database hostPath differs between central and OVS on %s", node)
 		}
-		if _, err := c.capture(ctx, target, "test", "-f", "/etc/ovn/ovnnb_db.db"); err != nil {
-			return nil, nil, err
+		for _, role := range []string{"nb", "sb"} {
+			if _, err := c.capture(ctx, target, "test", "-f", "/etc/ovn/ovn"+role+"_db.db"); err != nil {
+				return nil, nil, err
+			}
 		}
 		record.Targets = append(record.Targets, target)
 	}
@@ -298,6 +306,18 @@ func (c *Client) replaceRecoveryFiles(ctx context.Context, record *recoveryRecor
 	for _, target := range record.Targets {
 		for _, role := range []string{"nb", "sb"} {
 			if _, err := c.capture(ctx, target, "mv", "/etc/ovn/ovn"+role+"_db.db", record.Directory+"/ovn"+role+"_db.clustered"); err != nil {
+				return err
+			}
+			// A surviving RAFT header makes start-db.sh rejoin the old cluster.
+			// Preserve optional headers alongside the old databases before restart.
+			header := "/etc/ovn/ovn" + role + "_db.hdr"
+			if _, err := c.capture(ctx, target, "test", "-e", header); err != nil {
+				if exit, ok := errors.AsType[exec.ExitError](err); ok && exit.ExitStatus() == 1 {
+					continue
+				}
+				return err
+			}
+			if _, err := c.capture(ctx, target, "mv", header, record.Directory+"/ovn"+role+"_db.hdr"); err != nil {
 				return err
 			}
 		}

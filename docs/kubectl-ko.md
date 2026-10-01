@@ -93,7 +93,8 @@ collection root, and extracted files are private. XFRM state is collected with
 
 `nb restore` preserves the old operation meaning: reconstruct from a database
 already on a node, not import an arbitrary local backup. It requires an explicit
-source node and confirmation, and supports only the standard central Deployment
+source node and confirmation; the source must be the first `NODE_IPS` member,
+which the image startup script uses to bootstrap the cluster. Recovery supports only the standard central Deployment
 with literal `NODE_IPS` membership and matching writable hostPath mounts in
 central and OVS. Run `--dry-run` first. All central pods must stop before file
 changes begin. Original files remain in a unique directory on every member;

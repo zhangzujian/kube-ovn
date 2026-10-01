@@ -2,8 +2,12 @@ package kubectl_ko
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json/v2"
 	"fmt"
 	"math/rand/v2"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -131,7 +135,36 @@ var _ = framework.Describe("[group:kubectl-ko]", func() {
 		for _, db := range databases {
 			for _, action := range actions {
 				execOrDie(fmt.Sprintf("ko %s %s", db, action))
-				// TODO: verify backup files are present
+			}
+		}
+	})
+
+	framework.ConformanceIt(`should download intact standalone database backups with provenance`, func() {
+		f.SkipVersionPriorTo(1, 17, "The Go plugin backup metadata was introduced in v1.17")
+		directory, err := os.MkdirTemp("", "kubectl-ko-backup-")
+		framework.ExpectNoError(err)
+		ginkgo.DeferCleanup(func() { framework.ExpectNoError(os.RemoveAll(directory)) })
+		for _, role := range []string{"nb", "sb"} {
+			filename := filepath.Join(directory, role+".backup")
+			e2ekubectl.NewKubectlCommand("", "ko", role, "backup", "--output", filename).ExecOrDie("")
+			data, err := os.ReadFile(filename)
+			framework.ExpectNoError(err)
+			if !strings.HasPrefix(string(data), "OVSDB JSON ") {
+				framework.Failf("backup %s is not a standalone OVSDB log", filename)
+			}
+			metadata, err := os.ReadFile(filename + ".json")
+			framework.ExpectNoError(err)
+			var origin struct{ Database, SHA256, Pod, Namespace string }
+			framework.ExpectNoError(json.Unmarshal(metadata, &origin))
+			if origin.SHA256 != fmt.Sprintf("%x", sha256.Sum256(data)) || origin.Pod == "" || origin.Namespace == "" {
+				framework.Failf("backup %s checksum or provenance is invalid", filename)
+			}
+			database := "OVN_Northbound"
+			if role == "sb" {
+				database = "OVN_Southbound"
+			}
+			if origin.Database != database || !strings.Contains(string(data), database) {
+				framework.Failf("backup %s contains the wrong database", filename)
 			}
 		}
 	})
