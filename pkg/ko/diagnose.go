@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -436,7 +437,8 @@ func (a *Application) diagnoseOVN(ctx context.Context, client *Client) error {
 func (r *resourceRun) nodePortProbe(ctx context.Context) (string, error) {
 	service := &corev1.Service{Name: "ko-nodeport-" + r.id, Labels: r.labels(), Spec: corev1.ServiceSpec{
 		Type: corev1.ServiceTypeNodePort, Selector: map[string]string{"app": "kube-ovn-pinger"},
-		Ports: []corev1.ServicePort{{Name: "probe", Protocol: corev1.ProtocolTCP, Port: 60001, TargetPort: intstr.FromInt32(8080)}},
+		IPFamilyPolicy: new(corev1.IPFamilyPolicyPreferDualStack),
+		Ports:          []corev1.ServicePort{{Name: "probe", Protocol: corev1.ProtocolTCP, Port: 60001, TargetPort: intstr.FromInt32(8080)}},
 	}}
 	result, err := r.createService(ctx, service)
 	if err != nil {
@@ -445,20 +447,38 @@ func (r *resourceRun) nodePortProbe(ctx context.Context) (string, error) {
 	if len(result.Spec.Ports) != 1 || result.Spec.Ports[0].NodePort == 0 {
 		return "", errors.New("probe Service has no allocated NodePort")
 	}
+	if len(result.Spec.IPFamilies) == 0 {
+		return "", errors.New("probe Service has no allocated IP families")
+	}
 	nodes, err := r.client.Kubernetes.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return "", err
 	}
 	var targets []string
+	probedFamilies := make(map[corev1.IPFamily]bool)
 	for _, node := range nodes.Items {
 		for _, address := range node.Status.Addresses {
 			if address.Type == corev1.NodeInternalIP {
+				ip, err := netip.ParseAddr(address.Address)
+				if err != nil {
+					return "", fmt.Errorf("node %s has invalid internal address %q: %w", node.Name, address.Address, err)
+				}
+				family := corev1.IPv6Protocol
+				if ip.Unmap().Is4() {
+					family = corev1.IPv4Protocol
+				}
+				if !slices.Contains(result.Spec.IPFamilies, family) {
+					continue
+				}
 				targets = append(targets, fmt.Sprintf("tcp-%s-%d", address.Address, result.Spec.Ports[0].NodePort))
+				probedFamilies[family] = true
 			}
 		}
 	}
-	if len(targets) == 0 {
-		return "", errors.New("nodes have no internal addresses")
+	for _, family := range result.Spec.IPFamilies {
+		if !probedFamilies[family] {
+			return "", fmt.Errorf("nodes have no internal addresses for probe Service family %s", family)
+		}
 	}
 	return strings.Join(targets, ","), nil
 }

@@ -108,6 +108,11 @@ kubectl ko
 
 ## Configuration and argument boundaries
 
+Temporary NodePort probes request `PreferDualStack` and target only the IP
+families actually allocated to the Service. Single-stack clusters use their
+available family; dual-stack clusters probe both families. Missing node
+addresses for an allocated family are reported as errors.
+
 Standard Kubernetes connection flags are accepted before or after subcommands,
 up to the explicit `--` remote-argument separator. The kubeconfig loader supports
 `--kubeconfig`, `KUBECONFIG`, context, TLS, authentication plugins and impersonation.
