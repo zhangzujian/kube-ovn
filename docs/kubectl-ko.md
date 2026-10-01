@@ -255,6 +255,10 @@ make lint
 The dedicated workflow tests real exec streams, builds all six workstation
 platforms and runs file/streaming tests natively on Windows amd64 and arm64.
 Existing `[group:kubectl-ko]` E2E exercises trace, capture, logs,
-diagnostics and backup against a cluster. Recovery, rollout and disruption
-validation belong in disposable test clusters, never in the production CI
-control plane. New CLI paths select the existing full E2E matrix.
+diagnostics and backup against a cluster. The Kind-only serial `[group:ha]`
+suite checks restart and leader recovery against NB data and internal
+connectivity, and database reconstruction against its recovery record,
+retained originals, NB data and connectivity. It repeats the traffic benchmark
+and checks probe/LB/multicast cleanup and unchanged central Pod UIDs. These
+specs use the matching binary from the test cluster image. New CLI paths
+select the existing full E2E matrix.

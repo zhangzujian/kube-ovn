@@ -7,6 +7,7 @@ on:
       - pkg/ko/**
       - pkg/pinger/**
       - test/e2e/framework/kubectlko/**
+      - test/e2e/ha/kubectl_ko_test.go
       - go.mod
       - go.sum
       - makefiles/build.mk
