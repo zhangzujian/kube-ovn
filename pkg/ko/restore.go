@@ -111,21 +111,67 @@ func (c *Client) planRecovery(ctx context.Context, source string) (*appsv1.Deplo
 		if err != nil {
 			return nil, nil, err
 		}
-		ovsPath, err := hostDatabasePath(pod.Spec, target.Container)
-		if err != nil {
-			return nil, nil, err
-		}
-		if ovsPath != hostPath {
+		ovsPath, mountErr := hostDatabasePath(pod.Spec, target.Container)
+		switch {
+		case mountErr != nil:
+			// Helm OVS pods do not mount central's database directory. Plan a
+			// temporary helper instead of touching the container's own filesystem.
+			target = Target{Namespace: c.Namespace, Pod: fmt.Sprintf("ko-recovery-%s-%d", record.ID, len(record.Targets)), Container: "recovery", Node: node}
+		case ovsPath != hostPath:
 			return nil, nil, fmt.Errorf("database hostPath differs between central and OVS on %s", node)
-		}
-		for _, role := range []string{"nb", "sb"} {
-			if _, err := c.capture(ctx, target, "test", "-f", "/etc/ovn/ovn"+role+"_db.db"); err != nil {
-				return nil, nil, err
+		default:
+			for _, role := range []string{"nb", "sb"} {
+				if _, err := c.capture(ctx, target, "test", "-f", "/etc/ovn/ovn"+role+"_db.db"); err != nil {
+					return nil, nil, err
+				}
 			}
 		}
 		record.Targets = append(record.Targets, target)
 	}
 	return deployment, record, nil
+}
+
+func (r *resourceRun) prepareRecoveryTargets(ctx context.Context, deployment *appsv1.Deployment, record *recoveryRecord) error {
+	hostPath, err := hostDatabasePath(deployment.Spec.Template.Spec, "ovn-central")
+	if err != nil {
+		return err
+	}
+	var central corev1.Container
+	for _, container := range deployment.Spec.Template.Spec.Containers {
+		if container.Name == "ovn-central" {
+			central = container
+		}
+	}
+	for _, target := range record.Targets {
+		if target.Container == "recovery" {
+			if central.Image == "" {
+				return errors.New("recovery helper requires the central image")
+			}
+			spec := deployment.Spec.Template.Spec
+			pod := &corev1.Pod{Name: target.Pod, Namespace: r.client.Namespace, Labels: r.labels(), Spec: corev1.PodSpec{
+				NodeName: target.Node, HostNetwork: true, RestartPolicy: corev1.RestartPolicyNever, AutomountServiceAccountToken: new(false),
+				SecurityContext: spec.SecurityContext, ImagePullSecrets: spec.ImagePullSecrets, Tolerations: spec.Tolerations,
+				Containers: []corev1.Container{{
+					Name: "recovery", Image: central.Image, ImagePullPolicy: central.ImagePullPolicy,
+					Command: []string{"sleep", "infinity"}, SecurityContext: central.SecurityContext,
+					VolumeMounts: []corev1.VolumeMount{{Name: "db", MountPath: "/etc/ovn"}},
+				}},
+				Volumes: []corev1.Volume{{Name: "db", HostPath: &corev1.HostPathVolumeSource{Path: hostPath, Type: new(corev1.HostPathDirectory)}}},
+			}}
+			if _, err := r.createPod(ctx, pod); err != nil {
+				return err
+			}
+			if _, err := r.client.waitPod(ctx, pod.Name); err != nil {
+				return err
+			}
+		}
+		for _, role := range []string{"nb", "sb"} {
+			if _, err := r.client.capture(ctx, target, "test", "-f", "/etc/ovn/ovn"+role+"_db.db"); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (c *Client) recoveryNodes(ctx context.Context, deployment *appsv1.Deployment) ([]string, error) {
@@ -185,6 +231,8 @@ func (c *Client) scaleCentral(ctx context.Context, replicas int32) error {
 }
 
 func (a *Application) restore(ctx context.Context, client *Client, deployment *appsv1.Deployment, record *recoveryRecord) (resultErr error) {
+	run := &resourceRun{client: client, id: record.ID}
+	defer func() { resultErr = errors.Join(resultErr, run.cleanup(ctx)) }()
 	filename := "kubectl-ko-recovery-" + record.ID + ".json"
 	file, err := os.OpenFile(filename, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
@@ -212,6 +260,9 @@ func (a *Application) restore(ctx context.Context, client *Client, deployment *a
 			resultErr = fmt.Errorf("recovery stopped at %s; preserve %s and %s on each node; desired replicas were %d: %w", record.Stage, filename, record.Directory, record.Replicas, resultErr)
 		}
 	}()
+	if err := run.prepareRecoveryTargets(ctx, deployment, record); err != nil {
+		return err
+	}
 	if err := checkpoint("stopping-central"); err != nil {
 		return err
 	}

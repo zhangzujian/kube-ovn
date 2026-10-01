@@ -288,7 +288,11 @@ func (c *Client) multicastTarget(ctx context.Context, pod *corev1.Pod) (multicas
 		if pod.Annotations[annotationPrefix+"pod_nic_type"] == "internal-port" {
 			name = nic.name
 		}
-		return multicastTarget{target: ovs, netns: nic.netns, nic: name}, nil
+		cni, err := c.nodeTarget(ctx, pod.Spec.NodeName, "kube-ovn-cni")
+		if err != nil {
+			return multicastTarget{}, err
+		}
+		return multicastTarget{target: cni, netns: nic.netns, nic: name}, nil
 	}
 	output, err := c.capture(ctx, ovs, "ip", "-o", "addr", "show")
 	if err != nil {

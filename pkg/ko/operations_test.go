@@ -179,3 +179,32 @@ func TestMulticastCleansUpLostAddResponseAndPreservesExistingMembership(t *testi
 	require.ErrorIs(t, app.multicastPerformance(ctx, client, pods[0], pods[1], performanceOptions{}), context.DeadlineExceeded)
 	require.Equal(t, map[string]bool{"a": true}, membership)
 }
+
+func TestMulticastPodNamespaceUsesCNIContainer(t *testing.T) {
+	app, executor, _, _ := testApplication(t,
+		&corev1.Node{Name: "worker"},
+		readyPod("ovs-worker", "worker", "openvswitch", map[string]string{"app": "ovs"}),
+		readyPod("cni-worker", "worker", "cni-server", map[string]string{"app": "kube-ovn-cni"}),
+	)
+	client, err := app.newClient()
+	require.NoError(t, err)
+	executor.run = func(_ context.Context, target Target, argv []string, streams Streams) error {
+		require.Equal(t, "openvswitch", target.Container)
+		require.Contains(t, argv, "ovs-vsctl")
+		_, err := io.WriteString(streams.Out, `{"headings":["name","external_ids","ofport"],"data":[["pod-port",["map",[["pod_netns","/var/run/netns/pod"]]],1]]}`)
+		return err
+	}
+	for _, nicType := range []string{"veth-pair", "internal-port"} {
+		pod := &corev1.Pod{Name: "probe", Namespace: "ovn-system", Annotations: map[string]string{annotationPrefix + "pod_nic_type": nicType}, Spec: corev1.PodSpec{NodeName: "worker"}}
+		target, err := client.multicastTarget(t.Context(), pod)
+		require.NoError(t, err)
+		require.Equal(t, "cni-worker", target.target.Pod, "only CNI mounts the host Pod network namespaces")
+		require.Equal(t, "cni-server", target.target.Container)
+		require.Equal(t, "/var/run/netns/pod", target.netns)
+		expected := "eth0"
+		if nicType == "internal-port" {
+			expected = "pod-port"
+		}
+		require.Equal(t, expected, target.nic)
+	}
+}

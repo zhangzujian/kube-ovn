@@ -226,7 +226,7 @@ func kubectlKoCheckRecoveryRecord(f *framework.Framework, output, source string,
 	framework.ExpectEqual(record.Replicas, replicas)
 	framework.ExpectHaveLen(record.Targets, int(replicas))
 	framework.ExpectEqual(strings.HasPrefix(record.Directory, "/etc/ovn/kubectl-ko-recovery-"), true)
-	pods, err := f.ClientSet.CoreV1().Pods(framework.KubeOvnNamespace).List(context.Background(), metav1.ListOptions{LabelSelector: "app=ovs"})
+	pods, err := f.ClientSet.CoreV1().Pods(framework.KubeOvnNamespace).List(context.Background(), metav1.ListOptions{LabelSelector: "app=ovn-central"})
 	framework.ExpectNoError(err)
 	for _, target := range record.Targets {
 		found := false
@@ -237,10 +237,10 @@ func kubectlKoCheckRecoveryRecord(f *framework.Framework, output, source string,
 			found = true
 			for _, db := range []string{"nb", "sb"} {
 				path := record.Directory + "/ovn" + db + "_db.original"
-				e2ekubectl.NewKubectlCommand("", "exec", "-n", pod.Namespace, pod.Name, "-c", "openvswitch", "--", "test", "-s", path).ExecOrDie("")
+				e2ekubectl.NewKubectlCommand("", "exec", "-n", pod.Namespace, pod.Name, "-c", "ovn-central", "--", "test", "-s", path).ExecOrDie("")
 			}
 		}
-		framework.ExpectEqual(found, true, "missing OVS pod on recovery node %s", target.Node)
+		framework.ExpectEqual(found, true, "missing central pod on recovery node %s", target.Node)
 	}
 }
 

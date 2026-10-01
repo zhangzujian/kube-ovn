@@ -90,7 +90,7 @@ kubectl ko
 | `db health` | Check both NB and SB storage on every running central container, without requiring a healthy leader. Report unhealthy storage as failure. |
 | `db nb backup`, `db sb backup` | Convert and download a standalone database, verify DB name and SHA256, and publish without overwriting an existing file. Write a JSON provenance sidecar; remove the temporary remote backup. |
 | `db nb kick SERVER_ID`, `db sb kick SERVER_ID` | Remove a stale cluster member. `--dry-run` prints the selected target and exact command without applying the change. |
-| `db nb restore` | Reconstruct the central NB/SB cluster from the NB database already present on the explicit bootstrap node. Stop central, preserve originals and RAFT headers, rebuild, verify storage and restart OVS. This is not local-file import; SB-only restore is not supported. |
+| `db nb restore` | Reconstruct the central NB/SB cluster from the NB database already present on the explicit bootstrap node. Verify the shared hostPath, use temporary per-node helpers when OVS does not mount the databases, stop central, preserve originals and RAFT headers, rebuild, verify storage and restart OVS. Helpers use the central image and security context and are cleaned up by UID. This is not local-file import; SB-only restore is not supported. |
 | `trace` | Resolve Pod/Node addresses, MACs and logical ports, trace through OVN, then OVS. Supports IPv4/IPv6, ICMP/TCP/UDP, IPv4 ARP request/reply, explicit destination MAC, hostNetwork, Underlay/U2O and VM logical ports. `--engine ovn` runs only OVN trace. |
 | `capture` | Execute tcpdump in a Pod's network namespace, including hostNetwork and internal-port paths. A remote `-w PATH` stays remote; `-w -` streams the original pcap bytes locally. |
 | `diagnose cluster` | Check cluster configuration, component rollout and leaders; create a unique temporary NodePort Service and run active pinger checks. |
@@ -187,8 +187,11 @@ XFRM state is collected with
 already on a node, not import an arbitrary local backup. It requires an explicit
 source node and confirmation; the source must be the first `NODE_IPS` member,
 which the image startup script uses to bootstrap the cluster. Recovery supports only the standard central Deployment
-with literal `NODE_IPS` membership and matching writable hostPath mounts in
-central and OVS. Run `--dry-run` first. All central pods must stop before file
+with literal `NODE_IPS` membership and a writable central hostPath mount. If
+OVS does not mount the database directory, temporary hostNetwork helpers use
+the same hostPath without depending on the OVN Pod network. All helper and
+database-file checks finish before central is stopped. An existing OVS database
+mount must match central's hostPath. Run `--dry-run` first. All central pods must stop before file
 changes begin. Original files remain in a unique directory on every member;
 a private local JSON record tracks the last recovery stage. An error stops the
 procedure and reports this record, the remote directory and original replica
