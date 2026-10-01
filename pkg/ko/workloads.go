@@ -5,7 +5,9 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
+	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -137,7 +139,65 @@ func (r *resourceRun) createDaemonSet(ctx context.Context, ds *appsv1.DaemonSet)
 		return r.recordUncertainCreation(ctx, "daemonset", ds.Name, err)
 	}
 	r.resources = append(r.resources, ownedResource{kind: "daemonset", name: result.Name, uid: result.UID})
-	return r.client.waitDaemonSet(ctx, result.Name, 2*time.Minute)
+	if err := r.client.waitDaemonSet(ctx, result.Name, 2*time.Minute); err != nil {
+		return r.daemonSetFailure(ctx, result, err)
+	}
+	return nil
+}
+
+func (r *resourceRun) daemonSetFailure(ctx context.Context, ds *appsv1.DaemonSet, cause error) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	var report strings.Builder
+	if ds.UID == "" {
+		return fmt.Errorf("daemonset %s/%s did not become ready: %w", ds.Namespace, ds.Name, cause)
+	}
+	pods, err := r.client.Kubernetes.CoreV1().Pods(ds.Namespace).List(ctx, metav1.ListOptions{LabelSelector: metav1.FormatLabelSelector(ds.Spec.Selector)})
+	if err != nil {
+		return errors.Join(cause, fmt.Errorf("inspect failed daemonset %s/%s: %w", ds.Namespace, ds.Name, err))
+	}
+	inspected := 0
+	for _, pod := range pods.Items {
+		if !metav1.IsControlledBy(&pod, ds) {
+			continue
+		}
+		if inspected == 8 {
+			fmt.Fprintln(&report, "Further probe pods omitted (diagnostic limit: 8 pods)")
+			break
+		}
+		inspected++
+		fmt.Fprintf(&report, "%s phase=%s node=%s\n", pod.Name, pod.Status.Phase, pod.Spec.NodeName)
+		for _, condition := range pod.Status.Conditions {
+			if condition.Status == corev1.ConditionFalse {
+				fmt.Fprintf(&report, "%s: %s %s\n", condition.Type, condition.Reason, condition.Message)
+			}
+		}
+		for _, status := range pod.Status.ContainerStatuses {
+			fmt.Fprintf(&report, "%s/%s restarts=%d", pod.Name, status.Name, status.RestartCount)
+			if state := status.State.Waiting; state != nil {
+				fmt.Fprintf(&report, " state=%s", state.Reason)
+			}
+			for _, state := range []*corev1.ContainerStateTerminated{status.State.Terminated, status.LastTerminationState.Terminated} {
+				if state != nil {
+					fmt.Fprintf(&report, " exit=%d reason=%s", state.ExitCode, state.Reason)
+				}
+			}
+			fmt.Fprintln(&report)
+			options := &corev1.PodLogOptions{Container: status.Name, Previous: status.RestartCount > 0, TailLines: new(int64(20)), LimitBytes: new(int64(4096))}
+			stream, err := r.client.Kubernetes.CoreV1().Pods(ds.Namespace).GetLogs(pod.Name, options).Stream(ctx)
+			if err != nil {
+				fmt.Fprintf(&report, "Cannot read probe log: %v\n", err)
+				continue
+			}
+			_, readErr := io.Copy(&report, io.LimitReader(stream, 4096))
+			closeErr := stream.Close()
+			fmt.Fprintln(&report)
+			if err := errors.Join(readErr, closeErr); err != nil {
+				fmt.Fprintf(&report, "Probe log read failed: %v\n", err)
+			}
+		}
+	}
+	return fmt.Errorf("daemonset %s/%s did not become ready: %w\n%s", ds.Namespace, ds.Name, cause, report.String())
 }
 
 // A lost create response can leave an object on the server. Only adopt it for

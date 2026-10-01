@@ -200,7 +200,11 @@ recovery. Retain these files for a deliberate recovery or rollback.
 
 Probe resources have unique names and a run identity. Cleanup uses saved UIDs,
 not broad label deletion. A cleanup failure reports the exact remaining object
-without hiding the original error. `restart`, raw OVN/OVS commands, recovery and
+without hiding the original error. Subnet pinger Pods mount a private temporary
+log directory. If their DaemonSet fails to become ready, the command collects
+status and limited container logs from at most eight Pods owned by that
+DaemonSet before cleanup. Log collection has a five-second deadline and retains
+the original readiness error. `restart`, raw OVN/OVS commands, recovery and
 explicit performance disruption can change live cluster state.
 
 ## Compatibility and migration

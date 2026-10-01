@@ -510,8 +510,11 @@ func (r *resourceRun) subnetProbe(ctx context.Context, subnet string, options di
 		Template: corev1.PodTemplateSpec{Labels: r.labels(), Annotations: map[string]string{annotationPrefix + "logical_switch": subnet}, Spec: corev1.PodSpec{
 			AutomountServiceAccountToken: new(true),
 			ServiceAccountName:           "kube-ovn-app", SecurityContext: &corev1.PodSecurityContext{SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}},
+			// Pinger initializes its log file even when logging to stderr.
+			Volumes: []corev1.Volume{{Name: "probe-log", EmptyDir: &corev1.EmptyDirVolumeSource{}}},
 			Containers: []corev1.Container{{
 				Name: "probe", Image: image, Command: []string{"/kube-ovn/kube-ovn-pinger"},
+				VolumeMounts:   []corev1.VolumeMount{{Name: "probe-log", MountPath: "/var/log/kube-ovn"}},
 				Args:           []string{"--enable-verbose-conn-check=true", fmt.Sprintf("--tcp-conn-check-port=%d", tcp), fmt.Sprintf("--udp-conn-check-port=%d", udp)},
 				Env:            []corev1.EnvVar{{Name: "POD_NAME", ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.name"}}}, {Name: "POD_NAMESPACE", ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.namespace"}}}},
 				ReadinessProbe: &corev1.Probe{TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromInt32(int32(tcp))}, InitialDelaySeconds: 3, PeriodSeconds: 5},
