@@ -35,6 +35,7 @@ func TestLogsWritesManifestAndRetainsPartialFailures(t *testing.T) {
 			}
 			data, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
 			require.NoError(t, err)
+			require.Contains(t, string(data), `"durationNanoseconds":`)
 			var manifest struct {
 				SchemaVersion string           `json:"schemaVersion"`
 				Items         []collectionTask `json:"items"`
@@ -44,7 +45,8 @@ func TestLogsWritesManifestAndRetainsPartialFailures(t *testing.T) {
 			require.NotEmpty(t, manifest.Items)
 			failures := 0
 			for _, item := range manifest.Items {
-				require.Positive(t, item.Duration)
+				// Fast failures can finish within one clock tick on Windows.
+				require.GreaterOrEqual(t, item.Duration, int64(0))
 				require.FileExists(t, item.Path)
 				if item.Error != "" {
 					failures++

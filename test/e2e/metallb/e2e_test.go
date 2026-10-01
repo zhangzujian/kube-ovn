@@ -1539,13 +1539,15 @@ func dumpUnderlayVIPRelatedLFlows(flows []logicalFlow) string {
 
 func listLogicalFlows() ([]logicalFlow, error) {
 	output, err := exec.Command(
-		"kubectl", framework.KubectlKoArgs("ko", "sbctl",
+		"kubectl", framework.KubectlKoArgs(
+			"ko", "sbctl",
 			"--format=csv",
 			"--data=bare",
 			"--no-heading",
 			"--columns=pipeline,table_id,priority,match,actions",
 			"find", "Logical_Flow",
-		)...).CombinedOutput()
+		)...,
+	).CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("listing OVN logical flows: %w, output: %s", err, output)
 	}
