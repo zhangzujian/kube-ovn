@@ -101,7 +101,8 @@ func (c *Client) planRecovery(ctx context.Context, source string) (*appsv1.Deplo
 		return nil, nil, fmt.Errorf("recovery source must be bootstrap node %s (the first NODE_IPS member)", nodes[0])
 	}
 	record := &recoveryRecord{ID: runID(), Namespace: c.Namespace, SourceNode: source, Replicas: *deployment.Spec.Replicas, Stage: "planned"}
-	record.Directory = "/etc/ovn/kubectl-ko-recovery-" + record.ID
+	// start-db.sh chmods /etc/ovn/* to 600; keep retained directories outside that glob.
+	record.Directory = "/etc/ovn/.kubectl-ko-recovery-" + record.ID
 	for _, node := range nodes {
 		target, err := c.nodeTarget(ctx, node, "ovs")
 		if err != nil {

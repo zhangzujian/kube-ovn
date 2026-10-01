@@ -196,7 +196,9 @@ changes begin. Original files remain in a unique directory on every member;
 a private local JSON record tracks the last recovery stage. An error stops the
 procedure and reports this record, the remote directory and original replica
 count. It does not guess whether it is safe to undo a partially completed
-recovery. Retain these files for a deliberate recovery or rollback.
+recovery. Retain these files for a deliberate recovery or rollback. Remote
+backup directories use `/etc/ovn/.kubectl-ko-recovery-<id>` so central startup's
+file-permission glob cannot remove their directory traversal permissions.
 
 Probe resources have unique names and a run identity. Cleanup uses saved UIDs,
 not broad label deletion. A cleanup failure reports the exact remaining object

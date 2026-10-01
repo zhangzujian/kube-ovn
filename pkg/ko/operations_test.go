@@ -138,6 +138,8 @@ func TestMulticastCleansUpLostAddResponseAndPreservesExistingMembership(t *testi
 		&corev1.Node{Name: "a"}, &corev1.Node{Name: "b"},
 		readyPod("ovs-a", "a", "openvswitch", map[string]string{"app": "ovs"}),
 		readyPod("ovs-b", "b", "openvswitch", map[string]string{"app": "ovs"}),
+		readyPod("cni-a", "a", "cni-server", map[string]string{"app": "kube-ovn-cni"}),
+		readyPod("cni-b", "b", "cni-server", map[string]string{"app": "kube-ovn-cni"}),
 	)
 	client, err := app.newClient()
 	require.NoError(t, err)
@@ -149,6 +151,7 @@ func TestMulticastCleansUpLostAddResponseAndPreservesExistingMembership(t *testi
 	defer cancel()
 	membership := map[string]bool{"a": true}
 	executor.run = func(execCtx context.Context, target Target, argv []string, streams Streams) error {
+		require.Equal(t, "cni-server", target.Container, "host membership inspection and cleanup need CNI network capabilities")
 		switch strings.Join(argv, " ") {
 		case "ip -o addr show":
 			address := "192.0.2.1"
@@ -207,4 +210,29 @@ func TestMulticastPodNamespaceUsesCNIContainer(t *testing.T) {
 		}
 		require.Equal(t, expected, target.nic)
 	}
+}
+
+func TestMulticastHostNamespaceUsesPrivilegedCNIContainer(t *testing.T) {
+	app, executor, _, _ := testApplication(t,
+		&corev1.Node{Name: "worker"},
+		readyPod("ovs-worker", "worker", "openvswitch", map[string]string{"app": "ovs"}),
+		readyPod("cni-worker", "worker", "cni-server", map[string]string{"app": "kube-ovn-cni"}),
+	)
+	client, err := app.newClient()
+	require.NoError(t, err)
+	executor.run = func(_ context.Context, target Target, argv []string, streams Streams) error {
+		if target.Container != "cni-server" {
+			return errors.New("Helm OVS lacks NET_ADMIN: ioctl: Operation not permitted")
+		}
+		require.Equal(t, []string{"ip", "-o", "addr", "show"}, argv)
+		_, err := io.WriteString(streams.Out, "2: eth0@if3 inet 192.0.2.1/24\n")
+		return err
+	}
+	pod := &corev1.Pod{Spec: corev1.PodSpec{NodeName: "worker", HostNetwork: true}, Status: corev1.PodStatus{PodIP: "192.0.2.1"}}
+	target, err := client.multicastTarget(t.Context(), pod)
+	require.NoError(t, err)
+	require.Equal(t, "cni-server", target.target.Container)
+	require.Equal(t, "cni-worker", target.target.Pod)
+	require.Empty(t, target.netns)
+	require.Equal(t, "eth0", target.nic)
 }

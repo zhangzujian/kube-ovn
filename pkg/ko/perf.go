@@ -294,7 +294,11 @@ func (c *Client) multicastTarget(ctx context.Context, pod *corev1.Pod) (multicas
 		}
 		return multicastTarget{target: cni, netns: nic.netns, nic: name}, nil
 	}
-	output, err := c.capture(ctx, ovs, "ip", "-o", "addr", "show")
+	cni, err := c.nodeTarget(ctx, pod.Spec.NodeName, "kube-ovn-cni")
+	if err != nil {
+		return multicastTarget{}, err
+	}
+	output, err := c.capture(ctx, cni, "ip", "-o", "addr", "show")
 	if err != nil {
 		return multicastTarget{}, err
 	}
@@ -305,7 +309,7 @@ func (c *Client) multicastTarget(ctx context.Context, pod *corev1.Pod) (multicas
 		}
 		prefix, err := netip.ParsePrefix(fields[3])
 		if err == nil && prefix.Addr().String() == pod.Status.PodIP {
-			return multicastTarget{target: ovs, nic: strings.SplitN(fields[1], "@", 2)[0]}, nil
+			return multicastTarget{target: cni, nic: strings.SplitN(fields[1], "@", 2)[0]}, nil
 		}
 	}
 	return multicastTarget{}, errors.New("cannot locate host performance interface")

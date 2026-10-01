@@ -225,7 +225,7 @@ func kubectlKoCheckRecoveryRecord(f *framework.Framework, output, source string,
 	framework.ExpectEqual(record.SourceNode, source)
 	framework.ExpectEqual(record.Replicas, replicas)
 	framework.ExpectHaveLen(record.Targets, int(replicas))
-	framework.ExpectEqual(strings.HasPrefix(record.Directory, "/etc/ovn/kubectl-ko-recovery-"), true)
+	framework.ExpectEqual(strings.HasPrefix(record.Directory, "/etc/ovn/.kubectl-ko-recovery-"), true)
 	pods, err := f.ClientSet.CoreV1().Pods(framework.KubeOvnNamespace).List(context.Background(), metav1.ListOptions{LabelSelector: "app=ovn-central"})
 	framework.ExpectNoError(err)
 	for _, target := range record.Targets {

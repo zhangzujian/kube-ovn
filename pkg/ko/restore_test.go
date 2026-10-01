@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 
@@ -61,6 +64,26 @@ func TestRecoveryPlanRejectsNonBootstrapSource(t *testing.T) {
 	_, record, err := client.planRecovery(t.Context(), "node-1")
 	require.NoError(t, err)
 	require.Len(t, record.Targets, 2)
+}
+
+func TestRecoveryBackupDirectorySurvivesDatabaseStartupPermissions(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("database startup permissions apply to Linux cluster filesystems")
+	}
+	_, client, _, _ := recoveryApplication(t)
+	_, record, err := client.planRecovery(t.Context(), "node-1")
+	require.NoError(t, err)
+	directory := t.TempDir()
+	backup := filepath.Join(directory, filepath.Base(record.Directory))
+	require.NoError(t, os.Mkdir(backup, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(backup, "ovnnb_db.original"), []byte("backup"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(directory, "ovnnb_db.db"), []byte("database"), 0o600))
+	// start-db.sh applies this glob after restarting the recovered database.
+	output, err := exec.CommandContext(t.Context(), "bash", "-c", `chmod 600 "$1"/*`, "start-db", directory).CombinedOutput()
+	require.NoError(t, err, "%s", output)
+	info, err := os.Stat(backup)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o700), info.Mode().Perm(), "retained backups must remain traversable after central restarts")
 }
 
 func TestRecoveryRejectsUnsharedDatabaseVolumes(t *testing.T) {
