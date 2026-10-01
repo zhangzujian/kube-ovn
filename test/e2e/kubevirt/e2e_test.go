@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -191,14 +192,25 @@ var _ = framework.Describe("[group:kubevirt]", func() {
 		peer = podClient.CreateSync(peer)
 		ginkgo.DeferCleanup(func() { podClient.DeleteSync(peerName) })
 		port := ovs.PodNameToPortName(peerName, namespaceName, util.OvnProvider)
+		testConfig := e2ekubectl.NewTestKubeconfig(k8sframework.TestContext.CertDir,
+			k8sframework.TestContext.Host, k8sframework.TestContext.KubeConfig,
+			k8sframework.TestContext.KubeContext, k8sframework.TestContext.KubectlPath, "")
 		for _, engine := range []string{"ovn", "all"} {
 			ginkgo.By("Tracing from the VM through " + engine)
-			output := e2ekubectl.NewKubectlCommand("", "ko", "--timeout", "1m", "trace",
-				"--pod", namespaceName+"/"+pod.Name, "--dst-ip", peer.Status.PodIP, "--engine", engine).ExecOrDie("")
-			framework.ExpectContainSubstring(output, fmt.Sprintf("output to %q", port))
+			command := testConfig.KubectlCmd()
+			// kubectl requires connection flags to follow the plugin name.
+			args := append([]string{"ko"}, command.Args[1:]...)
+			args = append(args, "--timeout", "1m", "trace", "--pod", namespaceName+"/"+pod.Name,
+				"--dst-ip", peer.Status.PodIP, "--engine", engine)
+			ctx, cancel := context.WithTimeout(context.Background(), 70*time.Second)
+			output, err := exec.CommandContext(ctx, command.Path, args...).CombinedOutput()
+			cancel()
+			framework.ExpectNoError(err, "VM %s trace failed: %s", engine, output)
+			framework.Logf("VM %s trace output:\n%s", engine, output)
+			framework.ExpectContainSubstring(string(output), fmt.Sprintf("output to %q", port))
 			if engine == "all" {
-				framework.ExpectContainSubstring(output, "Start OVS Tracing")
-				framework.ExpectContainSubstring(output, "Datapath actions:")
+				framework.ExpectContainSubstring(string(output), "Start OVS Tracing")
+				framework.ExpectContainSubstring(string(output), "Datapath actions:")
 			}
 		}
 	})

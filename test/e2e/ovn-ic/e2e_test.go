@@ -15,6 +15,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -164,15 +165,22 @@ var _ = framework.OrderedDescribe("[group:ovn-ic]", func() {
 
 	framework.ConformanceIt("should query interconnection database leaders with kubectl ko", func() {
 		frameworks[0].SkipVersionPriorTo(1, 17, "The structured Go plugin was introduced in v1.17")
-		// The IC server is installed in the first cluster and serves all AZs.
-		kubeContext := frameworks[0].KubeContext
+		var serverContexts []string
 		azNames := make([]string, len(clusters))
 		for i := range clusters {
 			cm, err := clientSets[i].CoreV1().ConfigMaps(framework.KubeOvnNamespace).Get(context.Background(), util.InterconnectionConfig, metav1.GetOptions{})
 			framework.ExpectNoError(err)
 			azNames[i] = cm.Data["az-name"]
 			framework.ExpectNotEmpty(azNames[i])
+			_, err = clientSets[i].AppsV1().Deployments(framework.KubeOvnNamespace).Get(context.Background(), "ovn-ic-server", metav1.GetOptions{})
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			framework.ExpectNoError(err)
+			serverContexts = append(serverContexts, frameworks[i].KubeContext)
 		}
+		framework.ExpectHaveLen(serverContexts, 1, "expected exactly one cluster hosting the interconnection server")
+		kubeContext := serverContexts[0]
 		for _, database := range []struct {
 			tool, table string
 			names       []string
