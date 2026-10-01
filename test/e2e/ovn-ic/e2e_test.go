@@ -3,6 +3,7 @@ package ovn_ic
 import (
 	"context"
 	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"flag"
 	"fmt"
 	"math/rand/v2"
@@ -157,6 +158,35 @@ var _ = framework.OrderedDescribe("[group:ovn-ic]", func() {
 			output := execOrDie(frameworks[i].KubeContext, "ko nbctl show ts")
 			for _, az := range azNames {
 				framework.ExpectTrue(strings.Contains(output, "ts-"+az), "should have lsp ts-"+az)
+			}
+		}
+	})
+
+	framework.ConformanceIt("should query interconnection database leaders with kubectl ko", func() {
+		frameworks[0].SkipVersionPriorTo(1, 17, "The structured Go plugin was introduced in v1.17")
+		// The IC server is installed in the first cluster and serves all AZs.
+		kubeContext := frameworks[0].KubeContext
+		azNames := make([]string, len(clusters))
+		for i := range clusters {
+			cm, err := clientSets[i].CoreV1().ConfigMaps(framework.KubeOvnNamespace).Get(context.Background(), util.InterconnectionConfig, metav1.GetOptions{})
+			framework.ExpectNoError(err)
+			azNames[i] = cm.Data["az-name"]
+			framework.ExpectNotEmpty(azNames[i])
+		}
+		for _, database := range []struct {
+			tool, table string
+			names       []string
+		}{{"ic-nbctl", "Transit_Switch", []string{util.InterconnectionSwitch}}, {"ic-sbctl", "Availability_Zone", azNames}} {
+			ginkgo.By("Querying " + database.table + " through " + database.tool)
+			output := execOrDie(kubeContext, "ko exec "+database.tool+" -- --format=json --columns=name list "+database.table)
+			var table struct {
+				Headings []string   `json:"headings"`
+				Data     [][]string `json:"data"`
+			}
+			framework.ExpectNoError(jsonv2.Unmarshal([]byte(output), &table))
+			framework.ExpectEqual(table.Headings, []string{"name"})
+			for _, name := range database.names {
+				framework.ExpectContainElement(table.Data, []string{name})
 			}
 		}
 	})
