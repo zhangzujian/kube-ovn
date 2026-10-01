@@ -17,6 +17,7 @@ import (
 	"k8s.io/kubernetes/test/e2e"
 	k8sframework "k8s.io/kubernetes/test/e2e/framework"
 	"k8s.io/kubernetes/test/e2e/framework/config"
+	e2ekubectl "k8s.io/kubernetes/test/e2e/framework/kubectl"
 	e2enode "k8s.io/kubernetes/test/e2e/framework/node"
 	"k8s.io/utils/ptr"
 	v1 "kubevirt.io/api/core/v1"
@@ -178,6 +179,28 @@ var _ = framework.Describe("[group:kubevirt]", func() {
 
 		ginkgo.By("Checking whether pod ips are changed")
 		framework.ExpectEqual(ips, pod.Status.PodIPs)
+	})
+
+	framework.ConformanceIt("should trace VM logical ports with kubectl ko", func() {
+		f.SkipVersionPriorTo(1, 17, "The structured Go plugin was introduced in v1.17")
+		pod := getVMPod(podClient, vmName)
+		expectVMAnnotations(pod, vmName)
+		ginkgo.By("Creating a peer Pod in the VM subnet")
+		peerName := "trace-peer-" + framework.RandomSuffix()
+		peer := framework.MakePod(namespaceName, peerName, nil, nil, framework.AgnhostImage, nil, []string{"pause"})
+		peer = podClient.CreateSync(peer)
+		ginkgo.DeferCleanup(func() { podClient.DeleteSync(peerName) })
+		port := ovs.PodNameToPortName(peerName, namespaceName, util.OvnProvider)
+		for _, engine := range []string{"ovn", "all"} {
+			ginkgo.By("Tracing from the VM through " + engine)
+			output := e2ekubectl.NewKubectlCommand("", "ko", "--timeout", "1m", "trace",
+				"--pod", namespaceName+"/"+pod.Name, "--dst-ip", peer.Status.PodIP, "--engine", engine).ExecOrDie("")
+			framework.ExpectContainSubstring(output, fmt.Sprintf("output to %q", port))
+			if engine == "all" {
+				framework.ExpectContainSubstring(output, "Start OVS Tracing")
+				framework.ExpectContainSubstring(output, "Datapath actions:")
+			}
+		}
 	})
 
 	framework.ConformanceIt("should be able to keep pod ips after the vm is restarted", func() {
