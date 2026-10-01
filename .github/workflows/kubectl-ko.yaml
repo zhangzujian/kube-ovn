@@ -1,0 +1,101 @@
+name: kubectl-ko
+
+on:
+  pull_request:
+    paths:
+      - cmd/kubectl-ko/**
+      - pkg/ko/**
+      - go.mod
+      - go.sum
+      - makefiles/build.mk
+      - .github/workflows/kubectl-ko.yaml
+  push:
+    tags: [v*]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Unit and real streaming protocol tests
+        run: go test -race -count=1 ./pkg/ko/... ./cmd/kubectl-ko/...
+      - name: Verify legacy fallback
+        run: bash dist/images/kubectl-ko-acl-sample_test.sh
+      - name: Check formatting
+        run: test -z "$(gofmt -l cmd/kubectl-ko pkg/ko)"
+
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          args: --help
+      - name: Repository lint and generated-file gate
+        run: make lint
+        env:
+          CI: true
+
+  build:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        os: [linux, darwin]
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build standalone plugin
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: 0
+        run: make build-kubectl-ko
+      - name: Package
+        env:
+          TARGET_OS: ${{ matrix.os }}
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir -p dist/kubectl-ko
+          cp dist/images/kubectl-ko LICENSE docs/kubectl-ko.md dist/kubectl-ko/
+          tar -C dist/kubectl-ko -czf "kubectl-ko-${TARGET_OS}-${TARGET_ARCH}.tar.gz" kubectl-ko LICENSE kubectl-ko.md
+          sha256sum "kubectl-ko-${TARGET_OS}-${TARGET_ARCH}.tar.gz" > "kubectl-ko-${TARGET_OS}-${TARGET_ARCH}.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kubectl-ko-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            kubectl-ko-*.tar.gz
+            kubectl-ko-*.sha256
+
+  release:
+    if: startsWith(github.ref, refs/tags/v)
+    needs: [test, lint, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: kubectl-ko-*
+          merge-multiple: true
+      - name: Attach binaries to the versioned release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          cat kubectl-ko-*.sha256 > kubectl-ko-checksums.txt
+          gh release view "$TAG" --repo "$REPOSITORY" || gh release create "$TAG" --repo "$REPOSITORY" --verify-tag --generate-notes
+          gh release upload "$TAG" --repo "$REPOSITORY" kubectl-ko-*.tar.gz kubectl-ko-checksums.txt

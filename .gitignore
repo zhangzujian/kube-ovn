@@ -87,3 +87,9 @@ yamls/gen
 __pycache__/
 *.py[cod]
 *$py.class
+
+dist/images/kubectl-ko
+dist/kubectl-ko/
+kubectl-ko-recovery-*.json
+ovnnb_db.*.backup.json
+ovnsb_db.*.backup.json
