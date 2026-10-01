@@ -3,6 +3,7 @@ package ko
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strconv"
 	"strings"
@@ -32,6 +33,51 @@ func TestDiagnosticProbeReportsConnectivityFailures(t *testing.T) {
 	require.ErrorContains(t, err, "probe on a")
 	require.ErrorContains(t, err, "probe on b")
 	require.Len(t, executor.calls, 2, "one failed node must not hide other nodes")
+}
+
+func TestDiagnosticExternalPingIsExplicitAndPropagatesFailure(t *testing.T) {
+	for _, addresses := range [][]string{nil, {"192.0.2.1", "2001:db8::1"}} {
+		t.Run(strings.Join(addresses, ","), func(t *testing.T) {
+			pod := readyPod("pinger", "worker", "pinger", nil)
+			pod.Status.PodIPs = []corev1.PodIP{{IP: "192.0.2.2"}, {IP: "2001:db8::2"}}
+			app, executor, _, _ := testApplication(t, pod)
+			client, err := app.newClient()
+			require.NoError(t, err)
+			executor.run = func(_ context.Context, _ Target, argv []string, _ Streams) error {
+				if argv[0] != "/kube-ovn/kube-ovn-pinger" {
+					return nil
+				}
+				require.Contains(t, argv, "--external-address="+strings.Join(addresses, ","))
+				require.Contains(t, argv, "--exit-code=1")
+				if len(addresses) != 0 {
+					return utilexec.CodeExitError{Err: errors.New("external ping failure"), Code: 1}
+				}
+				return nil
+			}
+			err = app.runDiagnosticProbes(t.Context(), client, []Target{{Namespace: pod.Namespace, Pod: pod.Name, Node: "worker"}}, "all", "tcp-192.0.2.2-30000", diagnosticOptions{externalAddresses: addresses})
+			if len(addresses) == 0 {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, "probe on worker")
+				require.ErrorContains(t, err, "external ping failure")
+			}
+		})
+	}
+}
+
+func TestDiagnosticExternalPingRejectsAnUnsupportedFamily(t *testing.T) {
+	for _, ips := range [][]corev1.PodIP{nil, {{IP: "192.0.2.2"}}, {{IP: "invalid"}}} {
+		t.Run(fmt.Sprint(ips), func(t *testing.T) {
+			pod := readyPod("pinger", "worker", "pinger", nil)
+			pod.Status.PodIPs = ips
+			app, executor, _, _ := testApplication(t, pod)
+			client, err := app.newClient()
+			require.NoError(t, err)
+			err = app.runDiagnosticProbes(t.Context(), client, []Target{{Namespace: pod.Namespace, Pod: pod.Name, Node: "worker"}}, "all", "", diagnosticOptions{externalAddresses: []string{"2001:db8::1"}})
+			require.ErrorContains(t, err, "probe on worker")
+			require.Empty(t, executor.calls, "pinger must not silently skip an explicit target")
+		})
+	}
 }
 
 func TestPerformanceCleansUpAnAmbiguousCommittedTransaction(t *testing.T) {

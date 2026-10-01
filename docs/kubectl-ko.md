@@ -151,6 +151,13 @@ UDP endpoint probes send a `health check` datagram and require a response.
 Use a responding health/echo service for UDP; this is not a DNS query or a
 generic UDP port scan. Subnet probes supply their own matching listeners.
 
+Cluster/node/subnet diagnostics check internal connectivity by default. To
+also check external ICMP connectivity, repeat `--external-address IP`, for
+example `diagnose cluster --external-address 1.1.1.1 --external-address
+2606:4700:4700::1111`. These explicit probes fail the command when unreachable
+or when a probe Pod has no matching IP family.
+No public Internet endpoint is required for the default cluster health check.
+
 Exec uses WebSocket with SPDY fallback only for supported handshake failures.
 Remote exit codes propagate; failed commands are never replayed. Streams have
 no TTY transformations or stdout banners. Invalid arguments fail before client

@@ -26,6 +26,7 @@ import (
 type diagnosticOptions struct {
 	readOnly, skipKubeProxy bool
 	tcpPort, udpPort        string
+	externalAddresses       []string
 }
 
 func (a *Application) addDiagnosticCommands() {
@@ -46,6 +47,7 @@ func (a *Application) addDiagnosticMode(parent *cobra.Command, mode string) {
 	flags.BoolVar(&options.skipKubeProxy, "skip-kube-proxy", os.Getenv("WITHOUT_KUBE_PROXY") == "true", "Skip kube-proxy checks (default from WITHOUT_KUBE_PROXY)")
 	if mode != "connectivity" {
 		flags.BoolVar(&options.readOnly, "read-only", false, "Check configuration without creating probe resources or sending traffic")
+		flags.StringArrayVar(&options.externalAddresses, "external-address", nil, "External IP address to ping (repeatable; disabled by default)")
 	}
 	if mode == "node" {
 		command.Use += " NODE"
@@ -58,7 +60,7 @@ func (a *Application) addDiagnosticMode(parent *cobra.Command, mode string) {
 	var targets []string
 	if mode == "connectivity" {
 		command.Short = "Probe explicit TCP/UDP IP endpoints from the pinger pods"
-		flags.StringArrayVar(&targets, "target", nil, "Endpoint such as tcp://1.1.1.1:53 or udp://[2001:db8::1]:53 (repeatable)")
+		flags.StringArrayVar(&targets, "target", nil, "Responding endpoint such as tcp://192.0.2.1:8100 or udp://[2001:db8::1]:8101 (repeatable)")
 	}
 	var probeTargets string
 	command.Args = func(cmd *cobra.Command, args []string) error {
@@ -80,6 +82,13 @@ func (a *Application) addDiagnosticMode(parent *cobra.Command, mode string) {
 				return fmt.Errorf("invalid probe port %q", *port)
 			}
 			*port = strconv.FormatUint(value, 10)
+		}
+		for i, value := range options.externalAddresses {
+			address, err := netip.ParseAddr(value)
+			if err != nil || address.Zone() != "" {
+				return fmt.Errorf("invalid external address %q", value)
+			}
+			options.externalAddresses[i] = address.Unmap().String()
 		}
 		if mode == "connectivity" {
 			var err error
@@ -207,6 +216,10 @@ func (a *Application) runDiagnosticProbes(ctx context.Context, client *Client, p
 		if _, err := fmt.Fprintf(a.streams.Out, "Diagnosing node %s\n", target.Node); err != nil {
 			return err
 		}
+		if err := client.validateExternalProbeFamilies(ctx, target, options.externalAddresses); err != nil {
+			failures = append(failures, fmt.Errorf("probe on %s: %w", target.Node, err))
+			continue
+		}
 		if mode == "all" || mode == "node" {
 			for _, argv := range [][]string{{"tail", "/var/log/ovn/ovn-controller.log"}, {"tail", "/var/log/openvswitch/ovs-vswitchd.log"}, {"ovs-vsctl", "show"}} {
 				if err := client.Executor.Exec(ctx, target, argv, a.outputStreams()); err != nil {
@@ -216,7 +229,7 @@ func (a *Application) runDiagnosticProbes(ctx context.Context, client *Client, p
 		}
 		argv := []string{"/kube-ovn/kube-ovn-pinger", "--mode=job", "--exit-code=1", "--target-ip-ports=" + targets}
 		if mode != "IPPorts" {
-			argv = append(argv, "--external-address=1.1.1.1,2606:4700:4700::1111")
+			argv = append(argv, "--external-address="+strings.Join(options.externalAddresses, ","))
 		}
 		if mode == "subnet" {
 			// The temporary pods listen on the probe ports; CNI node listeners
@@ -228,6 +241,34 @@ func (a *Application) runDiagnosticProbes(ctx context.Context, client *Client, p
 		}
 	}
 	return errors.Join(failures...)
+}
+
+func (c *Client) validateExternalProbeFamilies(ctx context.Context, target Target, addresses []string) error {
+	if len(addresses) == 0 {
+		return nil
+	}
+	pod, err := c.Kubernetes.CoreV1().Pods(target.Namespace).Get(ctx, target.Pod, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	families := make(map[bool]bool)
+	for _, ip := range pod.Status.PodIPs {
+		address, err := netip.ParseAddr(ip.IP)
+		if err != nil {
+			return fmt.Errorf("invalid probe Pod address: %w", err)
+		}
+		families[address.Unmap().Is4()] = true
+	}
+	for _, value := range addresses {
+		address, err := netip.ParseAddr(value)
+		if err != nil {
+			return err
+		}
+		if !families[address.Unmap().Is4()] {
+			return fmt.Errorf("external address %s has no matching IP family on probe %s/%s", value, target.Namespace, target.Pod)
+		}
+	}
+	return nil
 }
 
 func (c *Client) subnetProbeTargets(ctx context.Context, pingers []Target, options diagnosticOptions) (string, error) {
