@@ -1107,8 +1107,7 @@ jobs:
             fi
             sleep 1
           done
-          kubectl ko log ovn
-          kubectl ko log ovs
+          bash .github/scripts/collect-kubectl-ko-log.sh
 
           for daemon in ovsdb-nb ovsdb-sb ovn-northd ovn-controller ovsdb-server ovs-vswitchd; do
             echo "Checking if valgrind log file for $daemon exists..."
@@ -1404,8 +1403,7 @@ jobs:
             fi
             sleep 1
           done
-          kubectl ko log ovn
-          kubectl ko log ovs
+          bash .github/scripts/collect-kubectl-ko-log.sh
 
           for daemon in ovsdb-nb ovsdb-sb ovn-northd ovn-controller ovsdb-server ovs-vswitchd; do
             echo "Checking if valgrind log file for $daemon exists..."
@@ -1585,8 +1583,7 @@ jobs:
             fi
             sleep 1
           done
-          kubectl ko log ovn
-          kubectl ko log ovs
+          bash .github/scripts/collect-kubectl-ko-log.sh
 
           for daemon in ovsdb-nb ovsdb-sb ovn-northd ovn-controller ovsdb-server ovs-vswitchd; do
             echo "Checking if valgrind log file for $daemon exists..."
@@ -1781,8 +1778,7 @@ jobs:
             fi
             sleep 1
           done
-          kubectl ko log ovn
-          kubectl ko log ovs
+          bash .github/scripts/collect-kubectl-ko-log.sh
 
           for daemon in ovsdb-nb ovsdb-sb ovn-northd ovn-controller ovsdb-server ovs-vswitchd; do
             echo "Checking if valgrind log file for $daemon exists..."
@@ -4429,8 +4425,7 @@ jobs:
             fi
             sleep 1
           done
-          kubectl ko log ovn
-          kubectl ko log ovs
+          bash .github/scripts/collect-kubectl-ko-log.sh
 
           for daemon in ovsdb-nb ovsdb-sb ovn-northd ovn-controller ovsdb-server ovs-vswitchd; do
             echo "Checking if valgrind log file for $daemon exists..."
