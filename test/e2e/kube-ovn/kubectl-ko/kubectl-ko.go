@@ -435,15 +435,44 @@ var _ = framework.Describe("[group:kubectl-ko]", func() {
 		}
 
 		ginkgo.By("Creating a controlled TCP/UDP probe server")
-		family := "-4"
-		if f.IsIPv6() {
-			family = "-6"
-		}
-		command := fmt.Sprintf("ncat %s --udp --listen --keep-open --exec /bin/cat 8101 & exec ncat %s --listen --keep-open --exec /bin/cat 8100", family, family)
-		pod := framework.MakePod(namespaceName, podName, nil, nil, f.KubeOVNImage, []string{"sh", "-c", command}, nil)
+		// Bind both listeners before readiness and reply to every UDP sender.
+		command := `import socket
+import socketserver
+import threading
+
+class TCPHandler(socketserver.BaseRequestHandler):
+    def handle(self):
+        self.request.sendall(b"health check")
+
+class UDPHandler(socketserver.BaseRequestHandler):
+    def handle(self):
+        self.request[1].sendto(b"health check", self.client_address)
+
+class TCPServer(socketserver.ThreadingTCPServer):
+    address_family = socket.AF_INET6
+
+    def server_bind(self):
+        self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        super().server_bind()
+
+class UDPServer(socketserver.UDPServer):
+    address_family = socket.AF_INET6
+
+    def server_bind(self):
+        self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        super().server_bind()
+
+with UDPServer(("::", 8101), UDPHandler) as udp:
+    with TCPServer(("::", 8100), TCPHandler) as tcp:
+        threading.Thread(target=udp.serve_forever, daemon=True).start()
+        tcp.serve_forever()
+`
+		pod := framework.MakePod(namespaceName, podName, nil, nil, f.KubeOVNImage, []string{"python3", "-u", "-c", command}, nil)
 		pod.Spec.Containers[0].ReadinessProbe = &corev1.Probe{TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromInt32(8100)}}
 		pod = podClient.CreateSync(pod)
-		execOrDie(fmt.Sprintf("ko diagnose IPPorts tcp-%s-8100,udp-%s-8101", pod.Status.PodIP, pod.Status.PodIP))
+		for _, ip := range pod.Status.PodIPs {
+			execOrDie(fmt.Sprintf("ko diagnose IPPorts tcp-%s-8100,udp-%s-8101", ip.IP, ip.IP))
+		}
 
 		ginkgo.By("Checking that an unreachable endpoint returns a failure")
 		_, err := e2ekubectl.NewKubectlCommand("", framework.KubectlKoArgs("ko", "diagnose", "IPPorts", fmt.Sprintf("tcp-%s-8102", pod.Status.PodIP))...).Exec()
