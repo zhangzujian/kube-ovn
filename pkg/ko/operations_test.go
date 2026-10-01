@@ -101,6 +101,49 @@ func TestPerformanceCleansUpAnAmbiguousCommittedTransaction(t *testing.T) {
 	require.Len(t, executor.calls, 2)
 }
 
+func TestServicePerformanceWaitsForChassisBeforeMeasurement(t *testing.T) {
+	for _, syncFails := range []bool{false, true} {
+		t.Run(fmt.Sprintf("syncFails=%t", syncFails), func(t *testing.T) {
+			app, executor, _, _ := testApplication(t, readyPod("nb", "node", "ovn-central", map[string]string{"ovn-nb-leader": "true"}))
+			client, err := app.newClient()
+			require.NoError(t, err)
+			run := &resourceRun{client: client, id: "unique-run"}
+			pods := &performancePods{
+				client:  &corev1.Pod{Name: "client"},
+				server:  &corev1.Pod{Annotations: map[string]string{annotationPrefix + "logical_switch": "subnet"}, Status: corev1.PodStatus{PodIP: "10.0.0.2"}},
+				service: &corev1.Service{Spec: corev1.ServiceSpec{ClusterIP: "10.96.0.2"}},
+			}
+			failure := errors.New("measurement failed")
+			if syncFails {
+				failure = errors.New("flow synchronization failed")
+			}
+			executor.run = func(_ context.Context, _ Target, argv []string, _ Streams) error {
+				switch len(executor.calls) {
+				case 1:
+					require.Equal(t, []string{"ovn-nbctl", "--wait=hv", "--timeout=30", "--", "lb-add", "ko-perf-unique-run", "10.96.0.2", "10.0.0.2", "--", "ls-lb-add", "subnet", "ko-perf-unique-run"}, argv)
+					if syncFails {
+						return failure
+					}
+					return nil
+				case 2:
+					if !syncFails {
+						require.Equal(t, "qperf", argv[0])
+						return failure
+					}
+				}
+				require.Equal(t, []string{"ovn-nbctl", "--if-exists", "lb-del", "ko-perf-unique-run"}, argv)
+				return nil
+			}
+			require.ErrorIs(t, app.servicePerformance(t.Context(), run, pods, performanceOptions{duration: 1}), failure)
+			calls := 3
+			if syncFails {
+				calls = 2
+			}
+			require.Len(t, executor.calls, calls, "failed synchronization must stop measurements and still remove the owned LB")
+		})
+	}
+}
+
 func TestRecoveryOptionalHeadersAndProbeErrors(t *testing.T) {
 	for _, code := range []int{1, 126} {
 		t.Run(strconv.Itoa(code), func(t *testing.T) {

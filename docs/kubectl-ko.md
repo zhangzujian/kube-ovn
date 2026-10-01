@@ -209,6 +209,11 @@ DaemonSet before cleanup. Log collection has a five-second deadline and retains
 the original readiness error. `restart`, raw OVN/OVS commands, recovery and
 explicit performance disruption can change live cluster state.
 
+Before Service performance measurements, the temporary IP-wide OVN load
+balancer must synchronize to all chassis within 30 seconds. This makes qperf's
+dynamic data ports available before the benchmark starts. A synchronization
+failure stops measurements and still cleans up the owned load balancer.
+
 ## Compatibility and migration
 
 The supported starting point is a matching CLI and Kube-OVN release. Remote

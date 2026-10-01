@@ -214,7 +214,9 @@ func (a *Application) servicePerformance(ctx context.Context, run *resourceRun, 
 	if subnet == "" {
 		return errors.New("performance server has no logical switch annotation")
 	}
-	argv := []string{"ovn-nbctl", "--", "lb-add", name, pods.service.Spec.ClusterIP, pods.server.Status.PodIP, "--", "ls-lb-add", subnet, name}
+	// qperf uses dynamic data ports, which require the IP-wide LB on every
+	// chassis before measurements begin. NB commit alone does not install flows.
+	argv := []string{"ovn-nbctl", "--wait=hv", "--timeout=30", "--", "lb-add", name, pods.service.Spec.ClusterIP, pods.server.Status.PodIP, "--", "ls-lb-add", subnet, name}
 	// Register cleanup before mutation: a transport error does not prove the
 	// remote transaction failed. The random run identity belongs only to us.
 	defer func() {
