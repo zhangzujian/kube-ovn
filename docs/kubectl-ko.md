@@ -95,7 +95,7 @@ kubectl ko
 | `capture` | Execute tcpdump in a Pod's network namespace, including hostNetwork and internal-port paths. A remote `-w PATH` stays remote; `-w -` streams the original pcap bytes locally. |
 | `diagnose cluster` | Check cluster configuration, component rollout and leaders; create a unique temporary NodePort Service and run active pinger checks. |
 | `diagnose node NODE` | Perform configuration checks and restrict the active pinger probes to one node. |
-| `diagnose subnet SUBNET` | Check the subnet, create an isolated temporary DaemonSet and NodePort Service, and probe connectivity from those subnet Pods. |
+| `diagnose subnet SUBNET` | Check the subnet, create an isolated temporary DaemonSet and NodePort Service, and check peer TCP/UDP, node ICMP and NodePort connectivity from those subnet Pods. Does not require optional CNI node TCP/UDP listeners. |
 | `diagnose connectivity` | Check configuration and probe explicit TCP/UDP IP endpoints using existing pinger Pods. Does not create the NodePort/Subnet probe resources. |
 | `diagnose environment` | Run the image environment checker in each running CNI container. |
 | `logs` | Collect component files, container logs and Linux node state in parallel; limit each item and record partial failures in a manifest. |
@@ -135,7 +135,7 @@ kubectl ko trace --pod app/web --dst-ip 10.0.0.8 --protocol tcp --dst-port 443
 kubectl ko trace --node worker-a --dst-ip 2001:db8::8 --engine ovn
 kubectl ko capture --namespace app --pod web -- -w - > capture.pcap
 kubectl ko diagnose subnet ovn-default --tcp-port 8100 --udp-port 8101
-kubectl ko diagnose connectivity --target tcp://1.1.1.1:53 --target 'udp://[2606:4700:4700::1111]:53'
+kubectl ko diagnose connectivity --target tcp://10.0.0.8:8100 --target 'udp://[2001:db8::8]:8101'
 kubectl ko db nb backup --output northbound.backup
 kubectl ko logs --component ovn --output-dir ./support --strict
 kubectl ko perf run --image registry.example/test:v1.13.0 --duration 2s
@@ -146,6 +146,10 @@ after it, including another `--`, `--help`, `--timeout`, `-n`, `-c`, whitespace 
 quotes within a single argument, belongs to the remote tool and is preserved.
 `exec nbctl --help` shows local help; `exec nbctl -- --help` shows remote help.
 `exec nbctl show` is rejected instead of guessing the argument boundary.
+
+UDP endpoint probes send a `health check` datagram and require a response.
+Use a responding health/echo service for UDP; this is not a DNS query or a
+generic UDP port scan. Subnet probes supply their own matching listeners.
 
 Exec uses WebSocket with SPDY fallback only for supported handshake failures.
 Remote exit codes propagate; failed commands are never replayed. Streams have

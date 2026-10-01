@@ -14,16 +14,21 @@ import (
 )
 
 func TestDiagnosticProbeReportsConnectivityFailures(t *testing.T) {
-	app, executor, _, _ := testApplication(t)
+	podA := readyPod("subnet-a", "a", "probe", nil)
+	podA.Status.PodIPs = []corev1.PodIP{{IP: "192.0.2.2"}, {IP: "2001:db8::2"}}
+	podB := readyPod("subnet-b", "b", "probe", nil)
+	podB.Status.PodIPs = []corev1.PodIP{{IP: "192.0.2.3"}, {IP: "2001:db8::3"}}
+	app, executor, _, _ := testApplication(t, podA, podB)
 	client, err := app.newClient()
 	require.NoError(t, err)
 	executor.run = func(_ context.Context, _ Target, argv []string, _ Streams) error {
 		require.Contains(t, argv, "--exit-code=1")
-		require.Contains(t, argv, "--enable-verbose-conn-check=true")
+		require.NotContains(t, argv, "--enable-verbose-conn-check=true", "node TCP/UDP listeners are optional")
 		require.Contains(t, argv, "--network-mode=diagnostic")
+		require.Contains(t, argv, "--target-ip-ports=tcp-192.0.2.1-1,tcp-192.0.2.2-8100,udp-192.0.2.2-8101,tcp-2001:db8::2-8100,udp-2001:db8::2-8101,tcp-192.0.2.3-8100,udp-192.0.2.3-8101,tcp-2001:db8::3-8100,udp-2001:db8::3-8101")
 		return utilexec.CodeExitError{Err: errors.New("connectivity failure"), Code: 1}
 	}
-	err = app.runDiagnosticProbes(t.Context(), client, []Target{{Pod: "subnet-a", Node: "a"}, {Pod: "subnet-b", Node: "b"}}, "subnet", "tcp-192.0.2.1-1", diagnosticOptions{tcpPort: "8100", udpPort: "8101"})
+	err = app.runDiagnosticProbes(t.Context(), client, []Target{{Namespace: podA.Namespace, Pod: podA.Name, Node: "a"}, {Namespace: podB.Namespace, Pod: podB.Name, Node: "b"}}, "subnet", "tcp-192.0.2.1-1", diagnosticOptions{tcpPort: "8100", udpPort: "8101"})
 	require.ErrorContains(t, err, "probe on a")
 	require.ErrorContains(t, err, "probe on b")
 	require.Len(t, executor.calls, 2, "one failed node must not hide other nodes")

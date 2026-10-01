@@ -429,6 +429,24 @@ var _ = framework.Describe("[group:kubectl-ko]", func() {
 	framework.ConformanceIt(`should support "kubectl ko diagnose subnet IPPorts <IPPorts>"`, func() {
 		f.SkipVersionPriorTo(1, 12, "This feature was introduced in v1.12")
 		execOrDie("ko diagnose subnet ovn-default")
-		execOrDie("ko diagnose IPPorts tcp-1.1.1.1-53,udp-1.1.1.1-53")
+		if f.VersionPriorTo(1, 17) {
+			execOrDie("ko diagnose IPPorts tcp-1.1.1.1-53,udp-1.1.1.1-53")
+			return
+		}
+
+		ginkgo.By("Creating a controlled TCP/UDP probe server")
+		family := "-4"
+		if f.IsIPv6() {
+			family = "-6"
+		}
+		command := fmt.Sprintf("ncat %s --udp --listen --keep-open --exec /bin/cat 8101 & exec ncat %s --listen --keep-open --exec /bin/cat 8100", family, family)
+		pod := framework.MakePod(namespaceName, podName, nil, nil, f.KubeOVNImage, []string{"sh", "-c", command}, nil)
+		pod.Spec.Containers[0].ReadinessProbe = &corev1.Probe{TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromInt32(8100)}}
+		pod = podClient.CreateSync(pod)
+		execOrDie(fmt.Sprintf("ko diagnose IPPorts tcp-%s-8100,udp-%s-8101", pod.Status.PodIP, pod.Status.PodIP))
+
+		ginkgo.By("Checking that an unreachable endpoint returns a failure")
+		_, err := e2ekubectl.NewKubectlCommand("", framework.KubectlKoArgs("ko", "diagnose", "IPPorts", fmt.Sprintf("tcp-%s-8102", pod.Status.PodIP))...).Exec()
+		framework.ExpectError(err)
 	})
 })

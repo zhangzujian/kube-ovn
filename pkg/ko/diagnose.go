@@ -195,6 +195,13 @@ func (a *Application) diagnose(ctx context.Context, client *Client, mode, value 
 }
 
 func (a *Application) runDiagnosticProbes(ctx context.Context, client *Client, pingers []Target, mode, targets string, options diagnosticOptions) error {
+	if mode == "subnet" {
+		peers, err := client.subnetProbeTargets(ctx, pingers, options)
+		if err != nil {
+			return err
+		}
+		targets += "," + peers
+	}
 	var failures []error
 	for _, target := range pingers {
 		if _, err := fmt.Fprintf(a.streams.Out, "Diagnosing node %s\n", target.Node); err != nil {
@@ -212,13 +219,36 @@ func (a *Application) runDiagnosticProbes(ctx context.Context, client *Client, p
 			argv = append(argv, "--external-address=1.1.1.1,2606:4700:4700::1111")
 		}
 		if mode == "subnet" {
-			argv = append(argv, "--network-mode=diagnostic", "--enable-verbose-conn-check=true", "--tcp-conn-check-port="+options.tcpPort, "--udp-conn-check-port="+options.udpPort)
+			// The temporary pods listen on the probe ports; CNI node listeners
+			// are optional. Probe peers explicitly and retain ICMP node checks.
+			argv = append(argv, "--network-mode=diagnostic")
 		}
 		if err := client.Executor.Exec(ctx, target, argv, a.outputStreams()); err != nil {
 			failures = append(failures, fmt.Errorf("probe on %s: %w", target.Node, err))
 		}
 	}
 	return errors.Join(failures...)
+}
+
+func (c *Client) subnetProbeTargets(ctx context.Context, pingers []Target, options diagnosticOptions) (string, error) {
+	var endpoints []string
+	for _, target := range pingers {
+		pod, err := c.Kubernetes.CoreV1().Pods(target.Namespace).Get(ctx, target.Pod, metav1.GetOptions{})
+		if err != nil {
+			return "", err
+		}
+		if len(pod.Status.PodIPs) == 0 {
+			return "", fmt.Errorf("subnet probe %s/%s has no IP addresses", target.Namespace, target.Pod)
+		}
+		for _, ip := range pod.Status.PodIPs {
+			address, err := netip.ParseAddr(ip.IP)
+			if err != nil {
+				return "", fmt.Errorf("invalid subnet probe address: %w", err)
+			}
+			endpoints = append(endpoints, "tcp-"+address.Unmap().String()+"-"+options.tcpPort, "udp-"+address.Unmap().String()+"-"+options.udpPort)
+		}
+	}
+	return strings.Join(endpoints, ","), nil
 }
 
 type diagnosticCheck struct {
