@@ -508,7 +508,8 @@ func (r *resourceRun) subnetProbe(ctx context.Context, subnet string, options di
 	ds := &appsv1.DaemonSet{Name: "ko-subnet-" + r.id, Labels: r.labels(), Spec: appsv1.DaemonSetSpec{
 		Selector: &metav1.LabelSelector{MatchLabels: r.labels()},
 		Template: corev1.PodTemplateSpec{Labels: r.labels(), Annotations: map[string]string{annotationPrefix + "logical_switch": subnet}, Spec: corev1.PodSpec{
-			ServiceAccountName: "kube-ovn-app", SecurityContext: &corev1.PodSecurityContext{SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}},
+			AutomountServiceAccountToken: new(true),
+			ServiceAccountName:           "kube-ovn-app", SecurityContext: &corev1.PodSecurityContext{SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}},
 			Containers: []corev1.Container{{
 				Name: "probe", Image: image, Command: []string{"/kube-ovn/kube-ovn-pinger"},
 				Args:           []string{"--enable-verbose-conn-check=true", fmt.Sprintf("--tcp-conn-check-port=%d", tcp), fmt.Sprintf("--udp-conn-check-port=%d", udp)},

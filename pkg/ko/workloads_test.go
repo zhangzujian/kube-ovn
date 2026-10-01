@@ -62,6 +62,37 @@ func TestDaemonSetWaitDoesNotAcceptPreviousGeneration(t *testing.T) {
 	require.False(t, daemonSetReady(ds))
 }
 
+func TestSubnetProbeAuthenticatesWithAutomountDisabledServiceAccount(t *testing.T) {
+	account := &corev1.ServiceAccount{Name: "kube-ovn-app", Namespace: "ovn-system", AutomountServiceAccountToken: new(false)}
+	pinger := &appsv1.DaemonSet{Name: "kube-ovn-pinger", Namespace: account.Namespace, Spec: appsv1.DaemonSetSpec{
+		Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "pinger", Image: "probe-image"}}}},
+	}}
+	cs := fake.NewClientset(account, pinger)
+	run := &resourceRun{client: &Client{Kubernetes: cs, Namespace: account.Namespace}, id: "authenticated"}
+	cs.PrependReactor("create", "daemonsets", func(action ktesting.Action) (bool, runtime.Object, error) {
+		ds := action.(ktesting.CreateAction).GetObject().(*appsv1.DaemonSet).DeepCopy()
+		ds.Namespace = action.GetNamespace()
+		spec := ds.Spec.Template.Spec
+		require.Equal(t, account.Name, spec.ServiceAccountName)
+		mount := account.AutomountServiceAccountToken
+		if spec.AutomountServiceAccountToken != nil {
+			mount = spec.AutomountServiceAccountToken
+		}
+		if !*mount {
+			return true, nil, errors.New("probe cannot initialize an in-cluster client: token mount is disabled")
+		}
+		ds.UID = "authenticated-probe"
+		ds.Status = appsv1.DaemonSetStatus{DesiredNumberScheduled: 1, CurrentNumberScheduled: 1, UpdatedNumberScheduled: 1, NumberReady: 1, NumberAvailable: 1}
+		require.NoError(t, cs.Tracker().Add(ds))
+		return true, ds, nil
+	})
+	require.NoError(t, run.subnetProbe(t.Context(), "subnet", diagnosticOptions{tcpPort: "8100", udpPort: "8101"}))
+	require.Equal(t, []ownedResource{{kind: "daemonset", name: "ko-subnet-authenticated", uid: "authenticated-probe"}}, run.resources)
+	stored, err := cs.CoreV1().ServiceAccounts(account.Namespace).Get(t.Context(), account.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Equal(t, new(false), stored.AutomountServiceAccountToken)
+}
+
 func TestCleanupRecoversLostCreateResponseWithoutAdoptingOtherRuns(t *testing.T) {
 	for _, owner := range []string{"ours", "other"} {
 		t.Run(owner, func(t *testing.T) {
