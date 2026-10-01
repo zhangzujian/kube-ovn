@@ -124,15 +124,15 @@ func runID() string { return strings.ToLower(rand.Text()) }
 
 func (a *Application) backup(ctx context.Context, client *Client, target Target, role, destination string) (resultErr error) {
 	remote := "/tmp/kubectl-ko-" + role + "-" + runID() + ".backup"
-	if _, err := client.capture(ctx, target, "ovsdb-tool", "cluster-to-standalone", remote, "/etc/ovn/ovn"+role+"_db.db"); err != nil {
-		return err
-	}
 	defer func() {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 		defer cancel()
 		_, err := client.capture(cleanupCtx, target, "rm", "-f", remote)
 		resultErr = errors.Join(resultErr, err)
 	}()
+	if _, err := client.capture(ctx, target, "ovsdb-tool", "cluster-to-standalone", remote, "/etc/ovn/ovn"+role+"_db.db"); err != nil {
+		return err
+	}
 	name, err := client.capture(ctx, target, "ovsdb-tool", "db-name", remote)
 	if err != nil {
 		return err
@@ -149,7 +149,12 @@ func (a *Application) backup(ctx context.Context, client *Client, target Target,
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(destination+".json", data, 0o600); err != nil {
+	file, err := os.OpenFile(destination+".json", os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	_, writeErr := file.Write(data)
+	if err := errors.Join(writeErr, file.Close()); err != nil {
 		return err
 	}
 	_, err = fmt.Fprintf(a.streams.Out, "Backed up %s to %s (sha256:%s)\n", databaseName(role), destination, checksum)

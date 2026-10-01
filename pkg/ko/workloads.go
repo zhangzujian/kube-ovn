@@ -116,7 +116,7 @@ func (r *resourceRun) cleanup(ctx context.Context) error {
 func (r *resourceRun) createPod(ctx context.Context, pod *corev1.Pod) (*corev1.Pod, error) {
 	result, err := r.client.Kubernetes.CoreV1().Pods(r.client.Namespace).Create(ctx, pod, metav1.CreateOptions{})
 	if err != nil {
-		return nil, err
+		return nil, r.recordUncertainCreation(ctx, "pod", pod.Name, err)
 	}
 	r.resources = append(r.resources, ownedResource{kind: "pod", name: result.Name, uid: result.UID})
 	return result, nil
@@ -125,7 +125,7 @@ func (r *resourceRun) createPod(ctx context.Context, pod *corev1.Pod) (*corev1.P
 func (r *resourceRun) createService(ctx context.Context, service *corev1.Service) (*corev1.Service, error) {
 	result, err := r.client.Kubernetes.CoreV1().Services(r.client.Namespace).Create(ctx, service, metav1.CreateOptions{})
 	if err != nil {
-		return nil, err
+		return nil, r.recordUncertainCreation(ctx, "service", service.Name, err)
 	}
 	r.resources = append(r.resources, ownedResource{kind: "service", name: result.Name, uid: result.UID})
 	return result, nil
@@ -134,10 +134,38 @@ func (r *resourceRun) createService(ctx context.Context, service *corev1.Service
 func (r *resourceRun) createDaemonSet(ctx context.Context, ds *appsv1.DaemonSet) error {
 	result, err := r.client.Kubernetes.AppsV1().DaemonSets(r.client.Namespace).Create(ctx, ds, metav1.CreateOptions{})
 	if err != nil {
-		return err
+		return r.recordUncertainCreation(ctx, "daemonset", ds.Name, err)
 	}
 	r.resources = append(r.resources, ownedResource{kind: "daemonset", name: result.Name, uid: result.UID})
 	return r.client.waitDaemonSet(ctx, result.Name, 2*time.Minute)
+}
+
+// A lost create response can leave an object on the server. Only adopt it for
+// cleanup when its unique run label matches, then retain the exact returned UID.
+func (r *resourceRun) recordUncertainCreation(ctx context.Context, kind, name string, createErr error) error {
+	if apierrors.IsAlreadyExists(createErr) {
+		return createErr
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	var object metav1.Object
+	var err error
+	switch kind {
+	case "pod":
+		object, err = r.client.Kubernetes.CoreV1().Pods(r.client.Namespace).Get(ctx, name, metav1.GetOptions{})
+	case "service":
+		object, err = r.client.Kubernetes.CoreV1().Services(r.client.Namespace).Get(ctx, name, metav1.GetOptions{})
+	case "daemonset":
+		object, err = r.client.Kubernetes.AppsV1().DaemonSets(r.client.Namespace).Get(ctx, name, metav1.GetOptions{})
+	}
+	if err != nil {
+		return errors.Join(createErr, fmt.Errorf("verify uncertain creation of %s/%s/%s: %w", r.client.Namespace, kind, name, err))
+	}
+	if r.id == "" || object.GetLabels()["kubeovn.io/ko-run"] != r.id || object.GetUID() == "" {
+		return errors.Join(createErr, fmt.Errorf("cannot establish ownership of %s/%s/%s; leaving it unchanged", r.client.Namespace, kind, name))
+	}
+	r.resources = append(r.resources, ownedResource{kind: kind, name: name, uid: object.GetUID()})
+	return createErr
 }
 
 func (c *Client) waitPod(ctx context.Context, name string) (*corev1.Pod, error) {

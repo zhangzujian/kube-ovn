@@ -61,3 +61,28 @@ func TestDaemonSetWaitDoesNotAcceptPreviousGeneration(t *testing.T) {
 	ds.Status.UpdatedNumberScheduled = 0
 	require.False(t, daemonSetReady(ds))
 }
+
+func TestCleanupRecoversLostCreateResponseWithoutAdoptingOtherRuns(t *testing.T) {
+	for _, owner := range []string{"ours", "other"} {
+		t.Run(owner, func(t *testing.T) {
+			cs := fake.NewClientset()
+			run := &resourceRun{client: &Client{Kubernetes: cs, Namespace: "ovn-system"}, id: "ours"}
+			cs.PrependReactor("create", "pods", func(action ktesting.Action) (bool, runtime.Object, error) {
+				pod := action.(ktesting.CreateAction).GetObject().(*corev1.Pod).DeepCopy()
+				pod.Namespace, pod.UID = "ovn-system", "server-uid"
+				pod.Labels = map[string]string{"kubeovn.io/ko-run": owner}
+				require.NoError(t, cs.Tracker().Add(pod))
+				return true, nil, context.DeadlineExceeded
+			})
+			_, err := run.createPod(t.Context(), &corev1.Pod{Name: "probe"})
+			require.ErrorIs(t, err, context.DeadlineExceeded)
+			require.NoError(t, run.cleanup(t.Context()))
+			_, err = cs.CoreV1().Pods("ovn-system").Get(t.Context(), "probe", metav1.GetOptions{})
+			if owner == "ours" {
+				require.True(t, apierrors.IsNotFound(err))
+			} else {
+				require.NoError(t, err, "another run's resource must survive")
+			}
+		})
+	}
+}
