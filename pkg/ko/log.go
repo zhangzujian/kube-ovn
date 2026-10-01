@@ -25,11 +25,11 @@ type collectionOptions struct {
 }
 
 type collectionTask struct {
-	Target   Target        `json:"target"`
-	Name     string        `json:"name"`
-	Path     string        `json:"path"`
-	Error    string        `json:"error,omitempty"`
-	Duration time.Duration `json:"durationNanoseconds"`
+	Target   Target `json:"target"`
+	Name     string `json:"name"`
+	Path     string `json:"path"`
+	Error    string `json:"error,omitempty"`
+	Duration int64  `json:"durationNanoseconds"`
 	collect  func(context.Context) error
 }
 
@@ -86,7 +86,7 @@ func (a *Application) collectLogs(ctx context.Context, client *Client, component
 			if err := tasks[i].collect(itemCtx); err != nil {
 				tasks[i].Error = err.Error()
 			}
-			tasks[i].Duration = time.Since(started)
+			tasks[i].Duration = time.Since(started).Nanoseconds()
 		})
 	}
 	wg.Wait()

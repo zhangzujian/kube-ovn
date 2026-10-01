@@ -97,6 +97,10 @@ func (c *Client) collectDirectory(ctx context.Context, target Target, source, de
 	unpackErr := extractTar(root, reader, limit)
 	if unpackErr != nil {
 		cancel()
+	} else {
+		// tar.Reader stops at the end markers, before GNU tar's record padding.
+		// Drain that padding so exec can finish instead of seeing a closed pipe.
+		_, unpackErr = io.Copy(io.Discard, reader)
 	}
 	closeErr := reader.Close()
 	return errors.Join(unpackErr, closeErr, <-done)
