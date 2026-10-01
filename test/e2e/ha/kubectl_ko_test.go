@@ -238,6 +238,12 @@ func kubectlKoCheckRecoveryRecord(f *framework.Framework, output, source string,
 			for _, db := range []string{"nb", "sb"} {
 				path := record.Directory + "/ovn" + db + "_db.original"
 				e2ekubectl.NewKubectlCommand("", "exec", "-n", pod.Namespace, pod.Name, "-c", "ovn-central", "--", "test", "-s", path).ExecOrDie("")
+				name := "OVN_Northbound"
+				if db == "sb" {
+					name = "OVN_Southbound"
+				}
+				output := e2ekubectl.NewKubectlCommand("", "exec", "-n", pod.Namespace, pod.Name, "-c", "ovn-central", "--", "ovsdb-tool", "db-name", path).ExecOrDie("")
+				framework.ExpectEqual(strings.TrimSpace(output), name, "retained database must remain readable on node %s", target.Node)
 			}
 		}
 		framework.ExpectEqual(found, true, "missing central pod on recovery node %s", target.Node)
