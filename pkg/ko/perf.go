@@ -318,10 +318,12 @@ func (a *Application) multicastPerformance(ctx context.Context, client *Client, 
 		if strings.Contains(output, "01:00:5e:00:00:64") {
 			continue
 		}
+		// A lost exec response can hide a successful add, including on a host
+		// interface that outlives the probe pod. Record cleanup before mutation.
+		added = append(added, target)
 		if _, err := client.capture(ctx, target.target, namespaceCommand(target.netns, "ip", "maddr", "add", "01:00:5e:00:00:64", "dev", target.nic)...); err != nil {
 			return err
 		}
-		added = append(added, target)
 	}
 	return a.runMulticastTraffic(ctx, client, clientPod, serverPod, options)
 }

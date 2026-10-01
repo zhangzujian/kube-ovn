@@ -81,3 +81,50 @@ func TestDatabaseStatusRejectsInconsistentStorage(t *testing.T) {
 	require.ErrorContains(t, app.Execute(t.Context(), []string{"nb", "dbstatus"}), "storage is unhealthy")
 	require.Equal(t, 2, strings.Count(out.String(), "inconsistent data"))
 }
+
+func TestMulticastCleansUpLostAddResponseAndPreservesExistingMembership(t *testing.T) {
+	app, executor, _, _ := testApplication(t,
+		&corev1.Node{Name: "a"}, &corev1.Node{Name: "b"},
+		readyPod("ovs-a", "a", "openvswitch", map[string]string{"app": "ovs"}),
+		readyPod("ovs-b", "b", "openvswitch", map[string]string{"app": "ovs"}),
+	)
+	client, err := app.newClient()
+	require.NoError(t, err)
+	pods := []*corev1.Pod{
+		{Spec: corev1.PodSpec{NodeName: "a", HostNetwork: true}, Status: corev1.PodStatus{PodIP: "192.0.2.1"}},
+		{Spec: corev1.PodSpec{NodeName: "b", HostNetwork: true}, Status: corev1.PodStatus{PodIP: "192.0.2.2"}},
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	membership := map[string]bool{"a": true}
+	executor.run = func(execCtx context.Context, target Target, argv []string, streams Streams) error {
+		switch strings.Join(argv, " ") {
+		case "ip -o addr show":
+			address := "192.0.2.1"
+			if target.Node == "b" {
+				address = "192.0.2.2"
+			}
+			_, err := io.WriteString(streams.Out, "2: eth0 inet "+address+"/24\n")
+			return err
+		case "ip maddr show dev eth0":
+			if membership[target.Node] {
+				_, err := io.WriteString(streams.Out, "link 01:00:5e:00:00:64\n")
+				return err
+			}
+		case "ip maddr add 01:00:5e:00:00:64 dev eth0":
+			require.Equal(t, "b", target.Node)
+			membership[target.Node] = true
+			cancel() // The host changed, but the exec result was lost.
+			return context.DeadlineExceeded
+		case "ip maddr del 01:00:5e:00:00:64 dev eth0":
+			require.NoError(t, execCtx.Err(), "cleanup must survive cancellation")
+			require.Equal(t, "b", target.Node, "preexisting membership must not be removed")
+			delete(membership, target.Node)
+		default:
+			t.Fatalf("unexpected command: %v", argv)
+		}
+		return nil
+	}
+	require.ErrorIs(t, app.multicastPerformance(ctx, client, pods[0], pods[1], performanceOptions{}), context.DeadlineExceeded)
+	require.Equal(t, map[string]bool{"a": true}, membership)
+}
