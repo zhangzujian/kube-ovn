@@ -37,6 +37,7 @@ const (
 
 func execOrDie(cmd string, checks ...func(string)) {
 	ginkgo.GinkgoHelper()
+	cmd = strings.Join(framework.KubectlKoArgs(strings.Fields(cmd)...), " ")
 	ginkgo.By(`Executing "kubectl ` + cmd + `"`)
 	output := e2ekubectl.NewKubectlCommand("", strings.Fields(cmd)...).ExecOrDie("")
 	for _, check := range checks {
@@ -146,7 +147,7 @@ var _ = framework.Describe("[group:kubectl-ko]", func() {
 		ginkgo.DeferCleanup(func() { framework.ExpectNoError(os.RemoveAll(directory)) })
 		for _, role := range []string{"nb", "sb"} {
 			filename := filepath.Join(directory, role+".backup")
-			e2ekubectl.NewKubectlCommand("", "ko", role, "backup", "--output", filename).ExecOrDie("")
+			e2ekubectl.NewKubectlCommand("", "ko", "db", role, "backup", "--output", filename).ExecOrDie("")
 			data, err := os.ReadFile(filename)
 			framework.ExpectNoError(err)
 			if !strings.HasPrefix(string(data), "OVSDB JSON ") {
@@ -410,7 +411,7 @@ var _ = framework.Describe("[group:kubectl-ko]", func() {
 				// Retry Service ClusterIP trace to allow OVN LB rules to be synced
 				framework.WaitUntil(time.Second, 30*time.Second, func(_ context.Context) (bool, error) {
 					ginkgo.By(fmt.Sprintf("Executing \"kubectl %s\"", cmd))
-					output := e2ekubectl.NewKubectlCommand("", strings.Fields(cmd)...).ExecOrDie("")
+					output := e2ekubectl.NewKubectlCommand("", framework.KubectlKoArgs(strings.Fields(cmd)...)...).ExecOrDie("")
 					return checkOutput(output, match), nil
 				}, fmt.Sprintf("trace to service %s should reach target pod", ip))
 			}

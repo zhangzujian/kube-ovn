@@ -35,20 +35,31 @@ type collectionTask struct {
 
 func (a *Application) addLogCommand() {
 	options := collectionOptions{}
-	command := &cobra.Command{Use: "log kube-ovn|ovn|ovs|linux|all", Short: "Collect component logs and node state into a local directory", Args: cobra.ExactArgs(1)}
-	command.Flags().StringVar(&options.output, "output", "kubectl-ko-log", "Output directory")
+	var component string
+	command := &cobra.Command{Use: "logs", Short: "Collect component logs and node state into a local directory"}
+	command.Flags().StringVar(&component, "component", "all", "Component: all, kube-ovn, ovn, ovs or linux")
+	command.Flags().StringVar(&options.output, "output-dir", "kubectl-ko-log", "Output directory")
 	command.Flags().IntVar(&options.concurrency, "concurrency", 4, "Maximum concurrent collection requests")
 	command.Flags().DurationVar(&options.timeout, "item-timeout", 30*time.Second, "Time limit for each collection item")
 	command.Flags().Int64Var(&options.maxBytes, "max-bytes", 256<<20, "Maximum bytes per collection item")
 	command.Flags().BoolVar(&options.strict, "strict", false, "Return a nonzero status if any collection item fails")
-	command.RunE = a.run(func(ctx context.Context, client *Client, args []string) error {
+	command.Args = func(cmd *cobra.Command, args []string) error {
+		if err := cobra.NoArgs(cmd, args); err != nil {
+			return err
+		}
+		if options.output == "" {
+			return errors.New("--output-dir must not be empty")
+		}
 		if options.concurrency < 1 || options.timeout <= 0 || options.maxBytes < 1 {
-			return &usageError{errors.New("collection limits must be positive")}
+			return errors.New("collection limits must be positive")
 		}
-		if !slices.Contains([]string{"kube-ovn", "ovn", "ovs", "linux", "all"}, args[0]) {
-			return &usageError{fmt.Errorf("unknown log component %q", args[0])}
+		if !slices.Contains([]string{"kube-ovn", "ovn", "ovs", "linux", "all"}, component) {
+			return fmt.Errorf("unknown log component %q", component)
 		}
-		return a.collectLogs(ctx, client, args[0], options)
+		return nil
+	}
+	command.RunE = a.run(func(ctx context.Context, client *Client, _ []string) error {
+		return a.collectLogs(ctx, client, component, options)
 	})
 	a.root.AddCommand(command)
 }

@@ -35,10 +35,16 @@ func (a *Application) addRestoreCommand(parent *cobra.Command) {
 	command.Flags().StringVar(&sourceNode, "source-node", "", "Node whose existing northbound database is the recovery source")
 	command.Flags().BoolVar(&dryRun, "dry-run", false, "Print the verified recovery plan without stopping databases")
 	command.Flags().BoolVar(&yes, "yes", false, "Confirm stopping central and rebuilding its NB/SB database cluster")
-	command.RunE = a.run(func(ctx context.Context, client *Client, _ []string) error {
-		if sourceNode == "" || !yes && !dryRun {
-			return &usageError{errors.New("restore requires --source-node and --yes (or --dry-run)")}
+	command.Args = func(cmd *cobra.Command, args []string) error {
+		if err := cobra.NoArgs(cmd, args); err != nil {
+			return err
 		}
+		if sourceNode == "" || !yes && !dryRun {
+			return errors.New("restore requires --source-node and --yes (or --dry-run)")
+		}
+		return validateResourceName("node", sourceNode)
+	}
+	command.RunE = a.run(func(ctx context.Context, client *Client, _ []string) error {
 		deployment, record, err := client.planRecovery(ctx, sourceNode)
 		if err != nil {
 			return err

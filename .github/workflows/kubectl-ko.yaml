@@ -5,6 +5,8 @@ on:
     paths:
       - cmd/kubectl-ko/**
       - pkg/ko/**
+      - pkg/pinger/**
+      - test/e2e/framework/kubectlko/**
       - go.mod
       - go.sum
       - makefiles/build.mk
@@ -29,7 +31,9 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Unit and real streaming protocol tests
-        run: go test -race -count=1 ./pkg/ko/... ./cmd/kubectl-ko/...
+        run: go test -race -count=1 ./pkg/ko/... ./cmd/kubectl-ko/... ./test/e2e/framework/kubectlko/...
+      - name: Pinger control socket regression
+        run: go test -count=1 ./pkg/pinger/...
       - name: Verify legacy fallback
         run: bash dist/images/kubectl-ko-acl-sample_test.sh
       - name: Check formatting
@@ -62,7 +66,7 @@ jobs:
             throw 'The Windows tests must run on the native target architecture'
           }
       - name: Native file and streaming protocol tests
-        run: go test -count=1 ./pkg/ko/... ./cmd/kubectl-ko/...
+        run: go test -count=1 ./pkg/ko/... ./cmd/kubectl-ko/... ./test/e2e/framework/kubectlko/...
       - name: Build native executable
         run: go build -o kubectl-ko.exe ./cmd/kubectl-ko
       - name: Run without local kubectl or Bash

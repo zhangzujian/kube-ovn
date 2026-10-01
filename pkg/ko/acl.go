@@ -16,7 +16,7 @@ import (
 const aclHelper = "/kube-ovn/kube-ovn-acl-sample"
 
 func (a *Application) addACLCommands() {
-	command := &cobra.Command{Use: "acl-sample", Short: "Decode and listen for NetworkPolicy ACL samples"}
+	command := &cobra.Command{Use: "acl", Short: "Decode and listen for NetworkPolicy ACL samples"}
 	command.AddCommand(&cobra.Command{
 		Use: "decode COOKIE", Args: cobra.ExactArgs(1), Short: "Decode one cookie or metadata value",
 		RunE: a.run(func(ctx context.Context, client *Client, args []string) error {
@@ -30,10 +30,13 @@ func (a *Application) addACLCommands() {
 	var node string
 	listen := &cobra.Command{Use: "listen --node NODE", Args: cobra.NoArgs, Short: "Stream decoded samples from a node"}
 	listen.Flags().StringVar(&node, "node", "", "Node to listen on")
-	listen.RunE = a.run(func(ctx context.Context, client *Client, _ []string) error {
-		if node == "" {
-			return &usageError{errors.New("--node is required")}
+	listen.Args = func(cmd *cobra.Command, args []string) error {
+		if err := cobra.NoArgs(cmd, args); err != nil {
+			return err
 		}
+		return validateResourceName("node", node)
+	}
+	listen.RunE = a.run(func(ctx context.Context, client *Client, _ []string) error {
 		return a.listenACL(ctx, client, node)
 	})
 	command.AddCommand(listen)

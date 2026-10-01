@@ -26,6 +26,8 @@ func databaseCommand(role, action string, args ...string) []string {
 }
 
 func (a *Application) addDatabaseCommands() {
+	parent := &cobra.Command{Use: "db", Short: "Inspect, back up and recover OVN databases"}
+	parent.AddCommand(&cobra.Command{Use: "health", Short: "Check NB and SB storage on every central pod without requiring a leader", Args: cobra.NoArgs, RunE: a.run(a.databaseStatus)})
 	for _, role := range []string{"nb", "sb"} {
 		command := &cobra.Command{Use: role, Short: "Operate the " + role + " database"}
 		command.AddCommand(&cobra.Command{
@@ -43,14 +45,14 @@ func (a *Application) addDatabaseCommands() {
 				return nil
 			}),
 		})
-		command.AddCommand(&cobra.Command{Use: "dbstatus", Short: "Check NB and SB storage on every central pod", Args: cobra.NoArgs, RunE: a.run(a.databaseStatus)})
 		a.addBackupCommand(command, role)
 		a.addKickCommand(command, role)
 		if role == "nb" {
 			a.addRestoreCommand(command)
 		}
-		a.root.AddCommand(command)
+		parent.AddCommand(command)
 	}
+	a.root.AddCommand(parent)
 }
 
 func (a *Application) databaseStatus(ctx context.Context, client *Client, _ []string) error {

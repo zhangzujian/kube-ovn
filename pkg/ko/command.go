@@ -35,7 +35,7 @@ func New(streams genericiooptions.IOStreams) *Application {
 	a := &Application{streams: streams, config: genericclioptions.NewConfigFlags(true)}
 	a.root = &cobra.Command{
 		Use: "kubectl-ko", Short: "Operate and diagnose Kube-OVN through the Kubernetes API",
-		SilenceErrors: true, SilenceUsage: true,
+		SilenceErrors: true, SilenceUsage: true, Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
 	a.root.SetIn(streams.In)
@@ -43,10 +43,10 @@ func New(streams genericiooptions.IOStreams) *Application {
 	a.root.SetErr(streams.ErrOut)
 	flags := a.root.PersistentFlags()
 	a.config.AddFlags(flags)
-	flags.BoolP("help", "h", false, "Help for kubectl-ko")
 	flags.StringVar(&a.namespace, "kube-ovn-namespace", cmp.Or(os.Getenv("KUBE_OVN_NS"), "kube-system"), "Namespace containing Kube-OVN components")
 	flags.DurationVar(&a.discoveryTimeout, "discovery-timeout", 10*time.Second, "Time to wait for a unique ready target")
 	flags.DurationVar(&a.timeout, "timeout", 0, "Overall command timeout (zero allows long-running streams)")
+	a.root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return &usageError{err} })
 	a.newClient = a.connect
 	a.addControlCommands()
 	a.addDatabaseCommands()
@@ -61,27 +61,48 @@ func New(streams genericiooptions.IOStreams) *Application {
 			return err
 		},
 	})
+	wrapArgumentErrors(a.root)
 	return a
 }
 
-// Execute parses only the global prefix before allowing leaf commands to consume argv.
-// In particular, remote --help, --timeout and OVN transaction separators stay intact.
+// Execute allows standard flags anywhere before a remote-command separator.
 func (a *Application) Execute(ctx context.Context, args []string) error {
-	flags := a.root.PersistentFlags()
-	flags.SetInterspersed(false)
-	if err := flags.Parse(args); err != nil {
+	started := false
+	a.root.PersistentPreRunE = func(_ *cobra.Command, _ []string) error {
+		started = true
+		if a.discoveryTimeout <= 0 || a.timeout < 0 {
+			return &usageError{errors.New("timeouts must be positive (overall timeout may be zero)")}
+		}
+		return nil
+	}
+	a.root.SetArgs(args)
+	err := a.root.ExecuteContext(ctx)
+	if err != nil && !started {
 		return &usageError{err}
 	}
-	if a.discoveryTimeout <= 0 || a.timeout < 0 {
-		return &usageError{errors.New("timeouts must be positive (overall timeout may be zero)")}
+	return err
+}
+
+// Argument errors are consistently distinguished from remote execution failures.
+func wrapArgumentErrors(command *cobra.Command) {
+	if validate := command.Args; validate != nil {
+		command.Args = func(cmd *cobra.Command, args []string) error {
+			if err := validate(cmd, args); err != nil {
+				return &usageError{err}
+			}
+			return nil
+		}
 	}
-	if a.timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, a.timeout)
-		defer cancel()
+	for _, child := range command.Commands() {
+		wrapArgumentErrors(child)
 	}
-	a.root.SetArgs(flags.Args())
-	return a.root.ExecuteContext(ctx)
+}
+
+func remoteArguments(cmd *cobra.Command, args []string) error {
+	if cmd.ArgsLenAtDash() > 0 || len(args) != 0 && cmd.ArgsLenAtDash() < 0 {
+		return errors.New("put all remote arguments after --; use -- --help for remote tool help")
+	}
+	return nil
 }
 
 func (a *Application) connect() (*Client, error) {
@@ -109,6 +130,12 @@ func (a *Application) connect() (*Client, error) {
 
 func (a *Application) run(handler func(context.Context, *Client, []string) error) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
+		if a.timeout > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, a.timeout)
+			defer cancel()
+		}
 		if a.client == nil {
 			var err error
 			a.client, err = a.newClient()
@@ -116,7 +143,7 @@ func (a *Application) run(handler func(context.Context, *Client, []string) error
 				return err
 			}
 		}
-		return handler(cmd.Context(), a.client, args)
+		return handler(ctx, a.client, args)
 	}
 }
 
@@ -125,16 +152,12 @@ func (a *Application) outputStreams() Streams {
 }
 
 func (a *Application) addControlCommands() {
-	for name, role := range map[string]string{"nbctl": "nb", "sbctl": "sb", "icnbctl": "ic-nb", "icsbctl": "ic-sb"} {
+	parent := &cobra.Command{Use: "exec", Short: "Run an OVN or OVS tool in its cluster container"}
+	for _, role := range []string{"nb", "sb", "ic-nb", "ic-sb"} {
+		name := role + "ctl"
 		binary := "ovn-" + name
-		if role == "ic-nb" {
-			binary = "ovn-ic-nbctl"
-		}
-		if role == "ic-sb" {
-			binary = "ovn-ic-sbctl"
-		}
-		a.root.AddCommand(&cobra.Command{
-			Use: name + " [remote arguments...]", Short: "Invoke " + binary + " on its leader", DisableFlagParsing: true,
+		parent.AddCommand(&cobra.Command{
+			Use: name + " [flags] -- [TOOL_ARGS...]", DisableFlagsInUseLine: true, Short: "Invoke " + binary + " on its leader", Args: remoteArguments,
 			RunE: a.run(func(ctx context.Context, client *Client, args []string) error {
 				target, err := client.leader(ctx, role)
 				if err != nil {
@@ -145,15 +168,25 @@ func (a *Application) addControlCommands() {
 		})
 	}
 	for _, name := range []string{"vsctl", "ofctl", "dpctl", "appctl"} {
-		a.root.AddCommand(&cobra.Command{
-			Use: name + " NODE [remote arguments...]", Short: "Invoke ovs-" + name + " on a node", DisableFlagParsing: true, Args: cobra.MinimumNArgs(1),
+		var node string
+		command := &cobra.Command{
+			Use: name + " --node NODE [flags] -- [TOOL_ARGS...]", DisableFlagsInUseLine: true, Short: "Invoke ovs-" + name + " on a node",
+			Args: func(cmd *cobra.Command, args []string) error {
+				if err := validateResourceName("node", node); err != nil {
+					return err
+				}
+				return remoteArguments(cmd, args)
+			},
 			RunE: a.run(func(ctx context.Context, client *Client, args []string) error {
-				target, err := client.nodeTarget(ctx, args[0], "ovs")
+				target, err := client.nodeTarget(ctx, node, "ovs")
 				if err != nil {
 					return err
 				}
-				return client.Executor.Exec(ctx, target, append([]string{"ovs-" + name}, args[1:]...), a.outputStreams())
+				return client.Executor.Exec(ctx, target, append([]string{"ovs-" + name}, args...), a.outputStreams())
 			}),
-		})
+		}
+		command.Flags().StringVar(&node, "node", "", "Node hosting the OVS container")
+		parent.AddCommand(command)
 	}
+	a.root.AddCommand(parent)
 }

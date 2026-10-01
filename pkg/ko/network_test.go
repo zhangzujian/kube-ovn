@@ -77,7 +77,7 @@ func TestTCPDumpUsesNetNSAndPreservesBinary(t *testing.T) {
 				_, err := s.Out.Write([]byte{0, 255, 10, 13, 0})
 				return err
 			}
-			require.NoError(t, app.Execute(t.Context(), []string{"tcpdump", "app/web", "-w", "-", "-c", "1"}))
+			require.NoError(t, app.Execute(t.Context(), []string{"capture", "--pod", "app/web", "--", "-w", "-", "-c", "1"}))
 			nic := "eth0"
 			if internal {
 				nic = "nic-a"

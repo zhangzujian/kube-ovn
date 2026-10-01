@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -21,17 +23,107 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
+type diagnosticOptions struct {
+	readOnly, skipKubeProxy bool
+	tcpPort, udpPort        string
+}
+
 func (a *Application) addDiagnosticCommands() {
-	a.root.AddCommand(&cobra.Command{Use: "reload", Short: "Restart Kube-OVN components in dependency order", Args: cobra.NoArgs, RunE: a.run(a.reload)})
-	a.root.AddCommand(&cobra.Command{Use: "env-check", Short: "Run the image environment checker on each node", Args: cobra.NoArgs, RunE: a.run(a.environmentCheck)})
-	var readOnly bool
-	command := &cobra.Command{Use: "diagnose [all|node NODE|subnet SUBNET|IPPorts TARGETS]", Short: "Check configuration and probe network connectivity", Args: cobra.MaximumNArgs(2)}
-	command.Flags().BoolVar(&readOnly, "read-only", false, "Skip resource creation and active connectivity probes")
-	command.RunE = a.run(func(ctx context.Context, client *Client, args []string) error {
-		return a.diagnose(ctx, client, args, readOnly)
-	})
-	a.root.AddCommand(command)
+	a.root.AddCommand(&cobra.Command{Use: "restart", Short: "Restart all Kube-OVN components in dependency order", Args: cobra.NoArgs, RunE: a.run(a.reload)})
+	parent := &cobra.Command{Use: "diagnose", Short: "Check the environment, configuration and network connectivity"}
+	parent.AddCommand(&cobra.Command{Use: "environment", Short: "Run the image environment checker on every node", Args: cobra.NoArgs, RunE: a.run(a.environmentCheck)})
+	for _, mode := range []string{"cluster", "node", "subnet", "connectivity"} {
+		a.addDiagnosticMode(parent, mode)
+	}
+	a.root.AddCommand(parent)
 	a.addLogCommand()
+}
+
+func (a *Application) addDiagnosticMode(parent *cobra.Command, mode string) {
+	options := diagnosticOptions{tcpPort: "8100", udpPort: "8101"}
+	command := &cobra.Command{Use: mode, Short: "Check " + mode + " configuration and active connectivity"}
+	flags := command.Flags()
+	flags.BoolVar(&options.skipKubeProxy, "skip-kube-proxy", os.Getenv("WITHOUT_KUBE_PROXY") == "true", "Skip kube-proxy checks (default from WITHOUT_KUBE_PROXY)")
+	if mode != "connectivity" {
+		flags.BoolVar(&options.readOnly, "read-only", false, "Check configuration without creating probe resources or sending traffic")
+	}
+	if mode == "node" {
+		command.Use += " NODE"
+	}
+	if mode == "subnet" {
+		command.Use += " SUBNET"
+		flags.StringVar(&options.tcpPort, "tcp-port", cmp.Or(os.Getenv("TCP_CONN_CHECK_PORT"), "8100"), "Subnet probe TCP port")
+		flags.StringVar(&options.udpPort, "udp-port", cmp.Or(os.Getenv("UDP_CONN_CHECK_PORT"), "8101"), "Subnet probe UDP port")
+	}
+	var targets []string
+	if mode == "connectivity" {
+		command.Short = "Probe explicit TCP/UDP IP endpoints from the pinger pods"
+		flags.StringArrayVar(&targets, "target", nil, "Endpoint such as tcp://1.1.1.1:53 or udp://[2001:db8::1]:53 (repeatable)")
+	}
+	var probeTargets string
+	command.Args = func(cmd *cobra.Command, args []string) error {
+		validate := cobra.NoArgs
+		if mode == "node" || mode == "subnet" {
+			validate = cobra.ExactArgs(1)
+		}
+		if err := validate(cmd, args); err != nil {
+			return err
+		}
+		if mode == "node" || mode == "subnet" {
+			if err := validateResourceName(mode, args[0]); err != nil {
+				return err
+			}
+		}
+		for _, port := range []*string{&options.tcpPort, &options.udpPort} {
+			value, err := strconv.ParseUint(*port, 10, 16)
+			if err != nil || value == 0 {
+				return fmt.Errorf("invalid probe port %q", *port)
+			}
+			*port = strconv.FormatUint(value, 10)
+		}
+		if mode == "connectivity" {
+			var err error
+			probeTargets, err = diagnosticTargets(targets)
+			return err
+		}
+		return nil
+	}
+	command.RunE = a.run(func(ctx context.Context, client *Client, args []string) error {
+		internalMode, value := mode, ""
+		if mode == "cluster" {
+			internalMode = "all"
+		}
+		if len(args) != 0 {
+			value = args[0]
+		}
+		if mode == "connectivity" {
+			internalMode, value = "IPPorts", probeTargets
+		}
+		return a.diagnose(ctx, client, internalMode, value, options)
+	})
+	parent.AddCommand(command)
+}
+
+func diagnosticTargets(targets []string) (string, error) {
+	if len(targets) == 0 {
+		return "", errors.New("at least one --target is required")
+	}
+	var result []string
+	for _, target := range targets {
+		endpoint, err := url.Parse(target)
+		if err != nil {
+			return "", fmt.Errorf("invalid target %q: %w", target, err)
+		}
+		if endpoint.Scheme != "tcp" && endpoint.Scheme != "udp" || endpoint.User != nil || endpoint.Path != "" || endpoint.RawQuery != "" || endpoint.ForceQuery || endpoint.Fragment != "" {
+			return "", fmt.Errorf("target %q must be tcp://IP:PORT or udp://IP:PORT", target)
+		}
+		address, err := netip.ParseAddrPort(endpoint.Host)
+		if err != nil || address.Port() == 0 || address.Addr().Zone() != "" {
+			return "", fmt.Errorf("invalid target address %q", target)
+		}
+		result = append(result, fmt.Sprintf("%s-%s-%d", endpoint.Scheme, address.Addr().Unmap(), address.Port()))
+	}
+	return strings.Join(result, ","), nil
 }
 
 func (a *Application) environmentCheck(ctx context.Context, client *Client, _ []string) error {
@@ -54,25 +146,8 @@ func (a *Application) environmentCheck(ctx context.Context, client *Client, _ []
 	return errors.Join(failures...)
 }
 
-func diagnoseMode(args []string) (string, string, error) {
-	if len(args) == 0 {
-		return "all", "", nil
-	}
-	mode := args[0]
-	if mode == "all" && len(args) == 1 {
-		return mode, "", nil
-	}
-	if (mode == "node" || mode == "subnet" || mode == "IPPorts") && len(args) == 2 && args[1] != "" {
-		return mode, args[1], nil
-	}
-	return "", "", errors.New("use diagnose all, node NODE, subnet SUBNET, or IPPorts TARGETS")
-}
-
-func (a *Application) diagnose(ctx context.Context, client *Client, args []string, readOnly bool) (resultErr error) {
-	mode, value, err := diagnoseMode(args)
-	if err != nil {
-		return &usageError{err}
-	}
+func (a *Application) diagnose(ctx context.Context, client *Client, mode, value string, options diagnosticOptions) (resultErr error) {
+	var err error
 	if mode == "node" {
 		if _, err := client.Kubernetes.CoreV1().Nodes().Get(ctx, value, metav1.GetOptions{}); err != nil {
 			return err
@@ -83,8 +158,8 @@ func (a *Application) diagnose(ctx context.Context, client *Client, args []strin
 			return err
 		}
 	}
-	configurationErr := errors.Join(a.checkConfiguration(ctx, client), a.diagnoseOVN(ctx, client))
-	if readOnly {
+	configurationErr := errors.Join(a.checkConfiguration(ctx, client, options.skipKubeProxy), a.diagnoseOVN(ctx, client))
+	if options.readOnly {
 		return configurationErr
 	}
 	run := &resourceRun{client: client, id: runID()}
@@ -97,7 +172,7 @@ func (a *Application) diagnose(ctx context.Context, client *Client, args []strin
 		}
 	}
 	if mode == "subnet" {
-		if err := run.subnetProbe(ctx, value); err != nil {
+		if err := run.subnetProbe(ctx, value, options); err != nil {
 			return errors.Join(configurationErr, err)
 		}
 	}
@@ -116,10 +191,10 @@ func (a *Application) diagnose(ctx context.Context, client *Client, args []strin
 	if len(pingers) == 0 {
 		return errors.Join(configurationErr, errors.New("no ready pinger containers matched the diagnostic target"))
 	}
-	return errors.Join(configurationErr, a.runDiagnosticProbes(ctx, client, pingers, mode, targets))
+	return errors.Join(configurationErr, a.runDiagnosticProbes(ctx, client, pingers, mode, targets, options))
 }
 
-func (a *Application) runDiagnosticProbes(ctx context.Context, client *Client, pingers []Target, mode, targets string) error {
+func (a *Application) runDiagnosticProbes(ctx context.Context, client *Client, pingers []Target, mode, targets string, options diagnosticOptions) error {
 	var failures []error
 	for _, target := range pingers {
 		if _, err := fmt.Fprintf(a.streams.Out, "Diagnosing node %s\n", target.Node); err != nil {
@@ -137,7 +212,7 @@ func (a *Application) runDiagnosticProbes(ctx context.Context, client *Client, p
 			argv = append(argv, "--external-address=1.1.1.1,2606:4700:4700::1111")
 		}
 		if mode == "subnet" {
-			argv = append(argv, "--network-mode=diagnostic", "--enable-verbose-conn-check=true", "--tcp-conn-check-port="+cmp.Or(os.Getenv("TCP_CONN_CHECK_PORT"), "8100"), "--udp-conn-check-port="+cmp.Or(os.Getenv("UDP_CONN_CHECK_PORT"), "8101"))
+			argv = append(argv, "--network-mode=diagnostic", "--enable-verbose-conn-check=true", "--tcp-conn-check-port="+options.tcpPort, "--udp-conn-check-port="+options.udpPort)
 		}
 		if err := client.Executor.Exec(ctx, target, argv, a.outputStreams()); err != nil {
 			failures = append(failures, fmt.Errorf("probe on %s: %w", target.Node, err))
@@ -151,7 +226,7 @@ type diagnosticCheck struct {
 	run  func() error
 }
 
-func (a *Application) checkConfiguration(ctx context.Context, client *Client) error {
+func (a *Application) checkConfiguration(ctx context.Context, client *Client, skipKubeProxy bool) error {
 	checks := []diagnosticCheck{
 		{"Kubernetes service", func() error {
 			_, err := client.Kubernetes.CoreV1().Services("default").Get(ctx, "kubernetes", metav1.GetOptions{})
@@ -172,7 +247,7 @@ func (a *Application) checkConfiguration(ctx context.Context, client *Client) er
 	for _, role := range []string{"nb", "sb", "northd"} {
 		checks = append(checks, diagnosticCheck{role + " leader", func() error { _, err := client.leader(ctx, role); return err }})
 	}
-	if os.Getenv("WITHOUT_KUBE_PROXY") != "true" {
+	if !skipKubeProxy {
 		checks = append(checks, diagnosticCheck{"kube-proxy", func() error { return client.checkKubeProxy(ctx) }})
 	}
 	var failures []error
@@ -317,7 +392,7 @@ func (r *resourceRun) nodePortProbe(ctx context.Context) (string, error) {
 	return strings.Join(targets, ","), nil
 }
 
-func (r *resourceRun) subnetProbe(ctx context.Context, subnet string) error {
+func (r *resourceRun) subnetProbe(ctx context.Context, subnet string, options diagnosticOptions) error {
 	pinger, err := r.client.Kubernetes.AppsV1().DaemonSets(r.client.Namespace).Get(ctx, "kube-ovn-pinger", metav1.GetOptions{})
 	if err != nil {
 		return err
@@ -331,13 +406,13 @@ func (r *resourceRun) subnetProbe(ctx context.Context, subnet string) error {
 	if image == "" {
 		return errors.New("pinger DaemonSet has no pinger image")
 	}
-	tcp, err := strconv.ParseInt(cmp.Or(os.Getenv("TCP_CONN_CHECK_PORT"), "8100"), 10, 32)
+	tcp, err := strconv.ParseInt(options.tcpPort, 10, 32)
 	if err != nil || tcp < 1 || tcp > 65535 {
-		return errors.New("invalid TCP_CONN_CHECK_PORT")
+		return errors.New("invalid subnet TCP probe port")
 	}
-	udp, err := strconv.ParseInt(cmp.Or(os.Getenv("UDP_CONN_CHECK_PORT"), "8101"), 10, 32)
+	udp, err := strconv.ParseInt(options.udpPort, 10, 32)
 	if err != nil || udp < 1 || udp > 65535 {
-		return errors.New("invalid UDP_CONN_CHECK_PORT")
+		return errors.New("invalid subnet UDP probe port")
 	}
 	ds := &appsv1.DaemonSet{Name: "ko-subnet-" + r.id, Labels: r.labels(), Spec: appsv1.DaemonSetSpec{
 		Selector: &metav1.LabelSelector{MatchLabels: r.labels()},

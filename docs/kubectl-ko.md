@@ -25,7 +25,7 @@ installation. PowerShell can also run it directly:
 Get-FileHash .\kubectl-ko-windows-arm64.zip -Algorithm SHA256
 Expand-Archive .\kubectl-ko-windows-arm64.zip .\kubectl-ko-windows-arm64
 .\kubectl-ko-windows-arm64\kubectl-ko.exe version
-.\kubectl-ko-windows-arm64\kubectl-ko.exe --context staging nbctl show
+.\kubectl-ko-windows-arm64\kubectl-ko.exe --context staging exec nbctl -- show
 ```
 
 Use the amd64 archive instead on x64 Windows. `kubectl ko version` and
@@ -45,69 +45,117 @@ On Windows, build from the checkout with
 Use `kubectl plugin list` to detect older copies shadowing the new binary.
 `kubectl ko version` prints the local build without accessing a cluster.
 
-## Configuration and argument boundaries
+## Command structure and complete feature inventory
 
-Global flags go **after `ko` and before the subcommand**:
+The Go CLI uses the following command tree. This is an intentional breaking
+change: old command names and positional forms are not aliases.
 
-```console
-kubectl ko --context staging --kube-ovn-namespace ovn-system nbctl show
-kubectl ko --namespace app tcpdump web -w - > capture.pcap
-kubectl ko --timeout 30s trace app/web 10.0.0.8 tcp 443
-kubectl ko nbctl --format=json --columns=name list Logical_Switch
-kubectl ko nbctl -- ls-add example -- lsp-add example example-port
+```text
+kubectl ko
+  exec
+    nbctl | sbctl | ic-nbctl | ic-sbctl -- [TOOL_ARGS...]
+    vsctl | ofctl | dpctl | appctl --node NODE -- [TOOL_ARGS...]
+  db
+    health
+    nb
+      status | backup | kick SERVER_ID | restore
+    sb
+      status | backup | kick SERVER_ID
+  trace --pod POD|--node NODE --dst-ip IP [OPTIONS]
+  capture --pod POD -- [TCPDUMP_ARGS...]
+  diagnose
+    cluster
+    node NODE
+    subnet SUBNET
+    connectivity --target PROTOCOL://IP:PORT [--target ...]
+    environment
+  logs [OPTIONS]
+  restart
+  perf
+    run [OPTIONS]
+    recovery --yes
+  acl
+    decode COOKIE
+    listen --node NODE
+  version
+  completion bash|zsh|fish|powershell
 ```
 
-The standard kubeconfig loader supports `--kubeconfig`, `KUBECONFIG`, context,
-TLS, authentication plugins and impersonation. Workload namespace selection is
-`namespace/pod`, then `--namespace`, then kubeconfig namespace, then `default`.
-The Kube-OVN deployment namespace is independently selected by
-`--kube-ovn-namespace`, `KUBE_OVN_NS`, then `kube-system`.
+| New command | Complete capability and effects |
+| --- | --- |
+| `exec nbctl`, `exec sbctl` | Find the requested database leader independently and execute its OVN CLI. All CLI operations, including writes and multi-command transactions, remain available. |
+| `exec ic-nbctl`, `exec ic-sbctl` | Find the corresponding interconnection leader and execute its CLI. |
+| `exec vsctl/ofctl/dpctl/appctl --node NODE` | Execute the selected OVS tool in that node's openvswitch container. Remote commands may change live state. |
+| `db nb status`, `db sb status` | Show RAFT cluster and storage status for the selected leader. |
+| `db health` | Check both NB and SB storage on every running central container, without requiring a healthy leader. Report unhealthy storage as failure. |
+| `db nb backup`, `db sb backup` | Convert and download a standalone database, verify DB name and SHA256, and publish without overwriting an existing file. Write a JSON provenance sidecar; remove the temporary remote backup. |
+| `db nb kick SERVER_ID`, `db sb kick SERVER_ID` | Remove a stale cluster member. `--dry-run` prints the selected target and exact command without applying the change. |
+| `db nb restore` | Reconstruct the central NB/SB cluster from the NB database already present on the explicit bootstrap node. Stop central, preserve originals and RAFT headers, rebuild, verify storage and restart OVS. This is not local-file import; SB-only restore is not supported. |
+| `trace` | Resolve Pod/Node addresses, MACs and logical ports, trace through OVN, then OVS. Supports IPv4/IPv6, ICMP/TCP/UDP, IPv4 ARP request/reply, explicit destination MAC, hostNetwork, Underlay/U2O and VM logical ports. `--engine ovn` runs only OVN trace. |
+| `capture` | Execute tcpdump in a Pod's network namespace, including hostNetwork and internal-port paths. A remote `-w PATH` stays remote; `-w -` streams the original pcap bytes locally. |
+| `diagnose cluster` | Check cluster configuration, component rollout and leaders; create a unique temporary NodePort Service and run active pinger checks. |
+| `diagnose node NODE` | Perform configuration checks and restrict the active pinger probes to one node. |
+| `diagnose subnet SUBNET` | Check the subnet, create an isolated temporary DaemonSet and NodePort Service, and probe connectivity from those subnet Pods. |
+| `diagnose connectivity` | Check configuration and probe explicit TCP/UDP IP endpoints using existing pinger Pods. Does not create the NodePort/Subnet probe resources. |
+| `diagnose environment` | Run the image environment checker in each running CNI container. |
+| `logs` | Collect component files, container logs and Linux node state in parallel; limit each item and record partial failures in a manifest. |
+| `restart` | Restart and wait for central, OVS, controller, CNI, pinger and monitor in dependency order. |
+| `perf run` | Create isolated probe Pods/Service; measure Pod, host, Service and multicast performance. Temporarily configure an OVN LB and multicast membership, then clean up owned changes. Does not delete central leaders. |
+| `perf recovery --yes` | Deliberately delete NB, SB and northd leader Pods in sequence and measure their recovery. Does not run the traffic benchmark. |
+| `acl decode COOKIE` | Decode a sample cookie using the existing NB helper. |
+| `acl listen --node NODE` | Stream sampled cookies from that node, decode with bounded backpressure, and emit YAML documents until cancellation. |
+| `version`, `help`, `completion` | Show the client build, discover commands or generate shell completion without accessing a cluster. |
 
-The eight `*ctl` commands and `tcpdump` preserve remote arguments verbatim,
-including `--help`, `--timeout`, `-n`, `-c`, whitespace and OVN transaction `--`
-separators. Use `kubectl ko help nbctl` for plugin help; `nbctl --help` invokes
-the remote tool help. Do not add an extra separator intended for the plugin:
-all tokens after a passthrough command (and its required target) belong to the
-remote tool.
+## Configuration and argument boundaries
+
+Standard Kubernetes connection flags are accepted before or after subcommands,
+up to the explicit `--` remote-argument separator. The kubeconfig loader supports
+`--kubeconfig`, `KUBECONFIG`, context, TLS, authentication plugins and impersonation.
+Workload namespace selection is `namespace/pod`, then `--namespace/-n`, then
+kubeconfig namespace, then `default`. The deployment namespace is independently
+selected by `--kube-ovn-namespace`, `KUBE_OVN_NS`, then `kube-system`.
+
+| Scope | Parameters and defaults |
+| --- | --- |
+| Global | `--timeout=0` bounds the whole invocation; zero allows long streams. `--discovery-timeout=10s` bounds target selection. Kubernetes `--request-timeout` does not truncate an established exec stream. |
+| Raw tools / capture | `exec` OVS tools require `--node`; `capture` requires `--pod`. All remote arguments must follow `--`. |
+| Trace | Exactly one of `--pod` / `--node`; required `--dst-ip`; `--protocol=icmp`, `--engine=all`, optional `--dst-mac`. TCP/UDP require `--dst-port=1..65535`. ARP uses `--arp-op=request|reply` and IPv4. |
+| Database backup | `--output FILE`; otherwise a unique DB-specific filename. |
+| Database recovery | Required `--source-node NODE` and either `--yes` or `--dry-run`. |
+| Diagnostics | Cluster/node/subnet accept `--read-only` to skip active probes and temporary resources. All configuration/probe modes accept `--skip-kube-proxy`, defaulting from `WITHOUT_KUBE_PROXY=true`. Subnet accepts `--tcp-port` / `--udp-port`, defaulting from `TCP_CONN_CHECK_PORT` / `UDP_CONN_CHECK_PORT`, then 8100 / 8101. Explicit flags override environment values. Connectivity requires one or more `--target tcp://IP:PORT` / `udp://IP:PORT`; IPv6 uses brackets. |
+| Logs | `--component=all` (`all`, `kube-ovn`, `ovn`, `ovs`, `linux`), `--output-dir=kubectl-ko-log`, `--concurrency=4`, `--item-timeout=30s`, `--max-bytes=268435456` per item, optional `--strict`. |
+| Performance | `perf run --image=docker.io/kubeovn/test:v1.13.0 --duration=5s --bandwidth=1G`. Duration is per measurement and must be whole seconds from 1s to 5m. Use `--image` for an internal mirror. Leader disruption is a separate `perf recovery --yes` operation. |
+| ACL | `acl decode COOKIE`; `acl listen --node NODE`. |
+
+```console
+kubectl ko exec nbctl --context staging -- --format=json show
+kubectl ko exec nbctl -- -- ls-add example -- lsp-add example example-port
+kubectl ko exec vsctl --node worker-a -- --timeout=5 show
+kubectl ko trace --pod app/web --dst-ip 10.0.0.8 --protocol tcp --dst-port 443
+kubectl ko trace --node worker-a --dst-ip 2001:db8::8 --engine ovn
+kubectl ko capture --namespace app --pod web -- -w - > capture.pcap
+kubectl ko diagnose subnet ovn-default --tcp-port 8100 --udp-port 8101
+kubectl ko diagnose connectivity --target tcp://1.1.1.1:53 --target 'udp://[2606:4700:4700::1111]:53'
+kubectl ko db nb backup --output northbound.backup
+kubectl ko logs --component ovn --output-dir ./support --strict
+kubectl ko perf run --image registry.example/test:v1.13.0 --duration 2s
+```
+
+The separator belongs to the plugin and is removed exactly once. Every argument
+after it, including another `--`, `--help`, `--timeout`, `-n`, `-c`, whitespace or
+quotes within a single argument, belongs to the remote tool and is preserved.
+`exec nbctl --help` shows local help; `exec nbctl -- --help` shows remote help.
+`exec nbctl show` is rejected instead of guessing the argument boundary.
 
 Exec uses WebSocket with SPDY fallback only for supported handshake failures.
-Remote exit codes propagate to the caller; a failed command is never replayed.
-Output is streamed without TTY transformations, including `tcpdump -w -` and
-backups. `--timeout` bounds the entire invocation; zero allows continuous
-capture/listen until cancellation. Closing an exec connection does not promise
-to kill independently backgrounded remote processes.
-
-## Commands
-
-| Command | Behavior |
-| --- | --- |
-| `nbctl`, `sbctl` | Execute the corresponding OVN tool on its own database leader. |
-| `icnbctl`, `icsbctl` | Execute the interconnection database tools on their leaders. |
-| `vsctl NODE`, `ofctl NODE`, `dpctl NODE`, `appctl NODE` | Execute the OVS tool in the node openvswitch container. |
-| `nb status`, `sb status` | Show database cluster and storage status. |
-| `nb dbstatus`, `sb dbstatus` | Inspect NB and SB storage on all running central containers, even without a leader. |
-| `nb kick ID`, `sb kick ID` | Remove a stale member; `--dry-run` prints the selected target and command. |
-| `nb backup`, `sb backup` | Download a standalone database, validate DB name and SHA256, then publish without overwriting an existing backup. `--output FILE` selects the destination. A JSON sidecar records its origin and checksum. |
-| `nb restore --source-node NODE --yes` | Rebuild the central database cluster from an existing node NB database; see recovery below. `sb restore` is not supported. |
-| `tcpdump POD ...` | Capture hostNetwork or pod netns traffic; internal-port and VM-backed logical port lookup are supported. A remote `-w PATH` is still a remote path; `-w -` streams locally. |
-| `trace SOURCE IP [MAC] PROTOCOL [PORT/OP]` | Execute OVN trace, followed by OVS ofproto trace. |
-| `ovn-trace SOURCE IP [MAC] PROTOCOL [PORT/OP]` | Execute only OVN trace. SOURCE accepts `namespace/pod`, a bare pod, or `node//NODE`; protocols are icmp, tcp, udp and IPv4 arp request/reply. |
-| `diagnose [all/node NODE/subnet SUBNET/IPPorts TARGETS]` | Check components and actively probe with pinger. `--read-only` skips probe resource creation and traffic. |
-| `env-check` | Execute the image environment checker on each CNI container. |
-| `log kube-ovn/ovn/ovs/linux/all` | Collect files, container logs and node state, with bounded concurrency and a manifest of partial failures. |
-| `reload` | Restart and wait for central, OVS, controller, CNI, pinger and monitor in order. |
-| `perf [IMAGE]` | Measure pod/host/Service unicast and multicast performance. `--include-disruption` additionally deletes central leader pods to measure recovery. |
-| `acl-sample decode COOKIE` | Decode through the existing NB helper. |
-| `acl-sample listen --node NODE` | Stream cookies from the node helper and decode with bounded backpressure; output remains YAML documents. |
-
-`WITHOUT_KUBE_PROXY`, `TCP_CONN_CHECK_PORT` and `UDP_CONN_CHECK_PORT` retain their
-existing meanings. `perf` defaults to `docker.io/kubeovn/test:v1.13.0`; pass an
-internal image for disconnected installations. Traffic duration and offered UDP
-bandwidth are controlled by `--duration` (seconds) and `--bandwidth`.
+Remote exit codes propagate; failed commands are never replayed. Streams have
+no TTY transformations or stdout banners. Invalid arguments fail before client
+creation. Closing exec does not promise to kill independently backgrounded
+remote processes.
 
 ## Logs and recovery
 
-`log` keeps the `kubectl-ko-log/<node>/{kube-ovn,ovn,openvswitch,linux}` layout.
+`logs` keeps the `kubectl-ko-log/<node>/{kube-ovn,ovn,openvswitch,linux}` layout.
 Central files on the same node occupy an `ovn/central-<pod>` child directory.
 `manifest.json` records every item and failure. `--concurrency`, `--item-timeout`
 and `--max-bytes` limit each run; the byte limit is per item. Use `--strict` to
@@ -119,7 +167,7 @@ do not configure Windows ACLs. Backup destinations must support hard links
 XFRM state is collected with
 `nokeys`. Treat database and network diagnostics as sensitive local artifacts.
 
-`nb restore` preserves the old operation meaning: reconstruct from a database
+`db nb restore` preserves the old operation meaning: reconstruct from a database
 already on a node, not import an arbitrary local backup. It requires an explicit
 source node and confirmation; the source must be the first `NODE_IPS` member,
 which the image startup script uses to bootstrap the cluster. Recovery supports only the standard central Deployment
@@ -133,7 +181,7 @@ recovery. Retain these files for a deliberate recovery or rollback.
 
 Probe resources have unique names and a run identity. Cleanup uses saved UIDs,
 not broad label deletion. A cleanup failure reports the exact remaining object
-without hiding the original error. `reload`, raw OVN/OVS commands, recovery and
+without hiding the original error. `restart`, raw OVN/OVS commands, recovery and
 explicit performance disruption can change live cluster state.
 
 ## Compatibility and migration
@@ -146,16 +194,44 @@ GET/POST authorization, logs need pods/log, probes need create/delete, and
 rollout/recovery need workload patch/scale permissions. Exec access is not a
 read-only database permission.
 
-Intentional changes from Bash are: bare pod names honor kubeconfig namespace;
-multiple ready leaders fail instead of picking an arbitrary pod; failures retain
-nonzero exit codes; performance tests no longer delete leaders unless requested;
-recovery requires an explicit source/confirmation; binary streams do not use a
-TTY. UDP offered bandwidth defaults to 1G rather than the old 1000G.
+The matching image also fixes pinger control-socket discovery across PID
+namespaces. Daemon status checks connect to the socket named by the recorded
+PID, avoiding appctl's namespace-dependent PID-file lock lookup. Service and
+port-binding checks remain enabled, and failed probes return a nonzero status.
 
-The original script is retained as `kubectl-ko-legacy` for explicit rollback.
-It is never selected automatically after a new command fails. The Go binary
-replaces the default entrypoint; build scripts and CI must invoke it directly,
-not with `bash`. The legacy script retains its previous dependencies and risks.
+This rewrite intentionally replaces the old command interface. There are no
+compatibility aliases in the Go executable. Migrate scripts using this table:
+
+| Previous form | New form |
+| --- | --- |
+| `nbctl ARGS`, `sbctl ARGS` | `exec nbctl -- ARGS`, `exec sbctl -- ARGS` |
+| `icnbctl ARGS`, `icsbctl ARGS` | `exec ic-nbctl -- ARGS`, `exec ic-sbctl -- ARGS` |
+| `vsctl/ofctl/dpctl/appctl NODE ARGS` | `exec TOOL --node NODE -- ARGS` |
+| `nb/sb status`, `nb/sb backup`, `nb/sb kick ID` | `db nb/sb status`, `db nb/sb backup`, `db nb/sb kick ID` |
+| `nb dbstatus`, `sb dbstatus` | `db health` |
+| `nb restore` | `db nb restore --source-node NODE --yes` |
+| `trace POD IP [MAC] PROTOCOL [PORT/OP]` | `trace --pod POD --dst-ip IP [--dst-mac MAC] --protocol PROTOCOL [--dst-port PORT/--arp-op OP]` |
+| `trace node//NODE ...` | `trace --node NODE ...` |
+| `ovn-trace ...` | `trace --engine ovn ...` |
+| `tcpdump POD ARGS` | `capture --pod POD -- ARGS` |
+| `diagnose [all]` | `diagnose cluster` |
+| `diagnose node NODE`, `diagnose subnet SUBNET` | Same spelling, now real subcommands with their own help/validation |
+| `diagnose IPPorts tcp-IP-PORT,udp-IP-PORT` | `diagnose connectivity --target tcp://IP:PORT --target udp://IP:PORT` |
+| `env-check` | `diagnose environment` |
+| `log COMPONENT --output DIR` | `logs --component COMPONENT --output-dir DIR` |
+| `reload` | `restart` |
+| `perf IMAGE --duration 5` | `perf run --image IMAGE --duration 5s` |
+| Implicit leader deletion or `perf --include-disruption` | Separate `perf recovery --yes` |
+| `acl-sample decode/listen ...` | `acl decode/listen ...` |
+
+Bare pod names honor kubeconfig namespace; multiple ready leaders fail instead
+of selecting arbitrarily; failures retain nonzero exit codes; binary streams
+do not use a TTY. UDP offered bandwidth defaults to 1G instead of 1000G.
+
+The original script remains a separate `kubectl-ko-legacy` executable for an
+explicit rollback; the Go executable never invokes it. Legacy syntax exists
+only in that script and version-specific E2E fixtures for older releases.
+Build scripts and CI invoke the Go binary directly, never through Bash.
 
 ## Development checks
 

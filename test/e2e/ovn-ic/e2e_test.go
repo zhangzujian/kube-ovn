@@ -62,6 +62,7 @@ func execOrDie(kubeContext, cmd string) string {
 	ginkgo.By(`Switching context to ` + kubeContext)
 	e2ekubectl.NewKubectlCommand("", "config", "use-context", kubeContext).ExecOrDie("")
 
+	cmd = strings.Join(framework.KubectlKoArgs(strings.Fields(cmd)...), " ")
 	ginkgo.By(`Executing "kubectl ` + cmd + `"`)
 	return e2ekubectl.NewKubectlCommand("", strings.Fields(cmd)...).ExecOrDie("")
 }

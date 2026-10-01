@@ -23,7 +23,7 @@ func TestDiagnosticProbeReportsConnectivityFailures(t *testing.T) {
 		require.Contains(t, argv, "--network-mode=diagnostic")
 		return utilexec.CodeExitError{Err: errors.New("connectivity failure"), Code: 1}
 	}
-	err = app.runDiagnosticProbes(t.Context(), client, []Target{{Pod: "subnet-a", Node: "a"}, {Pod: "subnet-b", Node: "b"}}, "subnet", "tcp-192.0.2.1-1")
+	err = app.runDiagnosticProbes(t.Context(), client, []Target{{Pod: "subnet-a", Node: "a"}, {Pod: "subnet-b", Node: "b"}}, "subnet", "tcp-192.0.2.1-1", diagnosticOptions{tcpPort: "8100", udpPort: "8101"})
 	require.ErrorContains(t, err, "probe on a")
 	require.ErrorContains(t, err, "probe on b")
 	require.Len(t, executor.calls, 2, "one failed node must not hide other nodes")
@@ -78,7 +78,7 @@ func TestDatabaseStatusRejectsInconsistentStorage(t *testing.T) {
 		_, err := io.WriteString(s.Out, "status: inconsistent data\n")
 		return err
 	}
-	require.ErrorContains(t, app.Execute(t.Context(), []string{"nb", "dbstatus"}), "storage is unhealthy")
+	require.ErrorContains(t, app.Execute(t.Context(), []string{"db", "health"}), "storage is unhealthy")
 	require.Equal(t, 2, strings.Count(out.String(), "inconsistent data"))
 }
 

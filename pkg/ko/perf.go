@@ -18,9 +18,8 @@ import (
 )
 
 type performanceOptions struct {
-	duration   int
-	bandwidth  string
-	disruption bool
+	duration  int
+	bandwidth string
 }
 type performancePods struct {
 	client, server, hostClient, hostServer *corev1.Pod
@@ -28,22 +27,47 @@ type performancePods struct {
 }
 
 func (a *Application) addPerformanceCommand() {
+	parent := &cobra.Command{Use: "perf", Short: "Measure network performance or deliberate leader recovery"}
 	options := performanceOptions{}
-	command := &cobra.Command{Use: "perf [IMAGE]", Short: "Measure pod, host, Service and multicast performance", Args: cobra.MaximumNArgs(1)}
-	command.Flags().IntVar(&options.duration, "duration", 5, "Seconds for each traffic measurement")
-	command.Flags().StringVar(&options.bandwidth, "bandwidth", "1G", "iperf offered UDP bandwidth")
-	command.Flags().BoolVar(&options.disruption, "include-disruption", false, "Also delete each central leader pod and measure recovery")
-	command.RunE = a.run(func(ctx context.Context, client *Client, args []string) error {
-		if options.duration < 1 || options.duration > 300 {
-			return &usageError{errors.New("duration must be between 1 and 300 seconds")}
+	var image string
+	var duration time.Duration
+	run := &cobra.Command{Use: "run", Short: "Measure pod, host, Service and multicast performance"}
+	run.Flags().StringVar(&image, "image", "docker.io/kubeovn/test:v1.13.0", "Test image (use an internal image in disconnected installations)")
+	run.Flags().DurationVar(&duration, "duration", 5*time.Second, "Duration of each measurement (whole seconds, 1s to 5m)")
+	run.Flags().StringVar(&options.bandwidth, "bandwidth", "1G", "iperf offered UDP bandwidth")
+	run.Args = func(cmd *cobra.Command, args []string) error {
+		if err := cobra.NoArgs(cmd, args); err != nil {
+			return err
 		}
-		image := "docker.io/kubeovn/test:v1.13.0"
-		if len(args) == 1 {
-			image = args[0]
+		if duration < time.Second || duration > 5*time.Minute || duration%time.Second != 0 {
+			return errors.New("--duration must be whole seconds between 1s and 5m")
 		}
+		if image == "" || options.bandwidth == "" {
+			return errors.New("--image and --bandwidth must not be empty")
+		}
+		options.duration = int(duration / time.Second)
+		return nil
+	}
+	run.RunE = a.run(func(ctx context.Context, client *Client, _ []string) error {
 		return a.performance(ctx, client, image, options)
 	})
-	a.root.AddCommand(command)
+	var yes bool
+	recovery := &cobra.Command{Use: "recovery --yes", Short: "Delete central leader pods and measure their recovery"}
+	recovery.Flags().BoolVar(&yes, "yes", false, "Confirm deliberate leader pod disruption")
+	recovery.Args = func(cmd *cobra.Command, args []string) error {
+		if err := cobra.NoArgs(cmd, args); err != nil {
+			return err
+		}
+		if !yes {
+			return errors.New("perf recovery requires --yes")
+		}
+		return nil
+	}
+	recovery.RunE = a.run(func(ctx context.Context, client *Client, _ []string) error {
+		return a.leaderRecoveryPerformance(ctx, client)
+	})
+	parent.AddCommand(run, recovery)
+	a.root.AddCommand(parent)
 }
 
 func (a *Application) performance(ctx context.Context, client *Client, image string, options performanceOptions) (resultErr error) {
@@ -77,9 +101,6 @@ func (a *Application) performance(ctx context.Context, client *Client, image str
 	}
 	if err := a.multicastPerformance(ctx, client, pods.hostClient, pods.hostServer, options); err != nil {
 		return err
-	}
-	if options.disruption {
-		return a.leaderRecoveryPerformance(ctx, client)
 	}
 	return nil
 }

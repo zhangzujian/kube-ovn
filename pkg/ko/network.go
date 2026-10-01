@@ -33,22 +33,94 @@ type podInterface struct {
 }
 
 func (a *Application) addNetworkCommands() {
-	a.root.AddCommand(&cobra.Command{
-		Use: "tcpdump POD [tcpdump arguments...]", Short: "Capture packets in a pod network namespace", DisableFlagParsing: true, Args: cobra.MinimumNArgs(1),
-		RunE: a.run(a.tcpdump),
-	})
-	for _, name := range []string{"trace", "ovn-trace"} {
-		a.root.AddCommand(&cobra.Command{
-			Use: name + " POD|node//NODE IP [MAC] icmp|tcp|udp|arp [PORT|request|reply]", Short: "Trace a packet through OVN and optionally OVS", Args: cobra.MinimumNArgs(3),
-			RunE: a.run(func(ctx context.Context, client *Client, args []string) error {
-				request, err := parseTrace(args)
-				if err != nil {
-					return &usageError{err}
-				}
-				return a.trace(ctx, client, request, name == "ovn-trace")
-			}),
-		})
+	var pod string
+	capture := &cobra.Command{
+		Use: "capture --pod [NAMESPACE/]POD [flags] -- [TCPDUMP_ARGS...]", DisableFlagsInUseLine: true, Short: "Capture packets in a pod network namespace",
+		Args: func(cmd *cobra.Command, args []string) error {
+			if err := validatePodReference(pod); err != nil {
+				return err
+			}
+			return remoteArguments(cmd, args)
+		},
+		RunE: a.run(func(ctx context.Context, client *Client, args []string) error {
+			return a.tcpdump(ctx, client, append([]string{pod}, args...))
+		}),
 	}
+	capture.Flags().StringVar(&pod, "pod", "", "Pod to capture, optionally qualified by namespace")
+	a.root.AddCommand(capture)
+	a.addTraceCommand()
+}
+
+type traceOptions struct {
+	pod, node, destination, mac, protocol, engine, arpOperation string
+	port                                                        int
+}
+
+func (a *Application) addTraceCommand() {
+	options := traceOptions{}
+	var request traceRequest
+	command := &cobra.Command{Use: "trace --pod POD|--node NODE --dst-ip IP", Short: "Trace a packet through OVN and OVS"}
+	flags := command.Flags()
+	flags.StringVar(&options.pod, "pod", "", "Source pod, optionally qualified by namespace")
+	flags.StringVar(&options.node, "node", "", "Source node (mutually exclusive with --pod)")
+	flags.StringVar(&options.destination, "dst-ip", "", "Destination IPv4 or IPv6 address")
+	flags.StringVar(&options.mac, "dst-mac", "", "Destination MAC address (auto-detected when omitted)")
+	flags.StringVar(&options.protocol, "protocol", "icmp", "Packet protocol: icmp, tcp, udp or arp")
+	flags.IntVar(&options.port, "dst-port", 0, "Destination port for TCP or UDP")
+	flags.StringVar(&options.arpOperation, "arp-op", "request", "ARP operation: request or reply")
+	flags.StringVar(&options.engine, "engine", "all", "Trace engines: all (OVN then OVS) or ovn")
+	command.Args = func(cmd *cobra.Command, args []string) error {
+		if err := cobra.NoArgs(cmd, args); err != nil {
+			return err
+		}
+		if flags.Changed("arp-op") && options.protocol != "arp" {
+			return errors.New("--arp-op requires --protocol=arp")
+		}
+		if flags.Changed("dst-port") && options.protocol != "tcp" && options.protocol != "udp" {
+			return errors.New("--dst-port requires TCP or UDP")
+		}
+		var err error
+		request, err = options.request()
+		return err
+	}
+	command.RunE = a.run(func(ctx context.Context, client *Client, _ []string) error {
+		return a.trace(ctx, client, request, options.engine == "ovn")
+	})
+	a.root.AddCommand(command)
+}
+
+func (o traceOptions) request() (traceRequest, error) {
+	if (o.pod == "") == (o.node == "") {
+		return traceRequest{}, errors.New("choose exactly one of --pod or --node")
+	}
+	if o.engine != "all" && o.engine != "ovn" {
+		return traceRequest{}, errors.New("--engine must be all or ovn")
+	}
+	reference := o.pod
+	if o.node != "" {
+		if err := validateResourceName("node", o.node); err != nil {
+			return traceRequest{}, err
+		}
+		reference = "node//" + o.node
+	} else if err := validatePodReference(o.pod); err != nil {
+		return traceRequest{}, err
+	}
+	args := []string{reference, o.destination}
+	if o.mac != "" {
+		mac, err := net.ParseMAC(o.mac)
+		if err != nil || len(mac) != 6 {
+			return traceRequest{}, errors.New("--dst-mac must be a six-byte MAC address")
+		}
+		args = append(args, mac.String())
+	}
+	args = append(args, o.protocol)
+	switch o.protocol {
+	case "tcp", "udp":
+		args = append(args, strconv.Itoa(o.port))
+	case "arp":
+		args = append(args, o.arpOperation)
+	}
+	return parseTrace(args)
 }
 
 func (c *Client) networkSource(ctx context.Context, reference string) (*networkSource, error) {

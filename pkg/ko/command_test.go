@@ -63,8 +63,8 @@ func TestPassthroughArguments(t *testing.T) {
 	}{
 		{"nbctl", "nb", "ovn-nbctl", []string{"--format=json", "--timeout=5", "--", "ls-add", "a b", "--", "set", "Logical_Switch", "a b", "external_ids:note=semi;colon"}},
 		{"sbctl", "sb", "ovn-sbctl", []string{"--help"}},
-		{"icnbctl", "ic-nb", "ovn-ic-nbctl", []string{"--version"}},
-		{"icsbctl", "ic-sb", "ovn-ic-sbctl", []string{"show"}},
+		{"ic-nbctl", "ic-nb", "ovn-ic-nbctl", []string{"--version"}},
+		{"ic-sbctl", "ic-sb", "ovn-ic-sbctl", []string{"show"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -83,7 +83,7 @@ func TestPassthroughArguments(t *testing.T) {
 				_, err = io.WriteString(s.ErrOut, "diagnostic\n")
 				return err
 			}
-			args := append([]string{"--context", "lab", "--namespace", "workload", tt.name}, tt.args...)
+			args := append([]string{"exec", "--context", "lab", tt.name, "--namespace", "workload", "--"}, tt.args...)
 			require.NoError(t, app.Execute(t.Context(), args))
 			require.Equal(t, "lab", *app.config.Context)
 			require.Equal(t, "workload", *app.config.Namespace)
@@ -100,7 +100,7 @@ func TestNodePassthrough(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			pod := readyPod("ovs-a", "worker", "openvswitch", map[string]string{"app": "ovs"})
 			app, executor, _, _ := testApplication(t, pod, &corev1.Node{Name: "worker"})
-			require.NoError(t, app.Execute(t.Context(), []string{name, "worker", "--timeout=7", "--", "show"}))
+			require.NoError(t, app.Execute(t.Context(), []string{"exec", name, "--node", "worker", "--", "--timeout=7", "--", "show"}))
 			require.Equal(t, []string{"ovs-" + name, "--timeout=7", "--", "show"}, executor.calls[0].argv)
 			require.Equal(t, "openvswitch", executor.calls[0].target.Container)
 		})
@@ -108,7 +108,7 @@ func TestNodePassthrough(t *testing.T) {
 }
 
 func TestLocalCommandsDoNotConnect(t *testing.T) {
-	for _, args := range [][]string{{}, {"help"}, {"help", "nbctl"}, {"--help"}, {"version"}} {
+	for _, args := range [][]string{{}, {"help"}, {"help", "exec", "nbctl"}, {"exec", "nbctl", "--help"}, {"db", "nb", "--help"}, {"capture", "--help"}, {"trace", "--help"}, {"diagnose", "--help"}, {"perf", "--help"}, {"completion", "bash"}, {"--help"}, {"version"}} {
 		t.Run(fmt.Sprint(args), func(t *testing.T) {
 			app, _, out, _ := testApplication(t)
 			app.newClient = func() (*Client, error) { t.Fatal("local command connected to Kubernetes"); return nil, nil }
@@ -122,7 +122,7 @@ func TestDiscoveryOnlyNeedsRequestedLeader(t *testing.T) {
 	leader := readyPod("central-a", "worker", "ovn-central", map[string]string{"ovn-nb-leader": "true"})
 	leader.Spec.Containers = append(leader.Spec.Containers, corev1.Container{Name: "sidecar"})
 	app, executor, _, _ := testApplication(t, leader)
-	require.NoError(t, app.Execute(t.Context(), []string{"nbctl", "show"}))
+	require.NoError(t, app.Execute(t.Context(), []string{"exec", "nbctl", "--", "show"}))
 	require.Equal(t, "central-a", executor.calls[0].target.Pod)
 }
 
@@ -137,7 +137,7 @@ func TestDiscoveryRejectsAmbiguityAndTerminatingTargets(t *testing.T) {
 				second.DeletionTimestamp = new(metav1.Now())
 			}
 			app, executor, _, _ := testApplication(t, first, second)
-			err := app.Execute(t.Context(), []string{"nbctl", "show"})
+			err := app.Execute(t.Context(), []string{"exec", "nbctl", "--", "show"})
 			require.ErrorContains(t, err, "expected one ready container")
 			require.Empty(t, executor.calls)
 		})

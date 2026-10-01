@@ -1107,8 +1107,8 @@ jobs:
             fi
             sleep 1
           done
-          kubectl ko log ovn
-          kubectl ko log ovs
+          kubectl ko logs --component ovn
+          kubectl ko logs --component ovs
 
           for daemon in ovsdb-nb ovsdb-sb ovn-northd ovn-controller ovsdb-server ovs-vswitchd; do
             echo "Checking if valgrind log file for $daemon exists..."
@@ -1404,8 +1404,8 @@ jobs:
             fi
             sleep 1
           done
-          kubectl ko log ovn
-          kubectl ko log ovs
+          kubectl ko logs --component ovn
+          kubectl ko logs --component ovs
 
           for daemon in ovsdb-nb ovsdb-sb ovn-northd ovn-controller ovsdb-server ovs-vswitchd; do
             echo "Checking if valgrind log file for $daemon exists..."
@@ -1585,8 +1585,8 @@ jobs:
             fi
             sleep 1
           done
-          kubectl ko log ovn
-          kubectl ko log ovs
+          kubectl ko logs --component ovn
+          kubectl ko logs --component ovs
 
           for daemon in ovsdb-nb ovsdb-sb ovn-northd ovn-controller ovsdb-server ovs-vswitchd; do
             echo "Checking if valgrind log file for $daemon exists..."
@@ -1781,8 +1781,8 @@ jobs:
             fi
             sleep 1
           done
-          kubectl ko log ovn
-          kubectl ko log ovs
+          kubectl ko logs --component ovn
+          kubectl ko logs --component ovs
 
           for daemon in ovsdb-nb ovsdb-sb ovn-northd ovn-controller ovsdb-server ovs-vswitchd; do
             echo "Checking if valgrind log file for $daemon exists..."
@@ -2628,7 +2628,7 @@ jobs:
           if test -f kubectl-ko-log.tar.gz; then
             mv kubectl-ko-log.tar.gz bgp-speaker-e2e-${{ matrix.ip-family }}-ko-log.tar.gz
           else
-            echo "kubectl ko log was unavailable because the BGP test cluster did not become usable." > bgp-speaker-e2e-ko-log-unavailable.txt
+            echo "kubectl ko logs was unavailable because the BGP test cluster did not become usable." > bgp-speaker-e2e-ko-log-unavailable.txt
             tar zcf bgp-speaker-e2e-${{ matrix.ip-family }}-ko-log.tar.gz bgp-speaker-e2e-ko-log-unavailable.txt
           fi
 
@@ -4429,8 +4429,8 @@ jobs:
             fi
             sleep 1
           done
-          kubectl ko log ovn
-          kubectl ko log ovs
+          kubectl ko logs --component ovn
+          kubectl ko logs --component ovs
 
           for daemon in ovsdb-nb ovsdb-sb ovn-northd ovn-controller ovsdb-server ovs-vswitchd; do
             echo "Checking if valgrind log file for $daemon exists..."

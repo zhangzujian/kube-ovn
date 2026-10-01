@@ -9907,7 +9907,7 @@ kubectl cp kube-system/"$(kubectl -n kube-system get pods -o wide | grep cni | a
 chmod +x /usr/local/bin/kubectl-ko
 # show pod status in kube-system namespace before diagnose
 kubectl get pod -n kube-system -o wide
-kubectl ko diagnose all
+kubectl ko diagnose cluster
 
 echo "-------------------------------"
 echo "

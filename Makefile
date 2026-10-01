@@ -283,7 +283,7 @@ uninstall-chart:
 
 .PHONY: kubectl-ko-log
 kubectl-ko-log: build-kubectl-ko
-	dist/images/kubectl-ko log all
+	dist/images/kubectl-ko logs
 	tar -zcvf kubectl-ko-log.tar.gz kubectl-ko-log/
 
 .PHONY: clean
