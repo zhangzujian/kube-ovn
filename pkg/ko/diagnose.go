@@ -347,7 +347,7 @@ func (r *resourceRun) subnetProbe(ctx context.Context, subnet string) error {
 				Name: "probe", Image: image, Command: []string{"/kube-ovn/kube-ovn-pinger"},
 				Args:           []string{"--enable-verbose-conn-check=true", fmt.Sprintf("--tcp-conn-check-port=%d", tcp), fmt.Sprintf("--udp-conn-check-port=%d", udp)},
 				Env:            []corev1.EnvVar{{Name: "POD_NAME", ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.name"}}}, {Name: "POD_NAMESPACE", ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.namespace"}}}},
-				ReadinessProbe: &corev1.Probe{ProbeHandler: corev1.ProbeHandler{TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromInt32(int32(tcp))}}, InitialDelaySeconds: 3, PeriodSeconds: 5},
+				ReadinessProbe: &corev1.Probe{TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromInt32(int32(tcp))}, InitialDelaySeconds: 3, PeriodSeconds: 5},
 			}},
 		}},
 	}}

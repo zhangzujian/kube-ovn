@@ -20,7 +20,7 @@ import (
 )
 
 func recoverySpec(container string) corev1.PodSpec {
-	return corev1.PodSpec{Containers: []corev1.Container{{Name: container, VolumeMounts: []corev1.VolumeMount{{Name: "db", MountPath: "/etc/ovn"}}, Env: []corev1.EnvVar{{Name: "NODE_IPS", Value: "10.0.0.1,10.0.0.2"}}}}, Volumes: []corev1.Volume{{Name: "db", VolumeSource: corev1.VolumeSource{HostPath: &corev1.HostPathVolumeSource{Path: "/etc/ovn"}}}}}
+	return corev1.PodSpec{Containers: []corev1.Container{{Name: container, VolumeMounts: []corev1.VolumeMount{{Name: "db", MountPath: "/etc/ovn"}}, Env: []corev1.EnvVar{{Name: "NODE_IPS", Value: "10.0.0.1,10.0.0.2"}}}}, Volumes: []corev1.Volume{{Name: "db", HostPath: &corev1.HostPathVolumeSource{Path: "/etc/ovn"}}}}
 }
 
 func recoveryApplication(t *testing.T) (*Application, *Client, *recordingExecutor, *appsv1.Deployment) {

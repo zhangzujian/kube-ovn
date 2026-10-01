@@ -5,6 +5,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -94,8 +95,7 @@ func (r *resourceRun) cleanup(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 	var failures []error
-	for i := len(r.resources) - 1; i >= 0; i-- {
-		item := r.resources[i]
+	for _, item := range slices.Backward(r.resources) {
 		options := metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: new(item.uid)}}
 		var err error
 		switch item.kind {
