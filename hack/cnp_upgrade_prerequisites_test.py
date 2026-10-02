@@ -88,8 +88,7 @@ class ComponentPrerequisitesTest(unittest.TestCase):
             if args[:2] == ("get", "crd"):
                 if args[-1] == "json":
                     return json.dumps({"items": [{"metadata": {"name": name}} for name in existing]})
-                # Reproduce kubectl's output for the previous escaped JSONPath.
-                return "\\n".join(existing) + "\\n"
+                return "\n".join(existing) + "\n"
             return ""
 
         with tempfile.TemporaryDirectory() as directory:
