@@ -18,6 +18,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/klog/v2"
@@ -232,6 +233,21 @@ func legacyStandby(f *framework.Framework, image string) *appsv1.Deployment {
 	deployment.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{"cnp-upgrade-standby": "true"}}
 	deployment.Spec.Template.Labels["cnp-upgrade-standby"] = "true"
 	deployment.Spec.Template.Spec.Affinity = nil
+	deployment.Spec.Template.Spec.NodeSelector = nil
+	pods, err := f.ClientSet.CoreV1().Pods("kube-system").List(context.Background(), metav1.ListOptions{LabelSelector: "app=kube-ovn-controller"})
+	framework.ExpectNoError(err)
+	framework.ExpectEqual(len(pods.Items) > 0, true)
+	nodes, err := f.ClientSet.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{})
+	framework.ExpectNoError(err)
+	for _, node := range nodes.Items {
+		if node.Name != pods.Items[0].Spec.NodeName {
+			// Controller health endpoints use host networking; a standby must
+			// run on a different node to avoid a metrics/health port collision.
+			deployment.Spec.Template.Spec.NodeName = node.Name
+			break
+		}
+	}
+	framework.ExpectEqual(deployment.Spec.Template.Spec.NodeName != "", true)
 	for i := range deployment.Spec.Template.Spec.Containers {
 		if deployment.Spec.Template.Spec.Containers[i].Name == "kube-ovn-controller" {
 			deployment.Spec.Template.Spec.Containers[i].Image = image
@@ -247,7 +263,7 @@ func setControllerImage(f *framework.Framework, name, image string) {
 	ctx := context.Background()
 	deployment, err := f.ClientSet.AppsV1().Deployments("kube-system").Get(ctx, name, metav1.GetOptions{})
 	framework.ExpectNoError(err)
-	deployment.Spec.Strategy = appsv1.DeploymentStrategy{Type: appsv1.RollingUpdateDeploymentStrategyType}
+	deployment.Spec.Strategy = appsv1.DeploymentStrategy{Type: appsv1.RollingUpdateDeploymentStrategyType, RollingUpdate: &appsv1.RollingUpdateDeployment{MaxSurge: new(intstr.FromInt32(0)), MaxUnavailable: new(intstr.FromInt32(1))}}
 	for i := range deployment.Spec.Template.Spec.Containers {
 		if deployment.Spec.Template.Spec.Containers[i].Name == "kube-ovn-controller" {
 			deployment.Spec.Template.Spec.Containers[i].Image = image
