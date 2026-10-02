@@ -1,0 +1,66 @@
+name: Historical ANP Baseline Diagnostic
+
+on:
+  push:
+    branches: ['diagnostic/anp-baseline-35']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  baseline:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        source: ['v1.15.28', 'v1.16.10']
+        family: ['ipv4', 'dual']
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: helm/kind-action@v1.15.0
+        with:
+          version: v0.33.0
+          install_only: true
+      - name: Install only the pinned historical components
+        env:
+          SOURCE_VERSION: ${{ matrix.source }}
+          IP_FAMILY: ${{ matrix.family }}
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          source = Path('hack/cnp-upgrade-e2e.sh').read_text()
+          marker = '# Normal version upgrades prepare target component RBAC'
+          if source.count(marker) != 1:
+              raise SystemExit('Expected one source/target preparation boundary')
+          Path('historical-install.sh').write_text(source.split(marker)[0])
+          PY
+          bash historical-install.sh
+          mkdir -p baseline-evidence
+          kubectl get pods -n kube-system -o json > baseline-evidence/installed-pods.json
+      - name: Run the unchanged retained ANP and BANP suite
+        run: |
+          KUBECONFIG="$HOME/.kube/config" bash hack/cnp-conformance-evidence.sh anp make kube-ovn-anp-e2e
+      - name: Collect historical baseline evidence
+        if: always()
+        run: |
+          mkdir -p baseline-evidence
+          kubectl logs -n kube-system -l app=kube-ovn-controller --all-containers=true --tail=5000 > baseline-evidence/controller.log || true
+          kubectl get anp,banp,pods -A -o yaml > baseline-evidence/policies-and-pods.yaml || true
+          kubectl get events -A -o yaml > baseline-evidence/events.yaml || true
+          cp -r cnp-evidence baseline-evidence/ 2>/dev/null || true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: historical-anp-${{ matrix.source }}-${{ matrix.family }}
+          path: |
+            baseline-evidence
+            anp-test-report.yaml
+          retention-days: 7
