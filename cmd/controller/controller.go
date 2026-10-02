@@ -29,8 +29,6 @@ import (
 	"github.com/kubeovn/kube-ovn/versions"
 )
 
-const ovnLeaderResource = "kube-ovn-controller"
-
 func CmdMain() {
 	defer klog.Flush()
 
@@ -60,6 +58,7 @@ func CmdMain() {
 	if err := controller.MarkIPsecSignerCompatibility(ctx, config); err != nil {
 		util.LogFatalAndExit(err, "failed to acknowledge IPsec signer compatibility")
 	}
+	leaderResource := config.LeaderElectionResourceName
 	go func() {
 		metricsAddrs := util.GetDefaultListenAddr()
 		servePprofInMetricsServer := config.EnableMetrics && slices.Contains(metricsAddrs, "0.0.0.0")
@@ -70,12 +69,12 @@ func CmdMain() {
 	}()
 
 	recorder := record.NewBroadcaster().NewRecorder(scheme.Scheme, apiv1.EventSource{
-		Component: ovnLeaderResource,
+		Component: leaderResource,
 		Host:      os.Getenv(util.EnvNodeName),
 	})
 	rl, err := resourcelock.NewFromKubeconfig(resourcelock.LeasesResourceLock,
 		config.PodNamespace,
-		ovnLeaderResource,
+		leaderResource,
 		resourcelock.ResourceLockConfig{
 			Identity:      config.PodName,
 			EventRecorder: recorder,
@@ -137,7 +136,7 @@ func CmdMain() {
 		},
 		WatchDog:        nil,
 		ReleaseOnCancel: true,
-		Name:            ovnLeaderResource,
+		Name:            leaderResource,
 	})
 }
 

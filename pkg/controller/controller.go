@@ -82,8 +82,10 @@ type Controller struct {
 	bnpNamePrioMap   map[string]int32
 	priorityMapMutex sync.RWMutex
 
-	OVNNbClient ovs.NbClient
-	OVNSbClient ovs.SbClient
+<<<<<<< HEAD
+	OVNNbClient         ovs.NbClient
+	OVNSbClient         ovs.SbClient
+	distributedICClient *ovs.LegacyClient
 	// OVNNbTables and OVNSbTables expose the generic table seam to reconcile
 	// code while the legacy client interfaces remain unchanged.
 	OVNNbTables table.Provider
@@ -813,8 +815,13 @@ func run(ctx context.Context, config *Configuration, startRuntime RuntimeStarter
 	); err != nil {
 		util.LogFatalAndExit(err, "failed to create ovn sb client")
 	}
+<<<<<<< HEAD
 	controller.OVNSbClient = sbClient
 	controller.OVNSbTables = sbClient
+	if config.EnableDistributedSharedSubnet {
+		controller.distributedICClient = ovs.NewLegacyClient(config.OvnTimeout)
+		controller.distributedICClient.OvnICNbAddress = config.OvnICNbAddr
+	}
 	if config.ACLSampling.Enabled {
 		controller.reconcileACLSampling()
 	} else {
