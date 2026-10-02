@@ -204,7 +204,9 @@ rollout values are verified separately, and it does not test every platform hook
 It then runs native CNP and retained
 v1alpha1 ANP/BANP conformance. Real API-server tests also reject stale patches
 after same-name recreation.
-The test image is pinned through a disposable local registry; no public registry
+The test image is pinned to its unique linux/amd64 platform manifest through a
+disposable local registry. OCI indexes with provenance attestations are resolved
+to the platform child; the controller digest gate remains strict. No public registry
 credentials are needed. Run `bash hack/cnp-upgrade-e2e.sh` only in that isolated CI
 job. Component database downgrade remains subject to the release's normal rules;
 the test's rollback returns the controller while preserving upgraded components.

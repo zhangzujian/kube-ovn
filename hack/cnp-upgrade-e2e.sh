@@ -65,6 +65,19 @@ docker push localhost:5001/cnp-upgrade:candidate
 target_digest=$(docker image inspect localhost:5001/cnp-upgrade:candidate --format '{{json .RepoDigests}}' |
   jq -er 'map(select(startswith("localhost:5001/cnp-upgrade@sha256:"))) |
     if length == 1 then .[0] else error("Expected one local registry manifest digest") end')
+# Docker can export an OCI index even for a single architecture because it adds
+# provenance attestations. Pin the controller's actual platform manifest, which
+# is the digest reported by containerd, rather than relaxing the capability gate.
+curl --fail --silent --show-error \
+  -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json' \
+  "http://127.0.0.1:5001/v2/cnp-upgrade/manifests/${target_digest##*@}" \
+  -o candidate-manifest.json
+if jq -e 'has("manifests")' candidate-manifest.json >/dev/null; then
+  platform_digest=$(jq -er '[.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64")] |
+    if length == 1 then .[0].digest | select(test("^sha256:[a-f0-9]{64}$"))
+    else error("Expected one linux/amd64 platform manifest") end' candidate-manifest.json)
+  target_digest="localhost:5001/cnp-upgrade@$platform_digest"
+fi
 for node in $(kind get nodes --name kube-ovn); do
   docker exec "$node" mkdir -p /etc/containerd/certs.d/localhost:5001
   docker exec -i "$node" tee /etc/containerd/certs.d/localhost:5001/hosts.toml >/dev/null <<'EOF'

@@ -90,7 +90,7 @@ jobs:
       - name: Build candidate and upgrade suite
         run: |
           make build-go
-          docker build --build-arg VERSION="$(cat VERSION)" -t cnp-upgrade:candidate -f dist/images/Dockerfile dist/images
+          docker build --platform linux/amd64 --build-arg VERSION="$(cat VERSION)" -t cnp-upgrade:candidate -f dist/images/Dockerfile dist/images
           docker save cnp-upgrade:candidate -o cnp-upgrade.tar
           go test -c -o cnp-upgrade.test ./test/e2e/cnp-upgrade
       - uses: actions/upload-artifact@v7
