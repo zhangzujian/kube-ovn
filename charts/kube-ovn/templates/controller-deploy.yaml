@@ -1,5 +1,8 @@
 {{- if include "kubeovn.renderDataPlane" . }}
-kind: Deployment
+{{- if and .Values.distributed.sharedSubnet (not .Values.func.ENABLE_IC) }}
+{{- fail "distributed.sharedSubnet requires func.ENABLE_IC=true" }}
+{{- end }}
+kind: {{ ternary "DaemonSet" "Deployment" .Values.distributed.sharedSubnet }}
 apiVersion: apps/v1
 metadata:
   name: kube-ovn-controller
@@ -8,15 +11,24 @@ metadata:
     kubernetes.io/description: |
       kube-ovn controller
 spec:
+  {{- if not .Values.distributed.sharedSubnet }}
   replicas: {{ include "kubeovn.controllerReplicas" . }}
+  {{- end }}
   selector:
     matchLabels:
       app: kube-ovn-controller
+  {{- if .Values.distributed.sharedSubnet }}
+  updateStrategy:
+    rollingUpdate:
+      maxUnavailable: 100%
+    type: RollingUpdate
+  {{- else }}
   strategy:
     rollingUpdate:
       maxSurge: 0%
       maxUnavailable: 100%
     type: RollingUpdate
+  {{- end }}
   template:
     metadata:
       labels:
@@ -76,6 +88,14 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
           - /kube-ovn/start-controller.sh
+          {{- if .Values.distributed.sharedSubnet }}
+          - --distributed-shared-subnet=true
+          - --distributed-gateway-owner={{ .Values.distributed.gatewayOwner }}
+          - --ovn-ic-nb-addr={{ .Values.distributed.icNbEndpoint }}
+          {{- if .Values.distributed.zone }}
+          - --distributed-zone={{ .Values.distributed.zone }}
+          {{- end }}
+          {{- end }}
           {{- if (index .Values "kube-ovn-controller" "leaderElection" "leaseDuration") }}
           - --leader-elect-lease-duration={{ index .Values "kube-ovn-controller" "leaderElection" "leaseDuration" }}
           {{- end }}
@@ -201,7 +221,12 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
-            {{- if index .Values "ovn-central" "hcp" "enabled" }}
+            {{- if and .Values.distributed.sharedSubnet .Values.distributed.nbEndpoint .Values.distributed.sbEndpoint }}
+            - name: OVN_NB_ADDR
+              value: "{{ .Values.distributed.nbEndpoint }}"
+            - name: OVN_SB_ADDR
+              value: "{{ .Values.distributed.sbEndpoint }}"
+            {{- else if index .Values "ovn-central" "hcp" "enabled" }}
             - name: OVN_NB_ADDR
               value: "{{ include "kubeovn.ovnNbAddress" . }}"
             - name: OVN_SB_ADDR

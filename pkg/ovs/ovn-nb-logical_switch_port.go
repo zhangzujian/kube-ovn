@@ -132,6 +132,49 @@ func (c *OVNNbClient) CreateLogicalSwitchPort(lsName, lspName, ip, mac, podName,
 	return nil
 }
 
+// CreateLogicalSwitchSwitchPort creates one side of an OVN interconnect switch
+// link. The peer side is rendered independently in the other logical switch.
+func (c *OVNNbClient) CreateLogicalSwitchSwitchPort(lsName, lspName, peerName string) error {
+	existingLsp, err := c.GetLogicalSwitchPort(lspName, true)
+	if err != nil {
+		return err
+	}
+	lsp := &ovnnb.LogicalSwitchPort{
+		UUID:        ovsclient.NamedUUID(),
+		Name:        lspName,
+		Type:        "switch",
+		Peer:        new(peerName),
+		Addresses:   []string{"unknown"},
+		ExternalIDs: map[string]string{LogicalSwitchKey: lsName},
+	}
+	if existingLsp != nil {
+		if existingLsp.ExternalIDs[LogicalSwitchKey] == lsName && existingLsp.Type == lsp.Type &&
+			existingLsp.Peer != nil && *existingLsp.Peer == peerName {
+			return nil
+		}
+		ops, deleteErr := c.DeleteLogicalSwitchPortOp(existingLsp.ExternalIDs[LogicalSwitchKey], existingLsp.UUID)
+		if deleteErr != nil {
+			return fmt.Errorf("delete stale switch port %s: %w", lspName, deleteErr)
+		}
+		createOps, createErr := c.CreateLogicalSwitchPortOp(lsp, lsName)
+		if createErr != nil {
+			return fmt.Errorf("generate switch port %s: %w", lspName, createErr)
+		}
+		if err = c.Transact("switch-port-replace", append(ops, createOps...)); err != nil {
+			return fmt.Errorf("replace switch port %s: %w", lspName, err)
+		}
+		return nil
+	}
+	ops, err := c.CreateLogicalSwitchPortOp(lsp, lsName)
+	if err != nil {
+		return fmt.Errorf("generate switch port %s: %w", lspName, err)
+	}
+	if err = c.Transact("switch-port-add", ops); err != nil {
+		return fmt.Errorf("create switch port %s: %w", lspName, err)
+	}
+	return nil
+}
+
 // CreateLocalnetLogicalSwitchPort create localnet type logical switch port
 func (c *OVNNbClient) CreateLocalnetLogicalSwitchPort(lsName, lspName, provider, cidrBlock string, vlanID int) error {
 	lsp, err := c.GetLogicalSwitchPort(lspName, true)

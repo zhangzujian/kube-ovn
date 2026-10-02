@@ -123,7 +123,10 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
-            {{- if index .Values "ovn-central" "hcp" "enabled" }}
+            {{- if and .Values.distributed.sharedSubnet .Values.distributed.sbEndpoint }}
+            - name: OVN_SB_ADDR
+              value: "{{ .Values.distributed.sbEndpoint }}"
+            {{- else if index .Values "ovn-central" "hcp" "enabled" }}
             - name: OVN_SB_ADDR
               value: "{{ include "kubeovn.ovnSbAddress" . }}"
             {{- else if eq .Values.installMode "dataPlaneOnly" }}

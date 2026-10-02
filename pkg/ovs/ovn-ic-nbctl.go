@@ -1,6 +1,7 @@
 package ovs
 
 import (
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -46,6 +47,25 @@ func (c LegacyClient) GetTsSubnet(ts string) (string, error) {
 		return "", fmt.Errorf("failed to get ts subnet, %w", err)
 	}
 	return subnet, nil
+}
+
+// EnsureTransitSwitch creates or updates a transit switch for a distributed
+// user subnet. The switch is global in the IC database and is synchronized to
+// every availability-zone NB.
+func (c LegacyClient) EnsureTransitSwitch(name, subnet string) error {
+	if name == "" {
+		return errors.New("transit switch name is empty")
+	}
+	args := []string{MayExist, "ts-add", name}
+	if subnet != "" {
+		args = append(args, "--", "set", "Transit_Switch", name,
+			fmt.Sprintf(`external_ids:subnet="%s"`, subnet),
+			fmt.Sprintf(`external_ids:vendor="%s"`, util.CniTypeName))
+	}
+	if _, err := c.ovnIcNbCommand(args...); err != nil {
+		return fmt.Errorf("ensure transit switch %s: %w", name, err)
+	}
+	return nil
 }
 
 func (c LegacyClient) GetTs() ([]string, error) {

@@ -1296,6 +1296,20 @@ func (mr *MockLogicalSwitchPortMockRecorder) CreateLogicalSwitchPort(lsName, lsp
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateLogicalSwitchPort", reflect.TypeOf((*MockLogicalSwitchPort)(nil).CreateLogicalSwitchPort), lsName, lspName, ip, mac, podName, namespace, portSecurity, securityGroups, vips, enableDHCP, dhcpOptions, vpc)
 }
 
+// CreateLogicalSwitchSwitchPort mocks base method.
+func (m *MockLogicalSwitchPort) CreateLogicalSwitchSwitchPort(lsName, lspName, peerName string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateLogicalSwitchSwitchPort", lsName, lspName, peerName)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateLogicalSwitchSwitchPort indicates an expected call of CreateLogicalSwitchSwitchPort.
+func (mr *MockLogicalSwitchPortMockRecorder) CreateLogicalSwitchSwitchPort(lsName, lspName, peerName any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateLogicalSwitchSwitchPort", reflect.TypeOf((*MockLogicalSwitchPort)(nil).CreateLogicalSwitchSwitchPort), lsName, lspName, peerName)
+}
+
 // CreateVirtualLogicalSwitchPort mocks base method.
 func (m *MockLogicalSwitchPort) CreateVirtualLogicalSwitchPort(lspName, lsName, ip string) error {
 	m.ctrl.T.Helper()
@@ -4170,6 +4184,20 @@ func (m *MockNbClient) CreateLogicalSwitchPort(lsName, lspName, ip, mac, podName
 func (mr *MockNbClientMockRecorder) CreateLogicalSwitchPort(lsName, lspName, ip, mac, podName, namespace, portSecurity, securityGroups, vips, enableDHCP, dhcpOptions, vpc any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateLogicalSwitchPort", reflect.TypeOf((*MockNbClient)(nil).CreateLogicalSwitchPort), lsName, lspName, ip, mac, podName, namespace, portSecurity, securityGroups, vips, enableDHCP, dhcpOptions, vpc)
+}
+
+// CreateLogicalSwitchSwitchPort mocks base method.
+func (m *MockNbClient) CreateLogicalSwitchSwitchPort(lsName, lspName, peerName string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateLogicalSwitchSwitchPort", lsName, lspName, peerName)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateLogicalSwitchSwitchPort indicates an expected call of CreateLogicalSwitchSwitchPort.
+func (mr *MockNbClientMockRecorder) CreateLogicalSwitchSwitchPort(lsName, lspName, peerName any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateLogicalSwitchSwitchPort", reflect.TypeOf((*MockNbClient)(nil).CreateLogicalSwitchSwitchPort), lsName, lspName, peerName)
 }
 
 // CreateNodeACL mocks base method.
