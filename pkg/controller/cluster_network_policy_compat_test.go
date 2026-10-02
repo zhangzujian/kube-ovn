@@ -45,3 +45,32 @@ func TestDeleteCnpRawTombstonePreservesOtherPriorities(t *testing.T) {
 	require.Equal(t, map[int32]string{0: "keep"}, c.anpPrioNameMap)
 	require.Equal(t, map[string]int32{"keep": 0}, c.anpNamePrioMap)
 }
+
+func TestCnpDisabledDNSRejectsBeforeOVNChanges(t *testing.T) {
+	fake := newFakeController(t)
+	c := fake.fakeController
+	c.cnpKeyMutex = keymutex.NewHashed(1)
+	c.config.EnableDNSNameResolver = false
+	c.cnpsLister = &cnp.Lister{Indexer: cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})}
+	c.anpPrioNameMap = map[int32]string{55: "existing"}
+	c.anpNamePrioMap = map[string]int32{"existing": 55}
+	// This valid update has both directions, so rejecting only while compiling
+	// egress would let the new ingress policy replace the last successful ACLs.
+	raw := &unstructured.Unstructured{Object: map[string]any{
+		"metadata": map[string]any{"name": "existing", "uid": "existing-uid"},
+		"spec": map[string]any{
+			"tier": "Admin", "priority": int64(56), "subject": map[string]any{"namespaces": map[string]any{}},
+			"ingress": []any{map[string]any{"action": "Deny", "from": []any{map[string]any{"namespaces": map[string]any{}}}}},
+			"egress":  []any{map[string]any{"action": "Accept", "to": []any{map[string]any{"domainNames": []any{"example.test."}}}}},
+		},
+	}}
+	require.NoError(t, c.cnpsLister.Indexer.Add(raw))
+	// No OVN mock expectations: any read/write before rejection fails this test.
+	require.ErrorContains(t, c.handleAddCnp(raw.GetName()), "DNSNameResolver is disabled")
+	require.Equal(t, map[int32]string{55: "existing"}, c.anpPrioNameMap)
+	require.Equal(t, map[string]int32{"existing": 55}, c.anpNamePrioMap)
+	policy, err := cnp.Normalize(raw)
+	require.NoError(t, err)
+	c.config.EnableDNSNameResolver = true
+	require.NoError(t, c.validateCnpConfig(policy), "enabled DNS policies must remain supported")
+}

@@ -1035,6 +1035,9 @@ func (c *Controller) validateCnpConfig(cnp *v1alpha2.ClusterNetworkPolicy) error
 	if err := cnpcompat.ValidateProtocols(cnp); err != nil {
 		return err
 	}
+	if hasCnpDomainNames(cnp) && !c.config.EnableDNSNameResolver {
+		return errors.New("DNSNameResolver is disabled but domain names are specified")
+	}
 	// Get the priority map of the CNP
 	priorityNameMap, _, err := c.getCnpPriorityMaps(cnp.Spec.Tier)
 	if err != nil {
