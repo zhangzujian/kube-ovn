@@ -39,10 +39,9 @@ func (e *CNIExecutor) Add(plan *request.CNIPlan) (*request.CNIExecutionResult, e
 		return &request.CNIExecutionResult{Routes: plan.Routes}, nil
 	}
 
-	var (
-		routes []request.Route
-		err    error
-	)
+	execution := &request.CNIExecutionResult{}
+	var routes []request.Route
+	var err error
 	if plan.NicType == util.DpdkType {
 		if plan.ShortSharedDir == "" || plan.OriginSharedDir == "" {
 			return nil, errors.New("DPDK CNI plan has no shared directory paths")
@@ -52,7 +51,7 @@ func (e *CNIExecutor) Add(plan *request.CNIPlan) (*request.CNIExecutionResult, e
 		}
 		err = e.handler.configureDpdkNic(plan.PodName, plan.PodNamespace, plan.Provider, plan.NetNs, plan.ContainerID, plan.IfName, plan.MacAddress, plan.MTU, plan.IPAddr, plan.Gateway, plan.Ingress, plan.Egress, plan.IngressBurst, plan.EgressBurst, plan.ShortSharedDir, plan.VhostUserSocketName, plan.VhostUserSocketConsumption)
 	} else {
-		routes, err = e.handler.configureNic(plan.PodName, plan.PodNamespace, plan.Provider, plan.NetNs, plan.ContainerID, plan.VfDriver, plan.IfName, plan.MacAddress, plan.MTU, plan.IPAddr, plan.Gateway, plan.IsDefaultRoute, plan.VMMigration, plan.Routes, plan.DNS.Nameservers, plan.DNS.Search, plan.Ingress, plan.Egress, plan.IngressBurst, plan.EgressBurst, plan.DeviceID, plan.Latency, plan.Limit, plan.Loss, plan.Jitter, plan.GatewayCheckMode, plan.U2OInterconnectionIP, plan.OldPodName, plan.EncapIP, plan.LocalnetSubnet, plan.AppendIfName, plan.RoutedSubnet)
+		routes, err = e.handler.configureNic(plan.PodName, plan.PodNamespace, plan.Provider, plan.NetNs, plan.ContainerID, plan.VfDriver, plan.IfName, plan.MacAddress, plan.MTU, plan.IPAddr, plan.Gateway, plan.IsDefaultRoute, plan.VMMigration, plan.Routes, plan.DNS.Nameservers, plan.DNS.Search, plan.Ingress, plan.Egress, plan.IngressBurst, plan.EgressBurst, plan.DeviceID, plan.Latency, plan.Limit, plan.Loss, plan.Jitter, plan.GatewayCheckMode, plan.U2OInterconnectionIP, plan.OldPodName, plan.EncapIP, plan.LocalnetSubnet, plan.AppendIfName, plan.RoutedSubnet, execution)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("apply CNI plan for %s/%s: %w", plan.PodNamespace, plan.PodName, err)
@@ -62,7 +61,8 @@ func (e *CNIExecutor) Add(plan *request.CNIPlan) (*request.CNIExecutionResult, e
 	if err := ovs.ConfigInterfaceMirror(plan.MirrorEnabled, plan.MirrorControl, ifaceID); err != nil {
 		return nil, fmt.Errorf("configure interface mirror: %w", err)
 	}
-	return &request.CNIExecutionResult{Routes: routes}, nil
+	execution.Routes = routes
+	return execution, nil
 }
 
 // Delete removes only resources identified by the prepared plan.

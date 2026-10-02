@@ -541,7 +541,7 @@ func (csh cniServerHandler) handleAdd(req *restful.Request, resp *restful.Respon
 				}
 				return
 			}
-			routes, err = csh.configureNic(podRequest.PodName, podRequest.PodNamespace, podRequest.Provider, podRequest.NetNs, podRequest.ContainerID, podRequest.VfDriver, ifName, macAddr, mtu, ipAddr, gw, isDefaultRoute, vmMigration, routes, podRequest.DNS.Nameservers, podRequest.DNS.Search, ingress, egress, ingressBurst, egressBurst, podRequest.DeviceID, latency, limit, loss, jitter, gatewayCheckMode, u2oInterconnectionIP, oldPodName, encapIP, localnetSubnet, appendIfName, routedSubnet)
+			routes, err = csh.configureNic(podRequest.PodName, podRequest.PodNamespace, podRequest.Provider, podRequest.NetNs, podRequest.ContainerID, podRequest.VfDriver, ifName, macAddr, mtu, ipAddr, gw, isDefaultRoute, vmMigration, routes, podRequest.DNS.Nameservers, podRequest.DNS.Search, ingress, egress, ingressBurst, egressBurst, podRequest.DeviceID, latency, limit, loss, jitter, gatewayCheckMode, u2oInterconnectionIP, oldPodName, encapIP, localnetSubnet, appendIfName, routedSubnet, nil)
 		}
 		if err != nil {
 			errMsg := fmt.Errorf("configure nic %s for pod %s/%s failed: %w", ifName, podRequest.PodName, podRequest.PodNamespace, err)
@@ -901,6 +901,18 @@ func (csh cniServerHandler) handleCommit(req *restful.Request, resp *restful.Res
 				return
 			}
 		} else if err = csh.Controller.addEgressConfig(subnet, plan.IP); err != nil {
+			_ = resp.WriteHeaderAndEntity(http.StatusInternalServerError, request.CniResponse{Err: err.Error()})
+			return
+		}
+	}
+
+	if !plan.Delete && plan.DeviceID != "" && pod != nil && csh.Config.KubeClient != nil && podRequest.Execution != nil && podRequest.Execution.HostNicName != "" {
+		patch := util.KVPatch{
+			fmt.Sprintf(util.VfRepresentorNameTemplate, plan.Provider): podRequest.Execution.HostNicName,
+			fmt.Sprintf(util.VfNameTemplate, plan.Provider):            podRequest.Execution.ContainerNicName,
+			fmt.Sprintf(util.PodNicAnnotationTemplate, plan.Provider):  util.SriovNicType,
+		}
+		if err = util.PatchAnnotations(csh.Config.KubeClient.CoreV1().Pods(pod.Namespace), pod.Name, patch); err != nil {
 			_ = resp.WriteHeaderAndEntity(http.StatusInternalServerError, request.CniResponse{Err: err.Error()})
 			return
 		}
