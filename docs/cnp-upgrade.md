@@ -19,6 +19,19 @@ ownership, names, tiers and priority limits. Source controllers include the
 legacy CNP implementations in v1.15.28 and v1.16.10. Their full component upgrade
 paths still need release-specific validation.
 
+The component prerequisites include target-version RBAC and Kube-OVN CRDs,
+applied before new daemons or controllers start. An image-only rollout from
+v1.15.28 or v1.16.10 is insufficient on a cluster exposing
+`networking.k8s.io/v1` ServiceCIDR: both legacy installers lack its
+`get/list/watch` permissions for the controller and CNI service accounts. The
+new informer waits for its initial list to succeed; denied access prevents CNI
+initialization and health endpoints from starting. Verify effective permissions
+before rollout, and account for the target controller's other new resource
+requirements, including RouterLBRule. Keep policy CRD preparation separate:
+do not run an entire target installer that could replace the guarded CNP schema
+or restart components before these prerequisites are ready. The `cnp-upgrade`
+tool does not install component prerequisites or grant permissions.
+
 The tool recognizes the exact experimental legacy schema at `3910463a5686`,
 the upstream v0.2.0 experimental schema at
 `a17adecd0316b8ff1c3f83939ec0441d68cd6cce`, and the generated transition schemas.
