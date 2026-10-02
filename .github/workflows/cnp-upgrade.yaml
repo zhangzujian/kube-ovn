@@ -155,6 +155,8 @@ jobs:
           kubectl get cnp,crd -o yaml > cnp-evidence/policy-schema.yaml
           kubectl get events -A -o yaml > cnp-evidence/events.yaml
           kubectl logs -n kube-system -l app=kube-ovn-controller --all-containers=true --tail=5000 > cnp-evidence/controller.log
+          kubectl logs -n kube-system -l app=ovn-central --all-containers=true --tail=1000 > cnp-evidence/central.log || true
+          kubectl logs -n kube-system -l app=ovs --all-containers=true --tail=1000 > cnp-evidence/ovs.log || true
       - uses: actions/upload-artifact@v7
         if: always()
         with:

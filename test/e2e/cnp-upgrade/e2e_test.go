@@ -58,13 +58,16 @@ var _ = framework.SerialDescribe("[group:cnp-upgrade]", func() {
 			{Name: "allowed", Image: "registry.k8s.io/e2e-test-images/agnhost:2.45", Args: []string{"netexec", "--http-port=8080", "--udp-port=-1"}},
 			{Name: "denied", Image: "registry.k8s.io/e2e-test-images/agnhost:2.45", Args: []string{"netexec", "--http-port=8081", "--udp-port=-1"}},
 			{Name: "baseline-denied", Image: "registry.k8s.io/e2e-test-images/agnhost:2.45", Args: []string{"netexec", "--http-port=8082", "--udp-port=-1"}},
+			{Name: "dns-allowed", Image: "registry.k8s.io/e2e-test-images/agnhost:2.45", Args: []string{"netexec", "--http-port=8090", "--udp-port=-1"}},
 		}}}
 		server.Spec.NodeName = nodes.Items[0].Name
 		server = f.PodClient().CreateSync(server)
-		probe := &corev1.Pod{Name: "probe", Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "probe", Image: source, Command: []string{"sleep", "infinity"}}}}}
+		probe := &corev1.Pod{Name: "probe", Labels: map[string]string{"app": "cnp-upgrade-probe"}, Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "probe", Image: source, Command: []string{"sleep", "infinity"}}}}}
 		probe.Spec.NodeName = nodes.Items[1].Name
 		probe = f.PodClient().CreateSync(probe)
-		names := []string{"cnp-upgrade-admin-" + framework.RandomSuffix(), "cnp-upgrade-baseline-" + framework.RandomSuffix()}
+		extra := createExperimentalProbes(f, &nodes.Items[0], server)
+		verifyExperimentalListeners(f, probe, extra)
+		names := []string{"cnp-upgrade-admin-" + framework.RandomSuffix(), "cnp-upgrade-baseline-" + framework.RandomSuffix(), "cnp-upgrade-experimental-" + framework.RandomSuffix()}
 		defer func() {
 			for _, name := range names {
 				framework.ExpectNoError(client.Resource(cnp.Resource).Delete(ctx, name, metav1.DeleteOptions{}))
@@ -72,22 +75,26 @@ var _ = framework.SerialDescribe("[group:cnp-upgrade]", func() {
 		}()
 		for i, name := range names {
 			policy := upgradePolicy(name, f.Namespace.Name, i == 1)
+			if i == 2 {
+				policy = experimentalPolicy(name, f.Namespace.Name, nodes.Items[0].Labels[corev1.LabelHostname])
+			}
 			_, err := client.Resource(cnp.Resource).Create(ctx, policy, metav1.CreateOptions{})
 			framework.ExpectNoError(err)
 		}
+		seedDNSResolver(f, names[2], server)
 		addresses := make([]string, 0, len(server.Status.PodIPs))
 		for _, address := range server.Status.PodIPs {
 			addresses = append(addresses, address.IP)
 		}
 		framework.ExpectNoError(wait.PollUntilContextTimeout(ctx, time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
-			return probeConnections(ctx, f, probe, addresses) == nil, nil
+			return probeConnections(ctx, f, probe, addresses, extra...) == nil, nil
 		}))
 		probeCtx, cancel := context.WithCancel(ctx)
 		var wg sync.WaitGroup
 		failures := make(chan error, 1)
 		wg.Go(func() {
 			for probeCtx.Err() == nil {
-				if err := probeConnections(probeCtx, f, probe, addresses); err != nil && probeCtx.Err() == nil {
+				if err := probeConnections(probeCtx, f, probe, addresses, extra...); err != nil && probeCtx.Err() == nil {
 					select {
 					case failures <- err:
 					default:
@@ -154,7 +161,7 @@ var _ = framework.SerialDescribe("[group:cnp-upgrade]", func() {
 				remaining++
 			}
 		}
-		framework.ExpectEqual(remaining, 1, "the first object's migration must survive interruption")
+		framework.ExpectEqual(remaining, len(names)-1, "the first object's migration must survive interruption")
 		ginkgo.By("Detecting a concurrent spec update without overwriting it")
 		var concurrentName string
 		var concurrentPriority int64
@@ -203,9 +210,11 @@ var _ = framework.SerialDescribe("[group:cnp-upgrade]", func() {
 		framework.ExpectNoError(u.Verify(ctx))
 		ginkgo.By("Rolling the controller back to the original legacy image")
 		setControllerImage(f, "kube-ovn-controller", source)
-		framework.ExpectNoError(probeConnections(ctx, f, probe, addresses))
-		ginkgo.By("Restoring the compatible controller for subsequent conformance suites")
+		framework.ExpectNoError(probeConnections(ctx, f, probe, addresses, extra...))
+		ginkgo.By("Expanding the legacy fleet to two nodes and upgrading it in HA batches")
+		enableHAControllers(f)
 		setControllerImage(f, "kube-ovn-controller", target)
+		framework.ExpectNoError(u.Verify(ctx))
 	})
 })
 
@@ -234,7 +243,7 @@ func upgradePolicy(name, namespace string, baseline bool) *unstructured.Unstruct
 	}}
 }
 
-func probeConnections(ctx context.Context, f *framework.Framework, pod *corev1.Pod, addresses []string) error {
+func probeConnections(ctx context.Context, f *framework.Framework, pod *corev1.Pod, addresses []string, extra ...connectionProbe) error {
 	for _, address := range addresses {
 		allowed, denied := "http://"+net.JoinHostPort(address, "8080"), "http://"+net.JoinHostPort(address, "8081")
 		command := fmt.Sprintf("curl -gsS --noproxy '*' --connect-timeout 2 --max-time 3 %s >/dev/null && ! curl -gsS --noproxy '*' --connect-timeout 1 --max-time 2 %s >/dev/null", allowed, denied)
@@ -242,6 +251,16 @@ func probeConnections(ctx context.Context, f *framework.Framework, pod *corev1.P
 		stderr, err := executeProbe(ctx, f, pod, command)
 		if err != nil {
 			return fmt.Errorf("positive/negative new-connection probe %s failed at %s (%s): %w", address, time.Now().UTC().Format(time.RFC3339Nano), stderr, err)
+		}
+	}
+	for _, test := range extra {
+		command := fmt.Sprintf("curl -gsS --noproxy '*' --connect-timeout 2 --max-time 3 %s >/dev/null", test.allowed)
+		for _, denied := range test.denied {
+			command += fmt.Sprintf(" && ! curl -gsS --noproxy '*' --connect-timeout 1 --max-time 2 %s >/dev/null", denied)
+		}
+		stderr, err := executeProbe(ctx, f, pod, command)
+		if err != nil {
+			return fmt.Errorf("experimental peer probe %s failed at %s (%s): %w", test.allowed, time.Now().UTC().Format(time.RFC3339Nano), stderr, err)
 		}
 	}
 	return nil

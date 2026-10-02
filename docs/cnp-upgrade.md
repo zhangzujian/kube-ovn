@@ -180,10 +180,18 @@ ReplicaSet/Pod gates, chart strategies and the two independent Go modules.
 The upgrade job creates disposable kind clusters from the pinned v1.15.28 and
 v1.16.10 installers for IPv4, IPv6 and dual stack. It upgrades central/OVS/node
 components, exercises both mixed leader arrangements, migrates both tiers and
-directions, resumes a partial migration, rejects a concurrent spec update while
+directions including DNS and node peers, resumes a partial migration, rejects a concurrent spec update while
 retaining that update, resurrects a legacy standby to test the gate, finalizes/reverses
 schema and objects, and rolls back the controller while continuously probing
-new connections to allowed and denied ports. It then runs native CNP and retained
+new connections to allowed and denied ports. After reverse migration it expands
+the legacy controller to two nodes and rolls both replicas to the compatible
+image with `maxSurge: 0, maxUnavailable: 1`, while the same probes continue.
+Node tests use host-network listeners on advertised node addresses. DNS migration
+uses controlled DNSNameResolver status with live allowed and denied listeners;
+every listener is checked before denial rules are installed. This isolates
+representation migration from external DNS availability. The separate domain
+E2E suite exercises real queries and address discovery.
+It then runs native CNP and retained
 v1alpha1 ANP/BANP conformance. Real API-server tests also reject stale patches
 after same-name recreation.
 The test image is pinned through a disposable local registry; no public registry
