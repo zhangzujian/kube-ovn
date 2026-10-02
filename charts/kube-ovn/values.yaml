@@ -278,6 +278,11 @@ ovs-ovn:
     memory: "1000Mi"
     ephemeral-storage: 1Gi
 kube-ovn-controller:
+  # Use maxUnavailable: 1 for a deployment with at least two replicas.
+  # Single-replica upgrades require an extra schedulable replica or a maintenance window.
+  rollingUpdate:
+    maxSurge: 0
+    maxUnavailable: 1
   leaderElection:
     # Duration non-leader candidates wait after observing a renewal before attempting to acquire leadership. Empty uses the controller default of 30s.
     leaseDuration: ""

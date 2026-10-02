@@ -14,8 +14,8 @@ spec:
       app: kube-ovn-controller
   strategy:
     rollingUpdate:
-      maxSurge: 0%
-      maxUnavailable: 100%
+      maxSurge: {{ index .Values "kube-ovn-controller" "rollingUpdate" "maxSurge" | toJson }}
+      maxUnavailable: {{ index .Values "kube-ovn-controller" "rollingUpdate" "maxUnavailable" | toJson }}
     type: RollingUpdate
   template:
     metadata:

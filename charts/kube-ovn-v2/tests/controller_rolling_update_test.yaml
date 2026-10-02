@@ -1,0 +1,24 @@
+suite: Controller rolling update (v2)
+templates:
+  - controller/controller-deployment.yaml
+tests:
+  - it: replaces at most one controller at a time by default
+    set:
+      masterNodes: ["10.0.0.1", "10.0.0.2"]
+    asserts:
+      - equal:
+          path: spec.strategy.rollingUpdate
+          value:
+            maxSurge: 0
+            maxUnavailable: 1
+  - it: allows a single-replica surge strategy
+    set:
+      masterNodes: ["10.0.0.1"]
+      controller.rollingUpdate.maxSurge: 1
+      controller.rollingUpdate.maxUnavailable: 0
+    asserts:
+      - equal:
+          path: spec.strategy.rollingUpdate
+          value:
+            maxSurge: 1
+            maxUnavailable: 0

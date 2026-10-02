@@ -12,6 +12,7 @@ COPY kube-ovn-cmd /kube-ovn/kube-ovn-cmd
 COPY kube-ovn-bfdd-supervisor /kube-ovn/kube-ovn-bfdd-supervisor
 COPY kube-ovn-daemon /kube-ovn/kube-ovn-daemon
 COPY kube-ovn-controller /kube-ovn/kube-ovn-controller
+COPY cnp-upgrade /kube-ovn/cnp-upgrade
 COPY vpc-egress-gateway-observer /kube-ovn/vpc-egress-gateway-observer
 RUN ln -s /kube-ovn/kube-ovn-cmd /kube-ovn/kube-ovn-monitor && \
     ln -s /kube-ovn/kube-ovn-cmd /kube-ovn/kube-ovn-speaker && \

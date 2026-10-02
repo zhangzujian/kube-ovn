@@ -20,8 +20,8 @@ spec:
       app.kubernetes.io/part-of: kube-ovn
   strategy:
     rollingUpdate:
-      maxSurge: 0%
-      maxUnavailable: 100%
+      maxSurge: {{ .Values.controller.rollingUpdate.maxSurge | toJson }}
+      maxUnavailable: {{ .Values.controller.rollingUpdate.maxUnavailable | toJson }}
     type: RollingUpdate
   template:
     metadata:

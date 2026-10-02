@@ -1,0 +1,24 @@
+suite: Controller rolling update
+templates:
+  - controller-deploy.yaml
+tests:
+  - it: replaces at most one controller at a time by default
+    set:
+      MASTER_NODES: "10.0.0.1,10.0.0.2"
+    asserts:
+      - equal:
+          path: spec.strategy.rollingUpdate
+          value:
+            maxSurge: 0
+            maxUnavailable: 1
+  - it: allows a single-replica surge strategy
+    set:
+      MASTER_NODES: "10.0.0.1"
+      kube-ovn-controller.rollingUpdate.maxSurge: 1
+      kube-ovn-controller.rollingUpdate.maxUnavailable: 0
+    asserts:
+      - equal:
+          path: spec.strategy.rollingUpdate
+          value:
+            maxSurge: 1
+            maxUnavailable: 0

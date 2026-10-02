@@ -13,10 +13,12 @@ import (
 	"github.com/scylladb/go-set/strset"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/klog/v2"
 
 	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
+	cnpcompat "github.com/kubeovn/kube-ovn/pkg/cnp"
 	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
 	"github.com/kubeovn/kube-ovn/pkg/util"
 
@@ -34,15 +36,21 @@ type ClusterNetworkPolicyChangedDelta struct {
 
 // enqueueAddCnp adds a new ClusterNetworkPolicy to the processing queue for creation
 func (c *Controller) enqueueAddCnp(obj any) {
-	key := cache.MetaObjectToName(obj.(*v1alpha2.ClusterNetworkPolicy)).String()
+	key := obj.(*unstructured.Unstructured).GetName()
 	klog.V(3).Infof("enqueue add cnp %s", key)
 	c.addCnpQueue.Add(key)
 }
 
 // enqueueUpdateCnp adds an existing ClusterNetworkPolicy to the processing queue for updates
 func (c *Controller) enqueueUpdateCnp(oldObj, newObj any) {
-	oldCnp := oldObj.(*v1alpha2.ClusterNetworkPolicy)
-	newCnp := newObj.(*v1alpha2.ClusterNetworkPolicy)
+	oldRaw := oldObj.(*unstructured.Unstructured)
+	newRaw := newObj.(*unstructured.Unstructured)
+	oldCnp, oldErr := cnpcompat.Normalize(oldRaw)
+	newCnp, newErr := cnpcompat.Normalize(newRaw)
+	if oldErr != nil || newErr != nil || oldRaw.GetGeneration() != newRaw.GetGeneration() || oldRaw.GetAnnotations()[cnpcompat.VerifyAnnotation] != newRaw.GetAnnotations()[cnpcompat.VerifyAnnotation] {
+		c.addCnpQueue.Add(newRaw.GetName())
+		return
+	}
 
 	// If the CNP was modified in a way that needs the ACLs to be re-created, we enqueue the CNP to be re-created
 	// from scratch and skip the update logic entirely.
@@ -83,20 +91,28 @@ func (c *Controller) enqueueUpdateCnp(oldObj, newObj any) {
 // enqueueDeleteCnp adds an existing ClusterNetworkPolicy to the processing queue for deletion
 func (c *Controller) enqueueDeleteCnp(obj any) {
 	var cnp *v1alpha2.ClusterNetworkPolicy
+	var raw *unstructured.Unstructured
 	switch t := obj.(type) {
-	case *v1alpha2.ClusterNetworkPolicy:
-		cnp = t
+	case *unstructured.Unstructured:
+		raw = t
 	case cache.DeletedFinalStateUnknown:
-		a, ok := t.Obj.(*v1alpha2.ClusterNetworkPolicy)
+		a, ok := t.Obj.(*unstructured.Unstructured)
 		if !ok {
 			klog.Warningf("unexpected object type: %T", t.Obj)
 			return
 		}
-		cnp = a
+		raw = a
 	default:
 		klog.Warningf("unexpected type: %T", obj)
 		return
 	}
+	// Deletion needs only identity and tier, even if port normalization failed.
+	tier, _, err := unstructured.NestedString(raw.Object, "spec", "tier")
+	if err != nil {
+		klog.Error(err)
+		return
+	}
+	cnp = &v1alpha2.ClusterNetworkPolicy{ObjectMeta: metav1.ObjectMeta{Name: raw.GetName(), UID: raw.GetUID()}, Spec: v1alpha2.ClusterNetworkPolicySpec{Tier: v1alpha2.Tier(tier)}}
 
 	klog.V(3).Infof("enqueue delete cnp %s", cache.MetaObjectToName(cnp).String())
 	c.deleteCnpQueue.Add(cnp)
@@ -105,6 +121,11 @@ func (c *Controller) enqueueDeleteCnp(obj any) {
 func (c *Controller) handleAddCnp(key string) (err error) {
 	c.cnpKeyMutex.LockKey(key)
 	defer func() { _ = c.cnpKeyMutex.UnlockKey(key) }()
+	defer func() {
+		if err != nil {
+			c.failCnpEvidence(key, err)
+		}
+	}()
 
 	cachedCnp, err := c.cnpsLister.Get(key)
 	if err != nil {
@@ -134,6 +155,15 @@ func (c *Controller) handleAddCnp(key string) (err error) {
 		return err
 	}
 	c.priorityMapMutex.Unlock()
+	if c.cnpSession != nil {
+		unchanged, err := c.reuseCnpEvidence(cnp)
+		if err != nil {
+			return err
+		}
+		if unchanged {
+			return nil
+		}
+	}
 
 	var logActions []string
 	if cnp.Annotations[util.ACLActionsLogAnnotation] != "" {
@@ -178,10 +208,7 @@ func (c *Controller) handleAddCnp(key string) (err error) {
 		desiredIngressAddrSet.Add(v4AddressSetName, v6AddressSetName)
 
 		aclPriority := getCnpACLPriority(cnp, index)
-		rulePorts := []v1alpha2.ClusterNetworkPolicyPort{}
-		if rule.Ports != nil {
-			rulePorts = *rule.Ports
-		}
+		rulePorts := rule.Protocols
 
 		if as4len != 0 {
 			aclName := getCnpACLName(cnpName, kubeovnv1.ProtocolIPv4, "ingress", index)
@@ -240,10 +267,7 @@ func (c *Controller) handleAddCnp(key string) (err error) {
 		desiredEgressAddrSet.Add(v4AddressSetName, v6AddressSetName)
 
 		aclPriority := getCnpACLPriority(cnp, index)
-		rulePorts := []v1alpha2.ClusterNetworkPolicyPort{}
-		if rule.Ports != nil {
-			rulePorts = *rule.Ports
-		}
+		rulePorts := rule.Protocols
 
 		// Create ACL rules if we have IP addresses OR domain names.
 		// Domain names may not be resolved initially but will be updated later
@@ -275,13 +299,16 @@ func (c *Controller) handleAddCnp(key string) (err error) {
 		return fmt.Errorf("failed to delete unused egress address set for cnp %s: %w", key, err)
 	}
 
-	return nil
+	return c.completeCnpEvidence(cnp)
 }
 
 func (c *Controller) handleUpdateCnp(changed *ClusterNetworkPolicyChangedDelta) error {
 	// Only handle updates that do not affect ACLs.
 	c.cnpKeyMutex.LockKey(changed.key)
 	defer func() { _ = c.cnpKeyMutex.UnlockKey(changed.key) }()
+	if c.cnpReceipts != nil {
+		c.cnpReceipts.Delete(changed.key)
+	}
 
 	klog.Infof("handleUpdateCnp: processing CNP %s, field=%s, DNSReconcileDone=%v",
 		changed.key, changed.field, changed.DNSReconcileDone)
@@ -361,6 +388,16 @@ func (c *Controller) handleUpdateCnp(changed *ClusterNetworkPolicyChangedDelta) 
 func (c *Controller) handleDeleteCnp(cnp *v1alpha2.ClusterNetworkPolicy) error {
 	c.cnpKeyMutex.LockKey(cnp.Name)
 	defer func() { _ = c.cnpKeyMutex.UnlockKey(cnp.Name) }()
+	if c.cnpReceipts != nil {
+		c.cnpReceipts.Delete(cnp.Name)
+	}
+	// A delayed tombstone must not remove resources of a same-name replacement.
+	if obj, found, err := c.cnpsLister.Indexer.GetByKey(cnp.Name); err != nil {
+		return err
+	} else if found && obj.(*unstructured.Unstructured).GetUID() != cnp.UID {
+		c.addCnpQueue.Add(cnp.Name)
+		return nil
+	}
 
 	klog.Infof("handle delete cluster network policy %s", cnp.Name)
 
@@ -775,7 +812,10 @@ func (c *Controller) resolveDomainNamesForCnp(domainNames []v1alpha2.DomainName)
 }
 
 func (c *Controller) updateCnpsByLabelsMatch(nsLabels, podLabels map[string]string) {
-	cnps, _ := c.cnpsLister.List(labels.Everything())
+	cnps, err := c.cnpsLister.List(labels.Everything())
+	if err != nil {
+		klog.Errorf("failed to normalize CNPs: %v", err)
+	}
 	for _, cnp := range cnps {
 		changed := &ClusterNetworkPolicyChangedDelta{
 			key: cnp.Name,
@@ -904,7 +944,7 @@ func shouldRecreateCnpACLs(oldCnp, newCnp *v1alpha2.ClusterNetworkPolicy) bool {
 	// so a renamed rule requires the acls to be recreated together with the address sets.
 	for index, rule := range newCnp.Spec.Ingress {
 		oldRule := oldCnp.Spec.Ingress[index]
-		if oldRule.Name != rule.Name || oldRule.Action != rule.Action || !reflect.DeepEqual(oldRule.Ports, rule.Ports) {
+		if oldRule.Name != rule.Name || oldRule.Action != rule.Action || !reflect.DeepEqual(oldRule.Protocols, rule.Protocols) {
 			return true
 		}
 	}
@@ -912,7 +952,7 @@ func shouldRecreateCnpACLs(oldCnp, newCnp *v1alpha2.ClusterNetworkPolicy) bool {
 	// ACLs must be re-created if egress rules name, action or ports have changed
 	for index, rule := range newCnp.Spec.Egress {
 		oldRule := oldCnp.Spec.Egress[index]
-		if oldRule.Name != rule.Name || oldRule.Action != rule.Action || !reflect.DeepEqual(oldRule.Ports, rule.Ports) {
+		if oldRule.Name != rule.Name || oldRule.Action != rule.Action || !reflect.DeepEqual(oldRule.Protocols, rule.Protocols) {
 			return true
 		}
 	}
@@ -990,6 +1030,9 @@ func (c *Controller) wipeCnpPriorityMapEntries(cnp *v1alpha2.ClusterNetworkPolic
 
 // validateCnpConfig verifies a CNP is correctly written and doesn't conflict with any other
 func (c *Controller) validateCnpConfig(cnp *v1alpha2.ClusterNetworkPolicy) error {
+	if err := cnpcompat.ValidateProtocols(cnp); err != nil {
+		return err
+	}
 	// Get the priority map of the CNP
 	priorityNameMap, _, err := c.getCnpPriorityMaps(cnp.Spec.Tier)
 	if err != nil {

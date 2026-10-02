@@ -18,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/dynamic/dynamicinformer"
 	kubeinformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/scheme"
 	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -35,11 +36,11 @@ import (
 	netpolv1alpha2 "sigs.k8s.io/network-policy-api/apis/v1alpha2"
 	anpinformer "sigs.k8s.io/network-policy-api/pkg/client/informers/externalversions"
 	anplister "sigs.k8s.io/network-policy-api/pkg/client/listers/apis/v1alpha1"
-	anplisterv1alpha2 "sigs.k8s.io/network-policy-api/pkg/client/listers/apis/v1alpha2"
 
 	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
 	kubeovninformer "github.com/kubeovn/kube-ovn/pkg/client/informers/externalversions"
 	kubeovnlister "github.com/kubeovn/kube-ovn/pkg/client/listers/kubeovn/v1"
+	"github.com/kubeovn/kube-ovn/pkg/cnp"
 	"github.com/kubeovn/kube-ovn/pkg/informer"
 	ovnipam "github.com/kubeovn/kube-ovn/pkg/ipam"
 	"github.com/kubeovn/kube-ovn/pkg/ovs"
@@ -322,7 +323,10 @@ type Controller struct {
 	deleteBanpQueue workqueue.TypedRateLimitingInterface[*v1alpha1.BaselineAdminNetworkPolicy]
 	banpKeyMutex    keymutex.KeyMutex
 
-	cnpsLister     anplisterv1alpha2.ClusterNetworkPolicyLister
+	cnpsLister     *cnp.Lister
+	cnpContext     context.Context
+	cnpSession     *cnp.Receipt
+	cnpReceipts    *xsync.Map[string, *cnp.Receipt]
 	cnpsSynced     cache.InformerSynced
 	addCnpQueue    workqueue.TypedRateLimitingInterface[string]
 	updateCnpQueue workqueue.TypedRateLimitingInterface[*ClusterNetworkPolicyChangedDelta]
@@ -506,7 +510,8 @@ func Run(ctx context.Context, config *Configuration) {
 	ovnDnatRuleInformer := kubeovnInformerFactory.Kubeovn().V1().OvnDnatRules()
 	anpInformer := anpInformerFactory.Policy().V1alpha1().AdminNetworkPolicies()
 	banpInformer := anpInformerFactory.Policy().V1alpha1().BaselineAdminNetworkPolicies()
-	cnpInformer := anpInformerFactory.Policy().V1alpha2().ClusterNetworkPolicies()
+	cnpInformerFactory := dynamicinformer.NewDynamicSharedInformerFactory(config.DynamicClient, 0)
+	cnpInformer := cnpInformerFactory.ForResource(cnp.Resource)
 	dnsNameResolverInformer := kubeovnInformerFactory.Kubeovn().V1().DNSNameResolvers()
 	csrInformer := informerFactory.Certificates().V1().CertificateSigningRequests()
 	netAttachInformer := attachNetInformerFactory.K8sCniCncfIo().V1().NetworkAttachmentDefinitions()
@@ -801,6 +806,8 @@ func Run(ctx context.Context, config *Configuration) {
 	}
 
 	if config.EnableANP {
+		controller.cnpContext = ctx
+		controller.cnpReceipts = xsync.NewMap[string, *cnp.Receipt]()
 		controller.anpsLister = anpInformer.Lister()
 		controller.anpsSynced = anpInformer.Informer().HasSynced
 		controller.addAnpQueue = newTypedRateLimitingQueue[string]("AddAdminNetworkPolicy", nil)
@@ -815,7 +822,7 @@ func Run(ctx context.Context, config *Configuration) {
 		controller.deleteBanpQueue = newTypedRateLimitingQueue[*v1alpha1.BaselineAdminNetworkPolicy]("DeleteBaseAdminNetworkPolicy", nil)
 		controller.banpKeyMutex = keymutex.NewHashed(numKeyLocks)
 
-		controller.cnpsLister = cnpInformer.Lister()
+		controller.cnpsLister = &cnp.Lister{Indexer: cnpInformer.Informer().GetIndexer()}
 		controller.cnpsSynced = cnpInformer.Informer().HasSynced
 		controller.addCnpQueue = newTypedRateLimitingQueue[string]("AddClusterNetworkPolicy", nil)
 		controller.updateCnpQueue = newTypedRateLimitingQueue[*ClusterNetworkPolicyChangedDelta]("UpdateClusterNetworkPolicy", nil)
@@ -870,6 +877,9 @@ func Run(ctx context.Context, config *Configuration) {
 	natGatewayWorkloadInformerFactory.Start(ctx.Done())
 	controller.kubeovnInformerFactory.Start(ctx.Done())
 	controller.anpInformerFactory.Start(ctx.Done())
+	if config.EnableANP {
+		cnpInformerFactory.Start(ctx.Done())
+	}
 	controller.StartKubevirtInformerFactory(ctx, kubevirtInformerFactory)
 
 	klog.Info("Waiting for informer caches to sync")
@@ -899,6 +909,12 @@ func Run(ctx context.Context, config *Configuration) {
 
 	if !cache.WaitForCacheSync(ctx.Done(), cacheSyncs...) {
 		util.LogFatalAndExit(nil, "failed to wait for caches to sync")
+	}
+	if config.EnableANP {
+		if err := controller.initCnpEvidence(); err != nil {
+			// Policy enforcement must continue even if upgrade evidence is unavailable.
+			klog.Errorf("CNP upgrade verification is unavailable: %v", err)
+		}
 	}
 
 	if _, err = podInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{

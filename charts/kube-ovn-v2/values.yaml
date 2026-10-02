@@ -928,6 +928,11 @@ monitor:
 # @section -- Kube-OVN controller configuration
 # @default -- "{}"
 controller:
+  # -- Rolling update limits. Single-replica upgrades need a maintenance window or a schedulable surge replica.
+  # @section -- Kube-OVN controller configuration
+  rollingUpdate:
+    maxSurge: 0
+    maxUnavailable: 1
   # -- Leader election timing configuration.
   # @section -- Kube-OVN controller configuration
   leaderElection:

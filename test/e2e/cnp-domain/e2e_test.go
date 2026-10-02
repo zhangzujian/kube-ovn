@@ -140,7 +140,7 @@ var _ = framework.SerialDescribe("[group:cluster-network-policy]", func() {
 	}
 
 	framework.ConformanceIt("should create CNP with domainName deny rule and verify connectivity behavior", func() {
-		f.SkipVersionPriorTo(1, 15, "ClusterNetworkPolicy domainName support was introduced in v1.15")
+		f.SkipVersionPriorTo(1, 17, "ClusterNetworkPolicy protocols requires the v0.2.0-compatible controller")
 		ginkgo.By("Creating test namespace " + namespaceName)
 		labels := map[string]string{
 			"kubernetes.io/metadata.name": namespaceName,
@@ -161,7 +161,7 @@ var _ = framework.SerialDescribe("[group:cluster-network-policy]", func() {
 				"kubernetes.io/metadata.name": namespaceName,
 			},
 		}
-		ports := []netpolv1alpha2.ClusterNetworkPolicyPort{
+		ports := []netpolv1alpha2.ClusterNetworkPolicyProtocol{
 			framework.MakeClusterNetworkPolicyPort(443, corev1.ProtocolTCP),
 		}
 		domainNames := []netpolv1alpha2.DomainName{"*.baidu.com."}
@@ -193,7 +193,7 @@ var _ = framework.SerialDescribe("[group:cluster-network-policy]", func() {
 	})
 
 	framework.ConformanceIt("should create multiple CNPs with domainName rules and verify they work together", func() {
-		f.SkipVersionPriorTo(1, 15, "ClusterNetworkPolicy domainName support was introduced in v1.15")
+		f.SkipVersionPriorTo(1, 17, "ClusterNetworkPolicy protocols requires the v0.2.0-compatible controller")
 
 		cnpName2 = "cnp2-" + framework.RandomSuffix()
 
@@ -218,7 +218,7 @@ var _ = framework.SerialDescribe("[group:cluster-network-policy]", func() {
 				"kubernetes.io/metadata.name": namespaceName,
 			},
 		}
-		ports := []netpolv1alpha2.ClusterNetworkPolicyPort{
+		ports := []netpolv1alpha2.ClusterNetworkPolicyProtocol{
 			framework.MakeClusterNetworkPolicyPort(443, corev1.ProtocolTCP),
 		}
 		domainNames1 := []netpolv1alpha2.DomainName{"*.baidu.com."}
@@ -274,7 +274,7 @@ var _ = framework.SerialDescribe("[group:cluster-network-policy]", func() {
 	})
 
 	framework.ConformanceIt("should dynamically add and remove domainName deny rules in a single CNP", func() {
-		f.SkipVersionPriorTo(1, 15, "ClusterNetworkPolicy domainName support was introduced in v1.15")
+		f.SkipVersionPriorTo(1, 17, "ClusterNetworkPolicy protocols requires the v0.2.0-compatible controller")
 
 		ginkgo.By("Creating test namespace " + namespaceName)
 		labels := map[string]string{
@@ -297,7 +297,7 @@ var _ = framework.SerialDescribe("[group:cluster-network-policy]", func() {
 				"kubernetes.io/metadata.name": namespaceName,
 			},
 		}
-		ports := []netpolv1alpha2.ClusterNetworkPolicyPort{
+		ports := []netpolv1alpha2.ClusterNetworkPolicyProtocol{
 			framework.MakeClusterNetworkPolicyPort(443, corev1.ProtocolTCP),
 		}
 
@@ -351,7 +351,7 @@ var _ = framework.SerialDescribe("[group:cluster-network-policy]", func() {
 	})
 
 	framework.ConformanceIt("should create cnp with domainName and CIDR rules and verify they work together", func() {
-		f.SkipVersionPriorTo(1, 15, "ClusterNetworkPolicy domainName support was introduced in v1.15")
+		f.SkipVersionPriorTo(1, 17, "ClusterNetworkPolicy protocols requires the v0.2.0-compatible controller")
 
 		ginkgo.By("Creating test namespace " + namespaceName)
 		labels := map[string]string{
@@ -375,7 +375,7 @@ var _ = framework.SerialDescribe("[group:cluster-network-policy]", func() {
 				"kubernetes.io/metadata.name": namespaceName,
 			},
 		}
-		ports := []netpolv1alpha2.ClusterNetworkPolicyPort{
+		ports := []netpolv1alpha2.ClusterNetworkPolicyProtocol{
 			framework.MakeClusterNetworkPolicyPort(443, corev1.ProtocolTCP),
 		}
 
@@ -390,7 +390,7 @@ var _ = framework.SerialDescribe("[group:cluster-network-policy]", func() {
 					Networks: []netpolv1alpha2.CIDR{"8.8.8.8/32"},
 				},
 			},
-			Ports: &ports,
+			Protocols: ports,
 		}
 
 		cnp := framework.MakeClusterNetworkPolicy(cnpName, 80, namespaceSelector,
@@ -411,7 +411,7 @@ var _ = framework.SerialDescribe("[group:cluster-network-policy]", func() {
 	})
 
 	framework.ConformanceIt("should create cnp with wildcard domainName rules and verify they work correctly", func() {
-		f.SkipVersionPriorTo(1, 15, "ClusterNetworkPolicy domainName support was introduced in v1.15")
+		f.SkipVersionPriorTo(1, 17, "ClusterNetworkPolicy protocols requires the v0.2.0-compatible controller")
 
 		ginkgo.By("Creating test namespace " + namespaceName)
 		labels := map[string]string{
@@ -435,7 +435,7 @@ var _ = framework.SerialDescribe("[group:cluster-network-policy]", func() {
 				"kubernetes.io/metadata.name": namespaceName,
 			},
 		}
-		ports := []netpolv1alpha2.ClusterNetworkPolicyPort{
+		ports := []netpolv1alpha2.ClusterNetworkPolicyProtocol{
 			framework.MakeClusterNetworkPolicyPort(443, corev1.ProtocolTCP),
 		}
 
