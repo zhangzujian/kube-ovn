@@ -11,8 +11,71 @@ import (
 
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilexec "k8s.io/client-go/util/exec"
 )
+
+func TestDatabaseKickUsesTheRequestedLeaderAndPreservesFailure(t *testing.T) {
+	for _, role := range []string{"nb", "sb"} {
+		for _, dryRun := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/dryRun=%t", role, dryRun), func(t *testing.T) {
+				app, executor, out, _ := testApplication(t,
+					readyPod("nb-leader", "a", "ovn-central", map[string]string{"ovn-nb-leader": "true"}),
+					readyPod("sb-leader", "b", "ovn-central", map[string]string{"ovn-sb-leader": "true"}),
+				)
+				failure := utilexec.CodeExitError{Err: errors.New("member removal failed"), Code: 42}
+				executor.run = func(_ context.Context, _ Target, _ []string, _ Streams) error { return failure }
+				args := []string{"db", role, "kick", "ffffffff"}
+				if dryRun {
+					args = append(args, "--dry-run")
+				}
+				err := app.Execute(t.Context(), args)
+				database := "OVN_Northbound"
+				if role == "sb" {
+					database = "OVN_Southbound"
+				}
+				argv := []string{"ovn-appctl", "-t", "/var/run/ovn/ovn" + role + "_db.ctl", "cluster/kick", database, "ffffffff"}
+				if dryRun {
+					require.NoError(t, err)
+					require.Empty(t, executor.calls, "dry-run must not execute member removal")
+					require.Equal(t, fmt.Sprintf("ovn-system/%s-leader: %q\n", role, argv), out.String())
+					return
+				}
+				require.ErrorIs(t, err, failure)
+				require.Equal(t, 42, ExitCode(err))
+				require.Len(t, executor.calls, 1, "failed member removal must not be replayed")
+				require.Equal(t, role+"-leader", executor.calls[0].target.Pod)
+				require.Equal(t, "ovn-central", executor.calls[0].target.Container)
+				require.Equal(t, argv, executor.calls[0].argv)
+			})
+		}
+	}
+}
+
+func TestEnvironmentChecksAllRunningCNIsAndPreservesFailures(t *testing.T) {
+	pending := readyPod("pending", "c", "cni-server", map[string]string{"app": "kube-ovn-cni"})
+	pending.Status.Phase = corev1.PodPending
+	terminating := readyPod("terminating", "d", "cni-server", map[string]string{"app": "kube-ovn-cni"})
+	terminating.DeletionTimestamp = new(metav1.Now())
+	app, executor, out, _ := testApplication(t,
+		readyPod("cni-a", "a", "cni-server", map[string]string{"app": "kube-ovn-cni"}),
+		readyPod("cni-b", "b", "cni-server", map[string]string{"app": "kube-ovn-cni"}),
+		readyPod("other", "e", "other", map[string]string{"app": "kube-ovn-cni"}),
+		pending, terminating,
+	)
+	failures := map[string]error{"a": errors.New("checker unavailable"), "b": errors.New("checker failed")}
+	executor.run = func(_ context.Context, target Target, argv []string, _ Streams) error {
+		require.Equal(t, "cni-server", target.Container)
+		require.Equal(t, []string{"bash", "/kube-ovn/env-check.sh"}, argv)
+		return failures[target.Node]
+	}
+	err := app.Execute(t.Context(), []string{"diagnose", "environment"})
+	for node, failure := range failures {
+		require.ErrorIs(t, err, failure, "one failed checker must not prevent other nodes from being checked")
+		require.Contains(t, out.String(), "Environment check on "+node+"\n")
+	}
+	require.Len(t, executor.calls, 2)
+}
 
 func TestDiagnosticProbeReportsConnectivityFailures(t *testing.T) {
 	podA := readyPod("subnet-a", "a", "probe", nil)

@@ -170,6 +170,50 @@ var _ = framework.Describe("[group:kubectl-ko]", func() {
 		}
 	})
 
+	framework.ConformanceIt(`should check every running CNI environment`, func() {
+		f.SkipVersionPriorTo(1, 17, "The structured environment command was introduced in v1.17")
+		pods, err := cs.CoreV1().Pods(framework.KubeOvnNamespace).List(context.Background(), metav1.ListOptions{LabelSelector: "app=kube-ovn-cni"})
+		framework.ExpectNoError(err)
+		output := e2ekubectl.NewKubectlCommand("", "ko", "diagnose", "environment").ExecOrDie("")
+		checked := 0
+		for _, pod := range pods.Items {
+			if pod.Status.Phase != corev1.PodRunning || pod.DeletionTimestamp != nil {
+				continue
+			}
+			framework.ExpectContainSubstring(output, "Environment check on "+pod.Spec.NodeName+"\n")
+			checked++
+		}
+		if checked == 0 {
+			framework.Failf("no running CNI pod was available for the environment check")
+		}
+		framework.ExpectEqual(strings.Count(output, "Environment check on "), checked)
+		for _, step := range []string{"check cni configuration", "check system ipv4 config", "check checksum value", "check dns config", "check firewall config", "check geneve 6081 connection"} {
+			framework.ExpectEqual(strings.Count(output, step), checked, "every CNI must run the complete image checker")
+		}
+	})
+
+	framework.ConformanceIt(`should resolve NB and SB member removal without executing it`, func() {
+		f.SkipVersionPriorTo(1, 17, "The database member-removal dry-run was introduced in v1.17")
+		for _, role := range []string{"nb", "sb"} {
+			options := metav1.ListOptions{LabelSelector: "ovn-" + role + "-leader=true"}
+			leaders, err := cs.CoreV1().Pods(framework.KubeOvnNamespace).List(context.Background(), options)
+			framework.ExpectNoError(err)
+			framework.ExpectHaveLen(leaders.Items, 1)
+			leader := leaders.Items[0]
+			database := "OVN_Northbound"
+			if role == "sb" {
+				database = "OVN_Southbound"
+			}
+			argv := []string{"ovn-appctl", "-t", "/var/run/ovn/ovn" + role + "_db.ctl", "cluster/kick", database, "ffffffff"}
+			output := e2ekubectl.NewKubectlCommand("", "ko", "db", role, "kick", "ffffffff", "--dry-run").ExecOrDie("")
+			framework.ExpectEqual(output, fmt.Sprintf("%s/%s: %q\n", leader.Namespace, leader.Name, argv))
+			current, err := cs.CoreV1().Pods(leader.Namespace).Get(context.Background(), leader.Name, metav1.GetOptions{})
+			framework.ExpectNoError(err)
+			framework.ExpectEqual(current.UID, leader.UID)
+			framework.ExpectEqual(current.Labels["ovn-"+role+"-leader"], "true")
+		}
+	})
+
 	framework.ConformanceIt(`should support "kubectl ko tcpdump <pod> -c1"`, func() {
 		ping, target := "ping", targetIPv4
 		if f.IsIPv6() {
