@@ -73,9 +73,19 @@ class DiagnosticTests(unittest.TestCase):
     def test_complete_suite_and_collection_can_pass(self):
         with tempfile.TemporaryDirectory() as temp:
             recorder = OfflineRecorder(Path(temp))
-            code = "for n in range(18): print('--- PASS: TestAdminNetworkPolicyConformance/Case%d (0.00s)' % n)"
+            lines = ['--- PASS: TestAdminNetworkPolicyConformance/%s (0.00s)' % name for name in sorted(diagnostics.STANDARD_CASES)]
+            lines += ['--- SKIP: TestAdminNetworkPolicyConformance/%s (0.00s)' % name for name in ['AdminNetworkPolicyEgressNamedPort', 'AdminNetworkPolicyEgressNodePeers', 'AdminNetworkPolicyIngressNamedPort', 'BaselineAdminNetworkPolicyEgressNamedPort', 'BaselineAdminNetworkPolicyEgressNodePeers', 'BaselineAdminNetworkPolicyIngressNamedPort']]
+            code = 'print(' + repr('\n'.join(lines)) + ')'
             self.assertEqual(recorder.run([sys.executable, '-c', code]), 0)
             self.assertTrue(json.loads((Path(temp) / 'summary.json').read_text())['diagnostics_healthy'])
+
+    def test_skipped_standard_case_cannot_pass_coverage(self):
+        with tempfile.TemporaryDirectory() as temp:
+            recorder = OfflineRecorder(Path(temp))
+            names = sorted(diagnostics.STANDARD_CASES)
+            lines = ['--- %s: TestAdminNetworkPolicyConformance/%s (0.00s)' % ('SKIP' if n == 0 else 'PASS', name) for n, name in enumerate(names)]
+            self.assertEqual(recorder.run([sys.executable, '-c', 'print(' + repr('\n'.join(lines)) + ')']), 2)
+            self.assertFalse(json.loads((Path(temp) / 'summary.json').read_text())['coverage_complete'])
 
     def test_failed_snapshot_commands_are_visible(self):
         with tempfile.TemporaryDirectory() as temp:

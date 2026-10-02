@@ -24,14 +24,16 @@ Relevant pull requests run all six combinations once. The workflow can also be
 dispatched on a branch containing this workflow, with `rounds` (1–3),
 `snapshot_interval` (1–30 seconds, default 2), and `max_incidents` (1–30, default 12).
 Each round runs the full ANP/BANP suite, including cross-profile Priority and
-Integration cases. A read-only namespace deletion wait separates rounds; the
+Integration cases. There are 18 executed cases and six optional NamedPort/NodePeers
+definitions that the unchanged standard profiles log as SKIP. A read-only namespace deletion wait separates rounds; the
 harness does not remove finalizers. A failed round remains failed even if later
 rounds or additional diagnostic probes succeed. Matrix fail-fast is disabled.
 
 The original suite's nonzero exit code takes precedence. When the suite passes,
 the job still fails if diagnostics are unhealthy: no complete snapshot, no API
-audit events, collector errors, or fewer/more than 18 top-level suite cases.
-`summary.json` records the suite return code separately from diagnostic health.
+audit events, collector errors, or missing, skipped, duplicated or unexpected executed standard cases.
+`summary.json` records every case, the executed subset and coverage completeness,
+and records the suite return code separately from diagnostic health.
 A red job can therefore represent a successfully captured historical failure.
 Read the summaries and logs before interpreting the workflow conclusion.
 
@@ -44,7 +46,7 @@ Each attempt uploads a distinct artifact for each source/family, retained for
 | --- | --- |
 | `install.json` | Installer commit, workflow revision/run/attempt, family, installed component images and actual image IDs |
 | `round-N/suite.log` | Original Go output with collector UTC observation timestamps |
-| `round-N/summary.json` | All 18 top-level Go case results, original suite exit code, every parsed failed probe, collection health/errors |
+| `round-N/summary.json` | All Go case results (18 executed standard cases plus optional skips), original suite exit code, every parsed failed probe, collection health/errors |
 | `round-N/anp-test-report.yaml` | Native profile report; use the Go case list as well because this report omits cross-profile cases |
 | `round-N/audit.jsonl` | Policy writes at RequestReceived/ResponseComplete and Pod exec metadata; audit IDs and API-server timestamps |
 | `round-N/initial/`, `rolling/` | Initial snapshot and the last eight completed rolling snapshots |

@@ -17,6 +17,15 @@ import threading
 import time
 
 
+# v0.1.8 standard ANP/BANP profiles execute these 18 cases. Six optional
+# NamedPort/NodePeers definitions are logged as SKIP by the upstream suite.
+STANDARD_CASES = {
+    prefix + suffix
+    for prefix in ["AdminNetworkPolicy", "BaselineAdminNetworkPolicy"]
+    for suffix in ["EgressInlineCIDRPeers", "EgressSCTP", "EgressTCP", "EgressUDP", "Gress", "IngressSCTP", "IngressTCP", "IngressUDP"]
+} | {"AdminNetworkPolicyIntegration", "AdminNetworkPolicyPriorityField"}
+
+
 def timestamp():
     return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="microseconds")
 
@@ -317,8 +326,11 @@ class Recorder:
                     self.audit_proc.wait()
                     self.errors.append("audit stream required SIGKILL")
             audit.join()
-        healthy = self.complete_snapshots > 0 and self.audit_count > 0 and len(cases) == 18 and not self.errors
-        summary = {"diagnostics_healthy": healthy, "command": args, "suite_returncode": returncode, "cases": cases, "failures": self.failures,
+        executed = [case for case in cases if case["result"] != "SKIP"]
+        coverage_complete = len(executed) == len(STANDARD_CASES) and {case["name"] for case in executed} == STANDARD_CASES
+        healthy = self.complete_snapshots > 0 and self.audit_count > 0 and coverage_complete and not self.errors
+        summary = {"diagnostics_healthy": healthy, "command": args, "suite_returncode": returncode, "cases": cases,
+                   "executed_cases": executed, "coverage_complete": coverage_complete, "failures": self.failures,
                    "snapshots": self.snapshot_count, "complete_snapshots": self.complete_snapshots,
                    "audit_events": self.audit_count, "collector_errors": self.errors,
                    "detailed_incident_limit": self.max_incidents, "finished": timestamp()}
