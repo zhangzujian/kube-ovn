@@ -17,8 +17,10 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
-const Version = 1
-const method = "/kubeovn.ko.Helper/Run"
+const (
+	Version = 1
+	method  = "/kubeovn.ko.Helper/Run"
+)
 
 // Request is validated before an operation starts. Pod identity fields are
 // reserved for operations that need an explicit workload namespace context.
@@ -148,8 +150,10 @@ func Run(ctx context.Context, conn *grpc.ClientConn, request Request, stdout, st
 type Runner interface {
 	Run(context.Context, Request, io.Writer, io.Writer) Result
 }
-type service interface{ serve(grpc.ServerStream) error }
-type server struct{ runner Runner }
+type (
+	service interface{ serve(grpc.ServerStream) error }
+	server  struct{ runner Runner }
+)
 
 func (s *server) serve(stream grpc.ServerStream) error {
 	envelope := new(wrapperspb.BytesValue)

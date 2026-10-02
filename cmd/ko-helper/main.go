@@ -38,15 +38,16 @@ func (runner) Run(ctx context.Context, request kohelper.Request, stdout, stderr 
 	if len(request.Argv) == 0 || request.Argv[0] == "" {
 		return kohelper.Result{Code: 2, Error: "helper request has no command"}
 	}
-	command := exec.CommandContext(ctx, request.Argv[0], request.Argv[1:]...)
+	// Remote argv execution is intentional: pods/attach authorizes access to this
+	// privileged tool runner. Arguments are passed directly, without a shell.
+	command := exec.CommandContext(ctx, request.Argv[0], request.Argv[1:]...) // #nosec G204 -- Kubernetes-authorized remote tool execution.
 	command.Stdout = stdout
 	command.Stderr = stderr
 	err := command.Run()
 	if err == nil {
 		return kohelper.Result{}
 	}
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
+	if exit, ok := errors.AsType[*exec.ExitError](err); ok {
 		return kohelper.Result{Code: exit.ExitCode(), Error: err.Error()}
 	}
 	if errors.Is(err, syscall.EPIPE) || errors.Is(err, context.Canceled) {

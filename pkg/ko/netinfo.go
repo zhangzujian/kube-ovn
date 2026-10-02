@@ -312,19 +312,20 @@ func writePodNetwork(out io.Writer, info *podNetworkInfo) error {
 				return err
 			}
 		}
-		if item.Parent != nil {
+		switch {
+		case item.Parent != nil:
 			if _, err := fmt.Fprintf(out, "      parent: %s (ifindex=%d, kind=%s, mac=%s, mtu=%d, state=%s, flags=%s)\n", item.Parent.Name, item.Parent.Index, item.Parent.Kind, item.Parent.MAC, item.Parent.MTU, item.Parent.OperState, strings.Join(item.Parent.Flags, ",")); err != nil {
 				return err
 			}
-		} else if item.HostPeer != nil {
+		case item.HostPeer != nil:
 			if _, err := fmt.Fprintf(out, "      host peer: %s (ifindex=%d, kind=%s, mac=%s, mtu=%d, state=%s, flags=%s)\n", item.HostPeer.Name, item.HostPeer.Index, item.HostPeer.Kind, item.HostPeer.MAC, item.HostPeer.MTU, item.HostPeer.OperState, strings.Join(item.HostPeer.Flags, ",")); err != nil {
 				return err
 			}
-		} else if item.Peer != nil {
+		case item.Peer != nil:
 			if _, err := fmt.Fprintf(out, "      peer: %s (ifindex=%d, kind=%s, mac=%s, mtu=%d, state=%s, flags=%s)\n", item.Peer.Name, item.Peer.Index, item.Peer.Kind, item.Peer.MAC, item.Peer.MTU, item.Peer.OperState, strings.Join(item.Peer.Flags, ",")); err != nil {
 				return err
 			}
-		} else if item.PeerIndex != 0 {
+		case item.PeerIndex != 0:
 			if _, err := fmt.Fprintf(out, "      peer ifindex: %d\n", item.PeerIndex); err != nil {
 				return err
 			}
