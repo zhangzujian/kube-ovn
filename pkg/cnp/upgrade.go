@@ -637,7 +637,7 @@ func (u *Upgrade) saveState(ctx context.Context, phase, object string) error {
 	cm, err := client.Get(ctx, UpgradeStateName, metav1.GetOptions{})
 	switch {
 	case apierrors.IsNotFound(err):
-		cm = &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: UpgradeStateName, Labels: map[string]string{"kube-ovn.io/cnp-upgrade": "true"}}}
+		cm = &corev1.ConfigMap{Name: UpgradeStateName, Labels: map[string]string{"kube-ovn.io/cnp-upgrade": "true"}}
 	case err != nil:
 		return err
 	case cm.Labels["kube-ovn.io/cnp-upgrade"] != "true":

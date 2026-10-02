@@ -50,8 +50,8 @@ func (c *Controller) writeCnpEvidence(name string, record *cnp.Receipt, owner me
 	cm, err := client.Get(c.cnpContext, name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		_, err = client.Create(c.cnpContext, &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Labels: map[string]string{"kube-ovn.io/cnp-evidence": "true"}, OwnerReferences: []metav1.OwnerReference{owner}},
-			Data:       map[string]string{"receipt": string(data)},
+			Name: name, Labels: map[string]string{"kube-ovn.io/cnp-evidence": "true"}, OwnerReferences: []metav1.OwnerReference{owner},
+			Data: map[string]string{"receipt": string(data)},
 		}, metav1.CreateOptions{})
 		return err
 	}

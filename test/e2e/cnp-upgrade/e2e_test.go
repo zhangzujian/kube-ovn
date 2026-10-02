@@ -50,14 +50,14 @@ var _ = framework.SerialDescribe("[group:cnp-upgrade]", func() {
 		nodes, err := f.ClientSet.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 		framework.ExpectNoError(err)
 		framework.ExpectEqual(len(nodes.Items) >= 2, true, "upgrade traffic probes require two nodes")
-		server := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "server", Labels: map[string]string{"app": "cnp-upgrade-server"}}, Spec: corev1.PodSpec{Containers: []corev1.Container{
+		server := &corev1.Pod{Name: "server", Labels: map[string]string{"app": "cnp-upgrade-server"}, Spec: corev1.PodSpec{Containers: []corev1.Container{
 			{Name: "allowed", Image: "registry.k8s.io/e2e-test-images/agnhost:2.45", Args: []string{"netexec", "--http-port=8080", "--udp-port=-1"}},
 			{Name: "denied", Image: "registry.k8s.io/e2e-test-images/agnhost:2.45", Args: []string{"netexec", "--http-port=8081", "--udp-port=-1"}},
 			{Name: "baseline-denied", Image: "registry.k8s.io/e2e-test-images/agnhost:2.45", Args: []string{"netexec", "--http-port=8082", "--udp-port=-1"}},
 		}}}
 		server.Spec.NodeName = nodes.Items[0].Name
 		server = f.PodClient().CreateSync(server)
-		probe := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "probe"}, Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "probe", Image: source, Command: []string{"sleep", "infinity"}}}}}
+		probe := &corev1.Pod{Name: "probe", Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "probe", Image: source, Command: []string{"sleep", "infinity"}}}}}
 		probe.Spec.NodeName = nodes.Items[1].Name
 		probe = f.PodClient().CreateSync(probe)
 		names := []string{"cnp-upgrade-admin-" + framework.RandomSuffix(), "cnp-upgrade-baseline-" + framework.RandomSuffix()}

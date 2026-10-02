@@ -86,7 +86,7 @@ jobs:
   version-upgrade:
     needs: build-upgrade-image
     runs-on: ubuntu-26.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -126,6 +126,8 @@ jobs:
           kubectl get cnp -o json | jq -e '.items | length == 0'
           kubectl apply -f yamls/cnp/native.yaml
           KUBECONFIG="$HOME/.kube/config" make kube-ovn-cnp-e2e
+      - name: Verify retained v1alpha1 ANP and BANP conformance
+        run: KUBECONFIG="$HOME/.kube/config" make kube-ovn-anp-e2e
       - name: Collect upgrade evidence
         if: always()
         run: |

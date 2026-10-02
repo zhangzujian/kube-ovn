@@ -18,15 +18,15 @@ func compatibleFleet(t *testing.T) (*Upgrade, *corev1.Pod, *appsv1.ReplicaSet) {
 	t.Helper()
 	image := "example/controller@sha256:" + strings.Repeat("a", 64)
 	template := corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "kube-ovn-controller", Image: image, Args: []string{"--enable-anp=true"}}}}}
-	deployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "kube-ovn-controller", Namespace: "kube-system", UID: "deployment", Generation: 2}, Spec: appsv1.DeploymentSpec{Replicas: new(int32(1)), Template: template}, Status: appsv1.DeploymentStatus{ObservedGeneration: 2, UpdatedReplicas: 1, AvailableReplicas: 1}}
-	set := &appsv1.ReplicaSet{ObjectMeta: metav1.ObjectMeta{Name: "controller-new", Namespace: "kube-system", UID: "set", OwnerReferences: []metav1.OwnerReference{{UID: deployment.UID, Controller: new(true)}}}, Spec: appsv1.ReplicaSetSpec{Replicas: new(int32(1)), Template: template}}
-	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "leader", Namespace: "kube-system", UID: "pod", OwnerReferences: []metav1.OwnerReference{{UID: set.UID, Controller: new(true)}}}, Spec: template.Spec, Status: corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{Name: "kube-ovn-controller", Ready: true, ImageID: "docker-pullable://" + image}}}}
-	lease := &coordv1.Lease{ObjectMeta: metav1.ObjectMeta{Name: "kube-ovn-controller", Namespace: "kube-system"}, Spec: coordv1.LeaseSpec{HolderIdentity: new("leader"), LeaseDurationSeconds: new(int32(30)), RenewTime: new(metav1.NewMicroTime(time.Now()))}}
+	deployment := &appsv1.Deployment{Name: "kube-ovn-controller", Namespace: "kube-system", UID: "deployment", Generation: 2, Spec: appsv1.DeploymentSpec{Replicas: new(int32(1)), Template: template}, Status: appsv1.DeploymentStatus{ObservedGeneration: 2, UpdatedReplicas: 1, AvailableReplicas: 1}}
+	set := &appsv1.ReplicaSet{Name: "controller-new", Namespace: "kube-system", UID: "set", OwnerReferences: []metav1.OwnerReference{{UID: deployment.UID, Controller: new(true)}}, Spec: appsv1.ReplicaSetSpec{Replicas: new(int32(1)), Template: template}}
+	pod := &corev1.Pod{Name: "leader", Namespace: "kube-system", UID: "pod", OwnerReferences: []metav1.OwnerReference{{UID: set.UID, Controller: new(true)}}, Spec: template.Spec, Status: corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{Name: "kube-ovn-controller", Ready: true, ImageID: "docker-pullable://" + image}}}}
+	lease := &coordv1.Lease{Name: "kube-ovn-controller", Namespace: "kube-system", Spec: coordv1.LeaseSpec{HolderIdentity: new("leader"), LeaseDurationSeconds: new(int32(30)), RenewTime: new(metav1.NewMicroTime(time.Now()))}}
 	data, err := json.Marshal(Receipt{Capability: Capability, Leader: pod.Name, PodUID: string(pod.UID), Session: "session", ImageID: image})
 	if err != nil {
 		t.Fatal(err)
 	}
-	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: CapabilityName(pod.UID), Namespace: "kube-system"}, Data: map[string]string{"receipt": string(data)}}
+	cm := &corev1.ConfigMap{Name: CapabilityName(pod.UID), Namespace: "kube-system", Data: map[string]string{"receipt": string(data)}}
 	client := fake.NewClientset([]runtime.Object{deployment, set, pod, lease, cm}...)
 	return &Upgrade{Kube: client, Namespace: "kube-system", Deployment: deployment.Name, Image: image}, pod, set
 }

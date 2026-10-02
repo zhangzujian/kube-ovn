@@ -112,7 +112,7 @@ func (c *Controller) enqueueDeleteCnp(obj any) {
 		klog.Error(err)
 		return
 	}
-	cnp = &v1alpha2.ClusterNetworkPolicy{ObjectMeta: metav1.ObjectMeta{Name: raw.GetName(), UID: raw.GetUID()}, Spec: v1alpha2.ClusterNetworkPolicySpec{Tier: v1alpha2.Tier(tier)}}
+	cnp = &v1alpha2.ClusterNetworkPolicy{Name: raw.GetName(), UID: raw.GetUID(), Spec: v1alpha2.ClusterNetworkPolicySpec{Tier: v1alpha2.Tier(tier)}}
 
 	klog.V(3).Infof("enqueue delete cnp %s", cache.MetaObjectToName(cnp).String())
 	c.deleteCnpQueue.Add(cnp)

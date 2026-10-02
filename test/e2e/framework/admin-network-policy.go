@@ -77,8 +77,8 @@ func MakeClusterNetworkPolicyEgressRule(name string, action netpolv1alpha2.Clust
 				DomainNames: domainNames,
 			},
 		},
+		Protocols: ports,
 	}
-	rule.Protocols = ports
 	return rule
 }
 

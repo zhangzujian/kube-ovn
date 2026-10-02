@@ -1,13 +1,16 @@
 package cnp
 
 import (
+	"context"
 	"os"
 	"testing"
+	"time"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -72,6 +75,14 @@ func TestAPIServerCNPTransition(t *testing.T) {
 		t.Fatal("native migration bypassed the legacy-only CEL gate")
 	}
 	install("dual")
+	// A CRD update reaches etcd before every admission handler has rebuilt its
+	// schema. Wait for a dry-run to observe the dual schema before migrating.
+	probe := &Upgrade{Dynamic: client}
+	if err := wait.PollUntilContextTimeout(t.Context(), 100*time.Millisecond, 30*time.Second, true, func(ctx context.Context) (bool, error) {
+		return probe.probeSchema(ctx, "dual")
+	}); err != nil {
+		t.Fatal(err)
+	}
 	// Confirm the legacy field survives a real API-server round-trip.
 	current, err := client.Resource(Resource).Get(t.Context(), legacy.GetName(), metav1.GetOptions{})
 	if err != nil {
