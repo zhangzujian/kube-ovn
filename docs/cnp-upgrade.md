@@ -207,7 +207,9 @@ images, SubjectAccessReview checks require effective ServiceCIDR get/list/watch
 access for both the controller and CNI service accounts. These checks do not
 grant permissions and reject missing prerequisites before starting a rollout.
 It upgrades central/OVS/node
-components, exercises both mixed leader arrangements, migrates both tiers and
+components including matching installation init-container images, verifies that
+each node's installed CNI binary SHA256 matches the target image, exercises both
+mixed leader arrangements, migrates both tiers and
 directions including DNS and node peers, resumes a partial migration, rejects a concurrent spec update while
 retaining that update, resurrects a legacy standby to test the gate, finalizes/reverses
 schema and objects, and rolls back the controller while continuously probing

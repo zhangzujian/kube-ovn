@@ -62,6 +62,12 @@ python hack/cnp_upgrade_prerequisites.py --source-installer legacy-install.sh
 # Publishing only to a disposable registry gives the test controller a real
 # manifest digest without public registry credentials or permission changes.
 docker load --input cnp-upgrade.tar
+target_cni_digest=$(docker run --rm --entrypoint sha256sum cnp-upgrade:candidate /kube-ovn/kube-ovn | awk '{print $1}')
+if [[ ! $target_cni_digest =~ ^[a-f0-9]{64}$ ]]; then
+  echo "Expected one target CNI binary SHA256" >&2
+  exit 1
+fi
+echo "CNP_UPGRADE_TARGET_CNI_SHA256=$target_cni_digest" >> "$GITHUB_ENV"
 docker run -d --restart=always -p 127.0.0.1:5001:5000 --name cnp-registry registry:2
 docker network connect kind cnp-registry
 docker tag cnp-upgrade:candidate localhost:5001/cnp-upgrade:candidate

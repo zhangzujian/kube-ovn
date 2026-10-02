@@ -361,11 +361,7 @@ func upgradeComponents(f *framework.Framework, source, target string) {
 	for _, name := range []string{"ovn-central"} {
 		deployment, err := f.ClientSet.AppsV1().Deployments("kube-system").Get(ctx, name, metav1.GetOptions{})
 		framework.ExpectNoError(err)
-		for i := range deployment.Spec.Template.Spec.Containers {
-			if deployment.Spec.Template.Spec.Containers[i].Image == source {
-				deployment.Spec.Template.Spec.Containers[i].Image = target
-			}
-		}
+		upgradeComponentImages(&deployment.Spec.Template.Spec, source, target)
 		_, err = f.ClientSet.AppsV1().Deployments("kube-system").Update(ctx, deployment, metav1.UpdateOptions{})
 		framework.ExpectNoError(err)
 		waitDeployment(f, name, *deployment.Spec.Replicas)
@@ -373,11 +369,7 @@ func upgradeComponents(f *framework.Framework, source, target string) {
 	for _, name := range []string{"ovs-ovn", "kube-ovn-cni"} {
 		set, err := f.ClientSet.AppsV1().DaemonSets("kube-system").Get(ctx, name, metav1.GetOptions{})
 		framework.ExpectNoError(err)
-		for i := range set.Spec.Template.Spec.Containers {
-			if set.Spec.Template.Spec.Containers[i].Image == source {
-				set.Spec.Template.Spec.Containers[i].Image = target
-			}
-		}
+		upgradeComponentImages(&set.Spec.Template.Spec, source, target)
 		_, err = f.ClientSet.AppsV1().DaemonSets("kube-system").Update(ctx, set, metav1.UpdateOptions{})
 		framework.ExpectNoError(err)
 		framework.ExpectNoError(wait.PollUntilContextTimeout(ctx, time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
@@ -387,6 +379,16 @@ func upgradeComponents(f *framework.Framework, source, target string) {
 			}
 			return current.Status.ObservedGeneration == current.Generation && current.Status.UpdatedNumberScheduled == current.Status.DesiredNumberScheduled && current.Status.NumberReady == current.Status.DesiredNumberScheduled, nil
 		}))
+	}
+}
+
+func upgradeComponentImages(pod *corev1.PodSpec, source, target string) {
+	for _, containers := range [][]corev1.Container{pod.Containers, pod.InitContainers} {
+		for i := range containers {
+			if containers[i].Image == source {
+				containers[i].Image = target
+			}
+		}
 	}
 }
 

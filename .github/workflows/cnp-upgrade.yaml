@@ -144,6 +144,18 @@ jobs:
         run: |
           chmod +x cnp-upgrade.test
           ./cnp-upgrade.test -ginkgo.v -ginkgo.focus='\[group:cnp-upgrade\]' -ginkgo.timeout=35m -kubeconfig "$HOME/.kube/config"
+      - name: Verify installed node CNI binaries
+        run: |
+          : "${CNP_UPGRADE_TARGET_CNI_SHA256:?Expected target CNI binary digest}"
+          mkdir -p cnp-evidence
+          echo "expected $CNP_UPGRADE_TARGET_CNI_SHA256" > cnp-evidence/cni-binary-digests.txt
+          mapfile -t cni_nodes < <(kind get nodes --name kube-ovn)
+          (( ${#cni_nodes[@]} >= 2 ))
+          for node in "${cni_nodes[@]}"; do
+            installed_cni_digest=$(docker exec "$node" sha256sum /opt/cni/bin/kube-ovn | awk '{print $1}')
+            echo "$node $installed_cni_digest" >> cnp-evidence/cni-binary-digests.txt
+            test "$installed_cni_digest" = "$CNP_UPGRADE_TARGET_CNI_SHA256"
+          done
       - name: Run v0.2.0 CNP conformance on the compatible controller
         run: |
           kubectl get cnp -o json | jq -e '.items | length == 0'
