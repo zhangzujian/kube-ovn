@@ -3,6 +3,7 @@ package cnp_upgrade
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"flag"
 	"fmt"
 	"net"
@@ -129,8 +130,61 @@ var _ = framework.SerialDescribe("[group:cnp-upgrade]", func() {
 
 		ginkgo.By("Independently opening native writes and migrating both tiers/directions")
 		framework.ExpectNoError(u.OpenNative(ctx))
+		ginkgo.By("Interrupting after one migrated object and resuming from live state")
+		journal := u.Journal
+		attempts := 0
+		u.Journal = func(plan *cnp.ObjectPlan) error {
+			if len(plan.Patch) != 0 {
+				attempts++
+				if attempts == 2 {
+					return errors.New("injected journal interruption before the second object")
+				}
+			}
+			return journal(plan)
+		}
+		framework.ExpectError(u.Migrate(ctx, false))
+		partial, err := u.Plan(ctx, false)
+		framework.ExpectNoError(err)
+		remaining := 0
+		for _, object := range partial.Objects {
+			if len(object.Patch) != 0 {
+				remaining++
+			}
+		}
+		framework.ExpectEqual(remaining, 1, "the first object's migration must survive interruption")
+		ginkgo.By("Detecting a concurrent spec update without overwriting it")
+		var concurrentName string
+		var concurrentPriority int64
+		u.Journal = func(plan *cnp.ObjectPlan) error {
+			if concurrentName == "" && len(plan.Patch) != 0 {
+				current, err := client.Resource(cnp.Resource).Get(ctx, plan.Name, metav1.GetOptions{})
+				if err != nil {
+					return err
+				}
+				priority, _, err := unstructured.NestedInt64(current.Object, "spec", "priority")
+				if err != nil {
+					return err
+				}
+				concurrentName, concurrentPriority = plan.Name, priority+1
+				if err := unstructured.SetNestedField(current.Object, concurrentPriority, "spec", "priority"); err != nil {
+					return err
+				}
+				if _, err := client.Resource(cnp.Resource).Update(ctx, current, metav1.UpdateOptions{}); err != nil {
+					return err
+				}
+			}
+			return journal(plan)
+		}
+		framework.ExpectError(u.Migrate(ctx, false), "a stale resourceVersion/spec must stop migration")
+		framework.ExpectEqual(concurrentName != "", true)
+		u.Journal = journal
 		framework.ExpectNoError(u.Migrate(ctx, false))
 		framework.ExpectNoError(u.Migrate(ctx, false))
+		current, err := client.Resource(cnp.Resource).Get(ctx, concurrentName, metav1.GetOptions{})
+		framework.ExpectNoError(err)
+		priority, _, err := unstructured.NestedInt64(current.Object, "spec", "priority")
+		framework.ExpectNoError(err)
+		framework.ExpectEqual(priority, concurrentPriority, "resumption must preserve the concurrent desired spec")
 		framework.ExpectNoError(u.Verify(ctx))
 		ginkgo.By("Refusing migration when an old ReplicaSet is resurrected")
 		scaleController(f, legacy.Name, 1)

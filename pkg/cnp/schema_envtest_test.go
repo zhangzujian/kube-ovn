@@ -122,5 +122,41 @@ func TestAPIServerCNPTransition(t *testing.T) {
 	if _, err := client.Resource(Resource).Patch(t.Context(), native.GetName(), types.JSONPatchType, patch, metav1.PatchOptions{}); err != nil {
 		t.Fatal(err)
 	}
+	// Deletion followed by a same-name creation is a new policy. An old plan
+	// must not overwrite the replacement even when its spec is identical.
+	current, err = client.Resource(Resource).Get(t.Context(), legacy.GetName(), metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale, err := PlanObject(current, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stalePatch, err := stale.PatchBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Resource(Resource).Delete(t.Context(), current.GetName(), metav1.DeleteOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	obj.SetName(current.GetName())
+	replacement, err := client.Resource(Resource).Create(t.Context(), obj, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replacement.GetUID() == current.GetUID() {
+		t.Fatal("same-name replacement retained the old UID")
+	}
+	if _, err := client.Resource(Resource).Patch(t.Context(), replacement.GetName(), types.JSONPatchType, stalePatch, metav1.PatchOptions{}); err == nil {
+		t.Fatal("old plan overwrote a same-name replacement")
+	}
+	fresh, err := client.Resource(Resource).Get(t.Context(), replacement.GetName(), metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	remaining, err := PlanObject(fresh, false)
+	if err != nil || fresh.GetUID() != replacement.GetUID() || len(remaining.Patch) == 0 {
+		t.Fatalf("replacement identity or legacy restrictions changed: %v", err)
+	}
 	install("legacy-only")
 }

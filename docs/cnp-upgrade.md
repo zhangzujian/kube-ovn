@@ -174,9 +174,12 @@ ReplicaSet/Pod gates, chart strategies and the two independent Go modules.
 The upgrade job creates disposable kind clusters from the pinned v1.15.28 and
 v1.16.10 installers for IPv4, IPv6 and dual stack. It upgrades central/OVS/node
 components, exercises both mixed leader arrangements, migrates both tiers and
-directions, resurrects a legacy standby to test the gate, finalizes/reverses
+directions, resumes a partial migration, rejects a concurrent spec update while
+retaining that update, resurrects a legacy standby to test the gate, finalizes/reverses
 schema and objects, and rolls back the controller while continuously probing
-new connections to allowed and denied ports. It then runs native CNP conformance.
+new connections to allowed and denied ports. It then runs native CNP and retained
+v1alpha1 ANP/BANP conformance. Real API-server tests also reject stale patches
+after same-name recreation.
 The test image is pinned through a disposable local registry; no public registry
 credentials are needed. Run `bash hack/cnp-upgrade-e2e.sh` only in that isolated CI
 job. Component database downgrade remains subject to the release's normal rules;
