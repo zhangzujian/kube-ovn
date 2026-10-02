@@ -146,6 +146,7 @@ spec:
           - --enable-acl-sampling={{- .Values.aclSampling.enabled }}
           - --acl-sampling-set-id={{- .Values.aclSampling.setID }}
           - --acl-sampling-local-group-id={{- .Values.aclSampling.localGroupID }}
+          - --disable-legacy-cni-execution=true
         securityContext:
           runAsUser: 0
           privileged: false

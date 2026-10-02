@@ -188,9 +188,11 @@ func (csh cniServerHandler) configureNic(podName, podNamespace, provider, netns,
 			fmt.Sprintf(util.VfNameTemplate, provider):            containerNicName,
 			fmt.Sprintf(util.PodNicAnnotationTemplate, provider):  util.SriovNicType,
 		}
-		if err = util.PatchAnnotations(csh.Config.KubeClient.CoreV1().Pods(podNamespace), podNameNew, patch); err != nil {
-			klog.Errorf("failed to patch pod %s/%s: %v", podNamespace, podNameNew, err)
-			return nil, err
+		if csh.Config.KubeClient != nil {
+			if err = util.PatchAnnotations(csh.Config.KubeClient.CoreV1().Pods(podNamespace), podNameNew, patch); err != nil {
+				klog.Errorf("failed to patch pod %s/%s: %v", podNamespace, podNameNew, err)
+				return nil, err
+			}
 		}
 	}
 
@@ -667,6 +669,10 @@ func (csh cniServerHandler) checkGatewayReady(podName, podNamespace string, gwCh
 		// ignore error if disableGatewayCheck=true
 		_ = waitNetworkReady(intr, ipAddr, gateway, true, verbose, 1, nil)
 		return nil
+	}
+
+	if csh.KubeClient == nil {
+		return waitNetworkReady(intr, ipAddr, gateway, gwCheckMode == gatewayCheckModeArping, verbose, gatewayCheckMaxRetry, nil)
 	}
 
 	done := make(chan struct{}, 1)
