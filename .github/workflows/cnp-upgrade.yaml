@@ -164,6 +164,14 @@ jobs:
           kubectl get cnp -o json | jq -e '.items | length == 0'
           kubectl apply -f yamls/cnp/native.yaml
           KUBECONFIG="$HOME/.kube/config" bash hack/cnp-conformance-evidence.sh cnp make kube-ovn-cnp-e2e
+      - name: Wait for CNP conformance namespace cleanup
+        run: |
+          kubectl wait --for=delete namespace \
+            network-policy-conformance-gryffindor \
+            network-policy-conformance-slytherin \
+            network-policy-conformance-hufflepuff \
+            network-policy-conformance-ravenclaw \
+            network-policy-conformance-forbidden-forrest --timeout=180s
       - name: Verify retained v1alpha1 ANP and BANP conformance
         run: KUBECONFIG="$HOME/.kube/config" bash hack/cnp-conformance-evidence.sh anp make kube-ovn-anp-e2e
       - name: Collect upgrade evidence
