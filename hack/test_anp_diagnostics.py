@@ -110,5 +110,39 @@ class DiagnosticTests(unittest.TestCase):
             self.assertEqual(caught.exception.code, 2)
 
 
+class TraceTests(unittest.TestCase):
+    def test_trace_preserves_output_and_stops_its_process(self):
+        with tempfile.TemporaryDirectory() as temp:
+            trace = diagnostics.Trace(Path(temp) / 'trace', [sys.executable, '-u', '-c', 'import time; print("flow update"); time.sleep(30)'])
+            trace.start()
+            self.assertTrue(trace.ready.wait(timeout=2))
+            result = trace.close()
+            self.assertTrue(result['healthy'])
+            record = json.loads((Path(temp) / 'trace.jsonl').read_text())
+            self.assertEqual(record['text'], 'flow update')
+            self.assertIn('observed', record)
+            self.assertIsNotNone(trace.proc.poll())
+
+    def test_early_trace_exit_cannot_be_healthy(self):
+        with tempfile.TemporaryDirectory() as temp:
+            trace = diagnostics.Trace(Path(temp) / 'trace', [sys.executable, '-c', 'print("unsupported command"); raise SystemExit(7)'])
+            trace.start()
+            trace.thread.join(timeout=2)
+            result = trace.close()
+            self.assertFalse(result['healthy'])
+            self.assertTrue(result['ended_early'])
+            self.assertEqual(result['returncode'], 7)
+
+    def test_output_limit_is_explicit_and_bounds_file_size(self):
+        with tempfile.TemporaryDirectory() as temp:
+            trace = diagnostics.Trace(Path(temp) / 'trace', [sys.executable, '-c', 'print("x" * 200)'], limit=50)
+            trace.start()
+            trace.thread.join(timeout=2)
+            result = trace.close()
+            self.assertGreater(result['bytes_observed'], result['byte_limit'])
+            self.assertLessEqual((Path(temp) / 'trace.jsonl').stat().st_size, 50)
+            self.assertFalse(result['healthy'])
+
+
 if __name__ == '__main__':
     unittest.main()

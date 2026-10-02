@@ -18,7 +18,7 @@ for ((round=1; round<=rounds; round++)); do
   mkdir -p "$evidence"
   set +e
   (cd test/anp && python "$root/hack/anp_diagnostics.py" --output "$evidence" \
-    --interval "$interval" --max-incidents "$incidents" -- \
+    --trace --interval "$interval" --max-incidents "$incidents" -- \
     "$root/anp-diagnostics/anp.test" -test.v -test.timeout=30m -test.run='^TestAdminNetworkPolicyConformance$')
   code=$?
   set -e

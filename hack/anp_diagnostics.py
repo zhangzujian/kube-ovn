@@ -15,6 +15,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 
 
 # v0.1.8 standard ANP/BANP profiles execute these 18 cases. Six optional
@@ -98,9 +99,79 @@ def probe_outcome(result):
     return "command_error_or_other_rejection"
 
 
+class Trace:
+    """Bounded continuous evidence with explicit remote-process cleanup."""
+    def __init__(self, destination, argv, cleanup=None, limit=20 * 1024 * 1024):
+        self.destination = destination
+        self.argv = argv
+        self.cleanup = cleanup
+        self.limit = limit
+        self.bytes = 0
+        self.stopping = threading.Event()
+        self.ready = threading.Event()
+        self.started = timestamp()
+        self.ended_early = False
+        self.error = None
+        self.proc = None
+        self.thread = threading.Thread(target=self.pump)
+
+    def start(self):
+        self.destination.parent.mkdir(parents=True, exist_ok=True)
+        self.errors_file = self.destination.with_suffix('.stderr').open('w')
+        try:
+            self.proc = subprocess.Popen(self.argv, stdout=subprocess.PIPE, stderr=self.errors_file, text=True)
+            self.thread.start()
+        except OSError as err:
+            self.error = str(err)
+
+    def pump(self):
+        try:
+            with self.destination.with_suffix('.jsonl').open('w') as output:
+                for line in self.proc.stdout:
+                    self.ready.set()
+                    record = json.dumps({'observed': timestamp(), 'text': line.rstrip()}) + '\n'
+                    self.bytes += len(record.encode())
+                    if self.bytes <= self.limit:
+                        output.write(record)
+                        output.flush()
+            self.proc.wait()
+            self.ended_early = not self.stopping.is_set()
+        except Exception as err:
+            self.error = str(err)
+        finally:
+            self.proc.stdout.close()
+
+    def close(self):
+        self.stopping.set()
+        cleanup_result = None
+        if self.proc is not None and self.proc.poll() is None:
+            if self.cleanup:
+                cleanup_result = command(self.cleanup)
+            else:
+                self.proc.terminate()
+            try:
+                self.proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+                self.proc.wait()
+                self.error = 'trace required SIGKILL'
+        if self.thread.ident is not None:
+            self.thread.join()
+        self.errors_file.close()
+        healthy = self.proc is not None and self.bytes > 0 and self.bytes <= self.limit and not self.ended_early and self.error is None
+        result = {'argv': self.argv, 'started': self.started, 'finished': timestamp(),
+                  'bytes_observed': self.bytes, 'byte_limit': self.limit, 'ended_early': self.ended_early,
+                  'error': self.error, 'returncode': self.proc.returncode if self.proc else None,
+                  'cleanup': cleanup_result, 'healthy': healthy}
+        write_json(self.destination.with_suffix('.json'), result)
+        return result
+
+
 class Recorder:
-    def __init__(self, output, interval, window=8, max_incidents=12):
+    def __init__(self, output, interval, window=8, max_incidents=12, tracing=False):
         self.output = output
+        self.tracing = tracing
+        self.traces = []
         self.interval = interval
         self.window = window
         self.max_incidents = max_incidents
@@ -123,6 +194,32 @@ class Recorder:
         self.ovs = [(p["metadata"]["name"], p["spec"]["nodeName"], p["spec"]["containers"][0]["name"]) for p in json.loads(inventory["stdout"])["items"]]
         if len(self.ovs) < 2:
             raise RuntimeError("Expected OVS Pods on both kind nodes")
+
+    def start_traces(self):
+        if not self.tracing:
+            return
+        central = kubectl("exec", "-n", "kube-system", "deployment/ovn-central", "--")
+        monitors = {
+            "nb-acl": ("OVN_Northbound", "ovnnb_db.sock", "ACL", "name,priority,direction,match,action,tier,external_ids"),
+            "nb-address-sets": ("OVN_Northbound", "ovnnb_db.sock", "Address_Set", "name,addresses,external_ids"),
+            "nb-port-groups": ("OVN_Northbound", "ovnnb_db.sock", "Port_Group", "name,ports,acls,external_ids"),
+            "sb-logical-flows": ("OVN_Southbound", "ovnsb_db.sock", "Logical_Flow", "logical_datapath,pipeline,table_id,priority,match,actions,external_ids"),
+        }
+        commands = {}
+        for name, (database, socket, table, columns) in monitors.items():
+            commands[name] = (central, ["stdbuf", "-oL", "ovsdb-client", "--timestamp", "--format=json", "monitor", "unix:/run/ovn/" + socket, database, table, columns])
+        for pod, node, container in self.ovs:
+            prefix = kubectl("exec", "-n", "kube-system", pod, "-c", container, "--")
+            commands[node + "-openflow"] = (prefix, ["stdbuf", "-oL", "ovs-ofctl", "--timestamp", "monitor", "br-int", "watch:"])
+            # TCP port 80 identifies the failing Gress probe without payload dumps.
+            commands[node + "-tcp"] = (prefix, ["env", "TZ=UTC", "tcpdump", "-l", "-tttt", "-n", "-i", "any", "tcp port 80 and (net 10.16.0.0/16 or net fd00:10:16::/112)"])
+        for name, (prefix, argv) in commands.items():
+            pidfile = "/tmp/anp-diagnostics-" + uuid.uuid4().hex + ".pid"
+            wrapped = prefix + ["bash", "-c", 'echo "$$" > "$1"; shift; exec "$@"', "trace", pidfile, *argv]
+            cleanup = prefix + ["bash", "-c", 'read -r trace_pid < "$1"; kill -TERM "$trace_pid"', "trace", pidfile]
+            trace = Trace(self.output / "traces" / name, wrapped, cleanup)
+            trace.start()
+            self.traces.append(trace)
 
     def snapshot_commands(self):
         commands = {"policies": kubectl("get", "anp,banp,networkpolicies", "-A", "-o", "json"),
@@ -260,6 +357,7 @@ class Recorder:
         self.snapshot(self.output / "initial")
         with self.lock:
             self.ring.append(self.output / "initial")
+        self.start_traces()
         rolling.start()
         audit.start()
         self.audit_ready.wait(timeout=10)
@@ -326,13 +424,16 @@ class Recorder:
                     self.audit_proc.wait()
                     self.errors.append("audit stream required SIGKILL")
             audit.join()
+            trace_results = [trace.close() for trace in self.traces]
         executed = [case for case in cases if case["result"] != "SKIP"]
         coverage_complete = len(executed) == len(STANDARD_CASES) and {case["name"] for case in executed} == STANDARD_CASES
-        healthy = self.complete_snapshots > 0 and self.audit_count > 0 and coverage_complete and not self.errors
+        traces_healthy = all(result["healthy"] for result in trace_results)
+        healthy = traces_healthy and self.complete_snapshots > 0 and self.audit_count > 0 and coverage_complete and not self.errors
         summary = {"diagnostics_healthy": healthy, "command": args, "suite_returncode": returncode, "cases": cases,
                    "executed_cases": executed, "coverage_complete": coverage_complete, "failures": self.failures,
                    "snapshots": self.snapshot_count, "complete_snapshots": self.complete_snapshots,
                    "audit_events": self.audit_count, "collector_errors": self.errors,
+                   "trace_results": trace_results, "traces_healthy": traces_healthy,
                    "detailed_incident_limit": self.max_incidents, "finished": timestamp()}
         write_json(self.output / "summary.json", summary)
         if returncode != 0:
@@ -366,6 +467,7 @@ def final_logs(output):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--trace", action="store_true")
     parser.add_argument("--final-logs", action="store_true")
     parser.add_argument("--interval", type=float, default=2)
     parser.add_argument("--max-incidents", type=int, default=12)
@@ -381,7 +483,7 @@ def main():
     if options.final_logs:
         final_logs(options.output)
         return 0
-    recorder = Recorder(options.output, options.interval, max_incidents=options.max_incidents)
+    recorder = Recorder(options.output, options.interval, max_incidents=options.max_incidents, tracing=options.trace)
     return recorder.run(args)
 
 
