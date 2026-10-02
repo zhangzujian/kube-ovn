@@ -1,6 +1,7 @@
 package cnp_upgrade
 
 import (
+	"bytes"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -22,6 +23,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/remotecommand"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/test/e2e"
 	k8sframework "k8s.io/kubernetes/test/e2e/framework"
@@ -76,15 +79,15 @@ var _ = framework.SerialDescribe("[group:cnp-upgrade]", func() {
 		for _, address := range server.Status.PodIPs {
 			addresses = append(addresses, address.IP)
 		}
-		framework.ExpectNoError(wait.PollUntilContextTimeout(ctx, time.Second, 2*time.Minute, true, func(context.Context) (bool, error) {
-			return probeConnections(f, probe, addresses) == nil, nil
+		framework.ExpectNoError(wait.PollUntilContextTimeout(ctx, time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+			return probeConnections(ctx, f, probe, addresses) == nil, nil
 		}))
 		probeCtx, cancel := context.WithCancel(ctx)
 		var wg sync.WaitGroup
 		failures := make(chan error, 1)
 		wg.Go(func() {
 			for probeCtx.Err() == nil {
-				if err := probeConnections(f, probe, addresses); err != nil {
+				if err := probeConnections(probeCtx, f, probe, addresses); err != nil && probeCtx.Err() == nil {
 					select {
 					case failures <- err:
 					default:
@@ -200,7 +203,7 @@ var _ = framework.SerialDescribe("[group:cnp-upgrade]", func() {
 		framework.ExpectNoError(u.Verify(ctx))
 		ginkgo.By("Rolling the controller back to the original legacy image")
 		setControllerImage(f, "kube-ovn-controller", source)
-		framework.ExpectNoError(probeConnections(f, probe, addresses))
+		framework.ExpectNoError(probeConnections(ctx, f, probe, addresses))
 		ginkgo.By("Restoring the compatible controller for subsequent conformance suites")
 		setControllerImage(f, "kube-ovn-controller", target)
 	})
@@ -231,17 +234,35 @@ func upgradePolicy(name, namespace string, baseline bool) *unstructured.Unstruct
 	}}
 }
 
-func probeConnections(f *framework.Framework, pod *corev1.Pod, addresses []string) error {
+func probeConnections(ctx context.Context, f *framework.Framework, pod *corev1.Pod, addresses []string) error {
 	for _, address := range addresses {
 		allowed, denied := "http://"+net.JoinHostPort(address, "8080"), "http://"+net.JoinHostPort(address, "8081")
-		command := fmt.Sprintf("curl -gfsS --noproxy '*' --connect-timeout 2 --max-time 3 %s >/dev/null && ! curl -gfsS --noproxy '*' --connect-timeout 1 --max-time 2 %s >/dev/null", allowed, denied)
-		command += fmt.Sprintf(" && ! curl -gfsS --noproxy '*' --connect-timeout 1 --max-time 2 http://%s >/dev/null", net.JoinHostPort(address, "8082"))
-		_, stderr, err := framework.ExecShellInContainer(f, pod.Namespace, pod.Name, "probe", command)
+		command := fmt.Sprintf("curl -gsS --noproxy '*' --connect-timeout 2 --max-time 3 %s >/dev/null && ! curl -gsS --noproxy '*' --connect-timeout 1 --max-time 2 %s >/dev/null", allowed, denied)
+		command += fmt.Sprintf(" && ! curl -gsS --noproxy '*' --connect-timeout 1 --max-time 2 http://%s >/dev/null", net.JoinHostPort(address, "8082"))
+		stderr, err := executeProbe(ctx, f, pod, command)
 		if err != nil {
 			return fmt.Errorf("positive/negative new-connection probe %s failed at %s (%s): %w", address, time.Now().UTC().Format(time.RFC3339Nano), stderr, err)
 		}
 	}
 	return nil
+}
+
+// Bound the API-server exec stream as well as curl. A node rollout may interrupt
+// SPDY without closing it, and cleanup must be able to stop the continuous probe.
+func executeProbe(ctx context.Context, f *framework.Framework, pod *corev1.Pod, command string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	req := f.ClientSet.CoreV1().RESTClient().Post().Resource("pods").Name(pod.Name).
+		Namespace(pod.Namespace).SubResource("exec").VersionedParams(&corev1.PodExecOptions{
+		Container: "probe", Command: []string{"/bin/sh", "-c", command}, Stderr: true,
+	}, scheme.ParameterCodec)
+	executor, err := remotecommand.NewSPDYExecutor(f.ClientConfig(), "POST", req.URL())
+	if err != nil {
+		return "", err
+	}
+	var stderr bytes.Buffer
+	err = executor.StreamWithContext(ctx, remotecommand.StreamOptions{Stderr: &stderr})
+	return stderr.String(), err
 }
 
 func upgradeComponents(f *framework.Framework, source, target string) {
