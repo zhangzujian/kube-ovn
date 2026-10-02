@@ -154,12 +154,18 @@ jobs:
         run: |
           mkdir -p cnp-evidence
           kubectl get pods,deployments,replicasets,leases -n kube-system -o yaml > cnp-evidence/control-plane.yaml
+          kubectl get daemonsets -n kube-system -o yaml > cnp-evidence/daemonsets.yaml
           kubectl get pods -n kube-system -l app=kube-ovn-controller -o json | jq '[.items[] | {name:.metadata.name,uid:.metadata.uid,capability:.metadata.annotations["kube-ovn.io/cnp-capability"],receipt:.metadata.annotations["kube-ovn.io/cnp-verification-receipt"]}]' > cnp-evidence/application-receipts.json
           kubectl get cnp,crd -o yaml > cnp-evidence/policy-schema.yaml
           kubectl get events -A -o yaml > cnp-evidence/events.yaml
           kubectl logs -n kube-system -l app=kube-ovn-controller --all-containers=true --tail=5000 > cnp-evidence/controller.log
           kubectl logs -n kube-system -l app=ovn-central --all-containers=true --tail=1000 > cnp-evidence/central.log || true
           kubectl logs -n kube-system -l app=ovs --all-containers=true --tail=1000 > cnp-evidence/ovs.log || true
+          kubectl logs -n kube-system -l app=kube-ovn-cni -c cni-server --prefix=true --tail=3000 > cnp-evidence/cni.log || true
+          kubectl logs -n kube-system -l app=kube-ovn-cni -c cni-server --previous --prefix=true --tail=3000 > cnp-evidence/cni-previous.log || true
+          for node in $(kind get nodes --name kube-ovn); do
+            docker exec "$node" tail -n 3000 /var/log/kube-ovn/kube-ovn-cni.log > "cnp-evidence/$node-cni-file.log" || true
+          done
       - uses: actions/upload-artifact@v7
         if: always()
         with:
