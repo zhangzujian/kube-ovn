@@ -86,7 +86,18 @@ func (h *controllerHelm) failAndRollback(f *framework.Framework, expectedImage s
 	// This digest is absent from the disposable registry. It must fail to pull,
 	// so --atomic has to restore the last successful release rather than succeed.
 	image := "localhost:5001/cnp-upgrade@sha256:" + strings.Repeat("0", 64)
+	started := time.Now().Truncate(time.Second)
 	framework.ExpectError(h.upgrade(image), "the deliberately unavailable image must trigger atomic rollback")
+	events, err := f.ClientSet.CoreV1().Events("kube-system").List(context.Background(), metav1.ListOptions{})
+	framework.ExpectNoError(err)
+	pullFailed := false
+	for _, event := range events.Items {
+		if event.Reason == "Failed" && strings.Contains(event.Message, image) && !event.CreationTimestamp.Time.Before(started) {
+			pullFailed = true
+			break
+		}
+	}
+	framework.ExpectEqual(pullFailed, true, "the failed Helm candidate must reach image pull; scheduling failure does not exercise the intended rollback")
 	deployment, err := f.ClientSet.AppsV1().Deployments("kube-system").Get(context.Background(), "kube-ovn-controller", metav1.GetOptions{})
 	framework.ExpectNoError(err)
 	for _, container := range deployment.Spec.Template.Spec.Containers {
