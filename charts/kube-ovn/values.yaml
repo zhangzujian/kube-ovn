@@ -186,6 +186,8 @@ cni_conf:
   LOCAL_BIN_DIR: "/usr/local/bin"
   MOUNT_LOCAL_BIN_DIR: false
   NON_PRIMARY_CNI: false
+  # Reject daemon-side CNI host networking after the new CNI binary is installed. Keep false for features that still require daemon-side network namespace operations.
+  DISABLE_LEGACY_CNI_EXECUTION: true
 
 kubelet_conf:
   KUBELET_DIR: "/var/lib/kubelet"

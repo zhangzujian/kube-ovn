@@ -1047,6 +1047,15 @@ false
 			<td>Whether to use Kube-OVN as non-primary CNI. When set to true, Kube-OVN will not allocate/handle primary network interfaces. Interfaces are created using Network Attachment Definitions (NADs)</td>
 		</tr>
 		<tr>
+			<td>cni.disableLegacyCNIExecution</td>
+			<td>bool</td>
+			<td><pre lang="json">
+true
+</pre>
+</td>
+			<td>Whether the daemon rejects legacy CNI requests that perform host networking. The CNI binary must be upgraded before enabling this. Keep false for features that still require daemon-side network namespace operations.</td>
+		</tr>
+		<tr>
 			<td>cni.toolingDirectory</td>
 			<td>string</td>
 			<td><pre lang="json">

@@ -38,6 +38,7 @@ ENABLE_EXTERNAL_VPC=${ENABLE_EXTERNAL_VPC:-false}
 CNI_CONFIG_PRIORITY=${CNI_CONFIG_PRIORITY:-01}
 ENABLE_LB_SVC=${ENABLE_LB_SVC:-false}
 ENABLE_NFTABLE_LB_SVC=${ENABLE_NFTABLE_LB_SVC:-true}
+DISABLE_LEGACY_CNI_EXECUTION=${DISABLE_LEGACY_CNI_EXECUTION:-true}
 ENABLE_NAT_GW=${ENABLE_NAT_GW:-true}
 ENABLE_KEEP_VM_IP=${ENABLE_KEEP_VM_IP:-true}
 ENABLE_ARP_DETECT_IP_CONFLICT=${ENABLE_ARP_DETECT_IP_CONFLICT:-true}
@@ -120,6 +121,21 @@ DEBUG_WRAPPER=${DEBUG_WRAPPER:-}
 RUN_AS_USER=65534 # run as nobody
 if [ "$ENABLE_OVN_IPSEC" = "true" -o -n "$DEBUG_WRAPPER" ]; then
   RUN_AS_USER=0
+fi
+
+CNI_SERVER_RUN_AS_USER="$RUN_AS_USER"
+CNI_SERVER_CAPABILITIES="                - NET_ADMIN
+                - NET_BIND_SERVICE
+                - NET_RAW
+                - SYS_NICE"
+if [ "$DISABLE_LEGACY_CNI_EXECUTION" != "true" ]; then
+  CNI_SERVER_RUN_AS_USER=0
+  CNI_SERVER_CAPABILITIES="                - NET_ADMIN
+                - NET_BIND_SERVICE
+                - NET_RAW
+                - SYS_ADMIN
+                - SYS_PTRACE
+                - SYS_NICE"
 fi
 
 KUBELET_DIR=${KUBELET_DIR:-/var/lib/kubelet}
@@ -9098,6 +9114,7 @@ spec:
           - -xec
           - |
             chmod +t /usr/local/sbin
+            chown -R nobody: /var/log/kube-ovn
             iptables -V
         securityContext:
           allowPrivilegeEscalation: true
@@ -9175,17 +9192,14 @@ spec:
           - --enable-acl-sampling=$ENABLE_ACL_SAMPLING
           - --acl-sampling-set-id=$ACL_SAMPLING_SET_ID
           - --acl-sampling-local-group-id=$ACL_SAMPLING_LOCAL_GROUP_ID
+          - --disable-legacy-cni-execution=$DISABLE_LEGACY_CNI_EXECUTION
         securityContext:
-          runAsUser: 0
+          runAsGroup: ${CNI_SERVER_RUN_AS_USER}
+          runAsUser: ${CNI_SERVER_RUN_AS_USER}
           privileged: false
           capabilities:
             add:
-              - NET_ADMIN
-              - NET_BIND_SERVICE
-              - NET_RAW
-              - SYS_ADMIN
-              - SYS_NICE
-              - SYS_PTRACE
+${CNI_SERVER_CAPABILITIES}
         env:
           - name: ENABLE_SSL
             value: "$ENABLE_SSL"

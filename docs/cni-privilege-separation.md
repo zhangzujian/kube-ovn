@@ -12,9 +12,9 @@ The plan contains network intent and validated resource identifiers. It does not
 
 The same sequence is used for DEL. DEL obtains a deletion plan before removing an interface, so a missing Pod or a missing namespace does not make the executor guess which host object to remove. The local executor owns host networking cleanup; the daemon commit handles Kubernetes and egress bookkeeping.
 
-The daemon rejects old daemon-side ADD and DEL execution when the chart passes `--disable-legacy-cni-execution=true`. The flag is disabled by default during the compatibility window so older CNI binaries can be rolled out deliberately. Operators must upgrade the CNI binary before enabling the flag.
+The daemon rejects old daemon-side ADD and DEL execution when the chart passes `--disable-legacy-cni-execution=true`. The v1/v2 charts and `install.sh` enable this mode by default. Set the corresponding chart or installer option to `false` only while rolling back to an older CNI binary.
 
-This change moves Pod attachment privileges out of the `kube-ovn-daemon` CNI server. It does not yet remove privileges needed for node gateway reconciliation, ProviderNetwork updates, netfilter, IPsec, TProxy, or other continuous node work. Those functions remain in the node daemon until their own execution mode is migrated.
+In the new mode, the CNI server runs with the chart's unprivileged service user (root is retained when IPsec requires it), keeps the capabilities needed by its continuous node work, and drops the legacy CNI `SYS_ADMIN` and `SYS_PTRACE` capabilities. The compatibility mode restores the root user and the legacy capability set. This change moves Pod attachment privileges out of the `kube-ovn-daemon` CNI server; node gateway reconciliation, ProviderNetwork updates, netfilter, IPsec, TProxy, and other continuous node work remain in the node daemon until their own execution mode is migrated. Deployments that still enable a feature requiring daemon-side namespace creation or switching must keep compatibility mode enabled until that feature is migrated.
 
 ## Upgrade and rollback
 
