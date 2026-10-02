@@ -211,8 +211,8 @@ class Recorder:
         for pod, node, container in self.ovs:
             prefix = kubectl("exec", "-n", "kube-system", pod, "-c", container, "--")
             commands[node + "-openflow"] = (prefix, ["stdbuf", "-oL", "ovs-ofctl", "--timestamp", "monitor", "br-int", "watch:"])
-            # TCP port 80 identifies the failing Gress probe without payload dumps.
-            commands[node + "-tcp"] = (prefix, ["env", "TZ=UTC", "tcpdump", "-l", "-tttt", "-n", "-i", "any", "tcp port 80 and (net 10.16.0.0/16 or net fd00:10:16::/112)"])
+            # Decode transport headers for conformance traffic without payload dumps.
+            commands[node + "-packets"] = (prefix, ["env", "TZ=UTC", "tcpdump", "-s", "96", "-l", "-tttt", "-n", "-i", "any", "(tcp or udp or sctp) and (net 10.16.0.0/16 or net fd00:10:16::/112)"])
         for name, (prefix, argv) in commands.items():
             pidfile = "/tmp/anp-diagnostics-" + uuid.uuid4().hex + ".pid"
             wrapped = prefix + ["bash", "-c", 'echo "$$" > "$1"; shift; exec "$@"', "trace", pidfile, *argv]

@@ -49,7 +49,7 @@ Each attempt uploads a distinct artifact for each source/family, retained for
 | `round-N/summary.json` | All Go case results (18 executed standard cases plus optional skips), original suite exit code, every parsed failed probe, collection health/errors |
 | `round-N/anp-test-report.yaml` | Native profile report; use the Go case list as well because this report omits cross-profile cases |
 | `round-N/audit.jsonl` | Policy writes at RequestReceived/ResponseComplete and Pod exec metadata; audit IDs and API-server timestamps |
-| `round-N/traces/` | Continuous NB ACL/Address_Set/Port_Group and SB Logical_Flow updates, both nodes’ OpenFlow changes and TCP port 80 packet timestamps; per-stream errors/health |
+| `round-N/traces/` | Continuous NB ACL/Address_Set/Port_Group and SB Logical_Flow updates, both nodes’ OpenFlow changes and TCP/UDP/SCTP packet timestamps; per-stream errors/health |
 | `round-N/initial/`, `rolling/` | Initial snapshot and the last eight completed rolling snapshots |
 | `round-N/incidents/failure-NNN/before/` | Preserved completed snapshots preceding detection |
 | `round-N/incidents/failure-NNN/immediate/` | Snapshot collected when an incident worker handles the failure |
@@ -102,8 +102,8 @@ Continuous tracing adds passive subscriptions before the suite starts. Each stre
 records its command, observation timestamps, original tool timestamps, stderr,
 exit/cleanup status and a 20 MiB output limit. Early termination, absent output
 or exceeding the limit makes trace health false. Trace processes are terminated
-by their own recorded remote PID at round completion. TCP traces decode headers
-without payload dumps and are restricted to port 80 in the conformance Pod CIDRs.
+by their own recorded remote PID at round completion. Packet traces use a 96-byte snapshot and decode transport headers without
+payload dumps, restricted to TCP/UDP/SCTP in the conformance Pod CIDRs.
 Original SYN timestamps and source ports distinguish new probes from preceding
 connections. OVS flow updates and NB/SB row UUIDs can locate rule replacement
 relative to those packets. Stream observation time includes transport delay;
