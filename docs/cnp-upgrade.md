@@ -1,9 +1,16 @@
 # ClusterNetworkPolicy v0.2.0 upgrade and rollback
 
 The first compatible Kube-OVN controller reads both legacy `ports` and v0.2.0
-`protocols` using a raw dynamic informer. Both forms use the same `v1alpha2` API
+`protocols` using raw dynamic API reads. Both forms use the same `v1alpha2` API
 version. Installing the upstream v0.2.0 CRD over legacy objects can prune their
 port restrictions. Updating the Go dependency alone is therefore unsafe.
+
+The dynamic informer triggers reconciliation, but enforcement reads the current
+object from the API server. A watch opened under the native schema can continue
+pruning restored `ports` after reverse migration even when current GETs preserve
+them. Reconciliation and selector processing therefore use current GET/LISTs;
+API failures retain the last successful OVN rules and retry without using cached
+specs. This adds API requests when policies or selected workloads change.
 
 Controller/image upgrades and policy representation migration are separate
 operations. An ordinary upgrade ends with a compatible controller and legacy
@@ -150,6 +157,9 @@ image digest, process session and verification nonce. It is not CNP status or
 a readiness signal. Full inventory verification requires every receipt to come
 from the same leader session and rechecks that session after the final inventory
 read. A leader change requires fresh verification of every policy.
+Before publishing a receipt, the controller compares the applied policy with
+the current API object's complete normalized spec, in addition to its identity
+and generation.
 Failed evidence publication blocks migration while enforcement
 continues. Pod replacement removes evidence; every new request needs a fresh
 receipt from the current leader. No additional account or permission is needed.

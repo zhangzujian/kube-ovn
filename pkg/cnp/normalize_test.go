@@ -8,6 +8,9 @@ import (
 	jsonpatch "github.com/evanphx/json-patch/v5"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -162,12 +165,13 @@ func TestRawListerPreservesLegacyAndIsolatesInvalidObjects(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	lister := &Lister{Indexer: indexer}
-	policy, err := lister.Get("test")
+	client := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{Resource: "ClusterNetworkPolicyList"}, legacy, invalid)
+	lister := &Lister{Indexer: indexer, Resource: client.Resource(Resource)}
+	policy, err := lister.Get(t.Context(), "test")
 	if err != nil || policy.Spec.Ingress[0].Protocols[0].TCP.DestinationPort.Number != 80 {
 		t.Fatalf("lost legacy ports: %v", err)
 	}
-	items, err := lister.List(labels.Everything())
+	items, err := lister.List(t.Context(), labels.Everything())
 	if len(items) != 1 || err == nil {
 		t.Fatal("invalid object must be reported without hiding valid policies")
 	}

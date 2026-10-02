@@ -127,7 +127,7 @@ func (c *Controller) handleAddCnp(key string) (err error) {
 		}
 	}()
 
-	cachedCnp, err := c.cnpsLister.Get(key)
+	currentCnp, err := c.cnpsLister.Get(c.cnpContext, key)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
 			return nil
@@ -135,8 +135,8 @@ func (c *Controller) handleAddCnp(key string) (err error) {
 		klog.Error(err)
 		return err
 	}
-	klog.Infof("handle add cnp %s", cachedCnp.Name)
-	cnp := cachedCnp.DeepCopy()
+	klog.Infof("handle add cnp %s", currentCnp.Name)
+	cnp := currentCnp.DeepCopy()
 
 	// Validate the CNP is valid and can be configured
 	c.priorityMapMutex.Lock()
@@ -313,7 +313,7 @@ func (c *Controller) handleUpdateCnp(changed *ClusterNetworkPolicyChangedDelta) 
 	klog.Infof("handleUpdateCnp: processing CNP %s, field=%s, DNSReconcileDone=%v",
 		changed.key, changed.field, changed.DNSReconcileDone)
 
-	cachedCnp, err := c.cnpsLister.Get(changed.key)
+	currentCnp, err := c.cnpsLister.Get(c.cnpContext, changed.key)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
 			return nil
@@ -321,7 +321,7 @@ func (c *Controller) handleUpdateCnp(changed *ClusterNetworkPolicyChangedDelta) 
 		klog.Error(err)
 		return err
 	}
-	desiredCnp := cachedCnp.DeepCopy()
+	desiredCnp := currentCnp.DeepCopy()
 	klog.Infof("handle update cluster network policy %s", desiredCnp.Name)
 
 	// Verify the CNP is correctly written
@@ -814,9 +814,14 @@ func (c *Controller) resolveDomainNamesForCnp(domainNames []v1alpha2.DomainName)
 }
 
 func (c *Controller) updateCnpsByLabelsMatch(nsLabels, podLabels map[string]string) {
-	cnps, err := c.cnpsLister.List(labels.Everything())
+	cnps, err := c.cnpsLister.List(c.cnpContext, labels.Everything())
 	if err != nil {
 		klog.Errorf("failed to normalize CNPs: %v", err)
+		// Preserve eventual selector reconciliation when a current API list
+		// fails. Cached identities are safe to queue; cached specs are not.
+		for _, obj := range c.cnpsLister.Indexer.List() {
+			c.addCnpQueue.Add(obj.(*unstructured.Unstructured).GetName())
+		}
 	}
 	for _, cnp := range cnps {
 		changed := &ClusterNetworkPolicyChangedDelta{

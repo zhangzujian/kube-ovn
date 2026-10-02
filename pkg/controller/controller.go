@@ -822,7 +822,7 @@ func Run(ctx context.Context, config *Configuration) {
 		controller.deleteBanpQueue = newTypedRateLimitingQueue[*v1alpha1.BaselineAdminNetworkPolicy]("DeleteBaseAdminNetworkPolicy", nil)
 		controller.banpKeyMutex = keymutex.NewHashed(numKeyLocks)
 
-		controller.cnpsLister = &cnp.Lister{Indexer: cnpInformer.Informer().GetIndexer()}
+		controller.cnpsLister = &cnp.Lister{Indexer: cnpInformer.Informer().GetIndexer(), Resource: config.DynamicClient.Resource(cnp.Resource)}
 		controller.cnpsSynced = cnpInformer.Informer().HasSynced
 		controller.addCnpQueue = newTypedRateLimitingQueue[string]("AddClusterNetworkPolicy", nil)
 		controller.updateCnpQueue = newTypedRateLimitingQueue[*ClusterNetworkPolicyChangedDelta]("UpdateClusterNetworkPolicy", nil)

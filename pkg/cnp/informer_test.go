@@ -23,8 +23,8 @@ func TestRawInformerListWatchRetainsPortRestrictions(t *testing.T) {
 	if !cache.WaitForCacheSync(t.Context().Done(), informer.HasSynced) {
 		t.Fatal("raw informer did not synchronize")
 	}
-	lister := &Lister{Indexer: informer.GetIndexer()}
-	policy, err := lister.Get(legacy.GetName())
+	lister := &Lister{Indexer: informer.GetIndexer(), Resource: client.Resource(Resource)}
+	policy, err := lister.Get(t.Context(), legacy.GetName())
 	if err != nil || policy.Spec.Ingress[0].Protocols[0].TCP.DestinationPort.Number != 80 {
 		t.Fatalf("initial list lost ports: %v", err)
 	}
@@ -35,7 +35,7 @@ func TestRawInformerListWatchRetainsPortRestrictions(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := wait.PollUntilContextTimeout(t.Context(), time.Millisecond, time.Second, true, func(_ context.Context) (bool, error) {
-		policy, err := lister.Get(updated.GetName())
+		policy, err := lister.Get(t.Context(), updated.GetName())
 		return err == nil && policy.Generation == 2 && policy.Spec.Ingress[0].Protocols[0].TCP.DestinationPort.Number == 81, nil
 	}); err != nil {
 		t.Fatal(err)

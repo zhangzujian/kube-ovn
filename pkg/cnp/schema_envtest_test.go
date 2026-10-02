@@ -8,11 +8,14 @@ import (
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
 
@@ -159,4 +162,92 @@ func TestAPIServerCNPTransition(t *testing.T) {
 		t.Fatalf("replacement identity or legacy restrictions changed: %v", err)
 	}
 	install("legacy-only")
+}
+
+// A controller's watch can outlive a CRD schema change. Exercise reverse
+// migration on the same watch that first observed the native representation.
+func TestAPIServerCNPReverseMigrationWatch(t *testing.T) {
+	if os.Getenv("KUBEBUILDER_ASSETS") == "" {
+		t.Skip("set KUBEBUILDER_ASSETS to run real API-server migration validation")
+	}
+	environment := &envtest.Environment{}
+	config, err := environment.Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := environment.Stop(); err != nil {
+			t.Error(err)
+		}
+	})
+	install := func(mode string) {
+		t.Helper()
+		obj, err := Schema(mode)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var external apiextensionsv1.CustomResourceDefinition
+		if err := runtime.DefaultUnstructuredConverter.FromUnstructured(obj.Object, &external); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := envtest.InstallCRDs(config, envtest.CRDInstallOptions{CRDs: []*apiextensionsv1.CustomResourceDefinition{&external}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	install("native")
+	client, err := dynamic.NewForConfig(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	obj := rawPolicy(t, `,"protocols":[{"tcp":{"destinationPort":{"number":80}}}]}`)
+	obj.SetUID("")
+	obj.SetResourceVersion("")
+	obj.SetGeneration(0)
+	native, err := client.Resource(Resource).Create(t.Context(), obj, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	factory := dynamicinformer.NewDynamicSharedInformerFactory(client, 0)
+	informer := factory.ForResource(Resource).Informer()
+	factory.Start(t.Context().Done())
+	if !cache.WaitForCacheSync(t.Context().Done(), informer.HasSynced) {
+		t.Fatal("native informer did not synchronize")
+	}
+	lister := &Lister{Indexer: informer.GetIndexer(), Resource: client.Resource(Resource)}
+	install("dual")
+	probe := &Upgrade{Dynamic: client}
+	if err := wait.PollUntilContextTimeout(t.Context(), 100*time.Millisecond, 30*time.Second, true, func(ctx context.Context) (bool, error) {
+		return probe.probeSchema(ctx, "dual")
+	}); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := PlanObject(native, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	patch, err := plan.PatchBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := client.Resource(Resource).Patch(t.Context(), native.GetName(), types.JSONPatchType, patch, metav1.PatchOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := wait.PollUntilContextTimeout(t.Context(), 100*time.Millisecond, 10*time.Second, true, func(context.Context) (bool, error) {
+		obj, exists, err := informer.GetIndexer().GetByKey(legacy.GetName())
+		return exists && obj.(metav1.Object).GetResourceVersion() == legacy.GetResourceVersion(), err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	policy, err := lister.Get(t.Context(), legacy.GetName())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(policy.Spec.Ingress[0].Protocols) != 1 || policy.Spec.Ingress[0].Protocols[0].TCP.DestinationPort.Number != 80 {
+		t.Fatal("reverse migration lost the port restriction on the existing native watch")
+	}
+	policies, err := lister.List(t.Context(), labels.Everything())
+	if err != nil || len(policies) != 1 || len(policies[0].Spec.Ingress[0].Protocols) != 1 || policies[0].Spec.Ingress[0].Protocols[0].TCP.DestinationPort.Number != 80 {
+		t.Fatalf("selector reconciliation list lost reverse-migrated restrictions: %v", err)
+	}
 }

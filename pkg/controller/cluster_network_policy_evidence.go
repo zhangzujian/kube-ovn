@@ -181,6 +181,17 @@ func (c *Controller) completeCnpEvidence(policy *v1alpha2.ClusterNetworkPolicy) 
 	if current.GetUID() != policy.UID || current.GetGeneration() != policy.Generation || current.GetAnnotations()[cnp.VerifyAnnotation] != record.Request || current.GetAnnotations()[util.ACLActionsLogAnnotation] != policy.Annotations[util.ACLActionsLogAnnotation] {
 		return fmt.Errorf("CNP %s changed during application", policy.Name)
 	}
+	currentPolicy, err := cnp.Normalize(current)
+	if err != nil {
+		return err
+	}
+	currentDigest, err := cnpApplyDigest(currentPolicy)
+	if err != nil {
+		return err
+	}
+	if currentDigest != record.ApplyDigest {
+		return fmt.Errorf("CNP %s spec differs from the applied policy", policy.Name)
+	}
 	previous, found := c.cnpReceipts.Load(policy.Name)
 	if record.Request != "" && (!found || previous.Request != record.Request || previous.PolicyUID != record.PolicyUID) {
 		if err := c.writeCnpEvidence(&record); err != nil {

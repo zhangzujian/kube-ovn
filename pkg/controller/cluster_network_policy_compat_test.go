@@ -4,7 +4,11 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
+	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/keymutex"
@@ -46,6 +50,34 @@ func TestDeleteCnpRawTombstonePreservesOtherPriorities(t *testing.T) {
 	require.Equal(t, map[string]int32{"keep": 0}, c.anpNamePrioMap)
 }
 
+func TestCnpAPIReadFailureRetainsOVNPolicy(t *testing.T) {
+	fake := newFakeController(t)
+	c := fake.fakeController
+	c.cnpContext = t.Context()
+	c.cnpKeyMutex = keymutex.NewHashed(1)
+	c.anpPrioNameMap = map[int32]string{55: "existing"}
+	c.anpNamePrioMap = map[string]int32{"existing": 55}
+	// The cached watch object has already lost its port fields. An API error
+	// must not fall back to it and replace the last successful OVN rules.
+	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+	require.NoError(t, indexer.Add(&unstructured.Unstructured{Object: map[string]any{
+		"metadata": map[string]any{"name": "existing"},
+		"spec": map[string]any{
+			"tier": "Admin", "priority": int64(55), "subject": map[string]any{"namespaces": map[string]any{}},
+			"ingress": []any{map[string]any{"action": "Accept", "from": []any{map[string]any{"namespaces": map[string]any{}}}}},
+		},
+	}}))
+	client := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme())
+	client.PrependReactor("get", cnp.Resource.Resource, func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, apierrors.NewServiceUnavailable("injected API read failure")
+	})
+	c.cnpsLister = &cnp.Lister{Indexer: indexer, Resource: client.Resource(cnp.Resource)}
+	// No OVN mock expectations: any read/write after API failure fails.
+	require.ErrorContains(t, c.handleAddCnp("existing"), "injected API read failure")
+	require.Equal(t, map[int32]string{55: "existing"}, c.anpPrioNameMap)
+	require.Equal(t, map[string]int32{"existing": 55}, c.anpNamePrioMap)
+}
+
 func TestCnpDisabledDNSRejectsBeforeOVNChanges(t *testing.T) {
 	fake := newFakeController(t)
 	c := fake.fakeController
@@ -65,6 +97,10 @@ func TestCnpDisabledDNSRejectsBeforeOVNChanges(t *testing.T) {
 		},
 	}}
 	require.NoError(t, c.cnpsLister.Indexer.Add(raw))
+	raw.SetAPIVersion(cnp.Resource.GroupVersion().String())
+	raw.SetKind("ClusterNetworkPolicy")
+	c.cnpContext = t.Context()
+	c.cnpsLister.Resource = dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), raw).Resource(cnp.Resource)
 	// No OVN mock expectations: any read/write before rejection fails this test.
 	require.ErrorContains(t, c.handleAddCnp(raw.GetName()), "DNSNameResolver is disabled")
 	require.Equal(t, map[int32]string{55: "existing"}, c.anpPrioNameMap)
