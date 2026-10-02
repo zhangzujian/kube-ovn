@@ -1,8 +1,11 @@
 # kubectl-ko
 
 `kubectl-ko` is a standalone Go kubectl plugin for operating and diagnosing
-Kube-OVN. It talks to the Kubernetes API and executes the OVN/OVS tools shipped
-in the cluster. No local Bash, OVN, OVS, tar, or kubectl subprocess is required.
+Kube-OVN. It talks to the Kubernetes API and routes node-sensitive operations
+through the independent `kubectl-ko-node-agent` DaemonSet. The agent is not a
+`kube-ovn-cni`, `ovs`, `ovs-ovn`, or `ovn-central` container; it accesses the
+node's sockets and namespaces directly. No local Bash, OVN, OVS, tar, or
+kubectl subprocess is required.
 `kubectl` itself is only needed to invoke the plugin as `kubectl ko`.
 
 ## Installation
@@ -34,9 +37,13 @@ Bash and local OVN/OVS installations are not required. Use PowerShell 7.4 or
 later (or cmd.exe) when redirecting binary stdout such as `tcpdump -w -`;
 older PowerShell versions can decode and corrupt native command output.
 
-For a source checkout, run `make build-kubectl-ko`; the result is
-`dist/images/kubectl-ko`. The module uses replacements, so installing release
+For a source checkout, run `make build-kubectl-ko`; the results are
+`dist/images/kubectl-ko` and the Linux `dist/images/kubectl-ko-node-agent`.
+Install the chart's `kubectl-ko-node-agent` DaemonSet before using commands
+that need node access. The module uses replacements, so installing release
 binaries is preferred to `go install ...@version`.
+The agent is scheduled only on Linux nodes; Windows client support covers the
+kubectl plugin, while node-side OVN/OVS operations remain Linux-only.
 On Windows, build from the checkout with
 `go build -o kubectl-ko.exe ./cmd/kubectl-ko`. Cross-builds via
 `GOOS=windows GOARCH=amd64 make build-kubectl-ko` produce
@@ -83,9 +90,9 @@ kubectl ko
 
 | New command | Complete capability and effects |
 | --- | --- |
-| `exec nbctl`, `exec sbctl` | Find the requested database leader independently and execute its OVN CLI. All CLI operations, including writes and multi-command transactions, remain available. |
+| `exec nbctl`, `exec sbctl` | Find the requested database leader independently and execute its OVN CLI through the node agent's mounted OVN socket. All CLI operations, including writes and multi-command transactions, remain available. |
 | `exec ic-nbctl`, `exec ic-sbctl` | Find the corresponding interconnection leader and execute its CLI. |
-| `exec vsctl/ofctl/dpctl/appctl --node NODE` | Execute the selected OVS tool in that node's openvswitch container. Remote commands may change live state. |
+| `exec vsctl/ofctl/dpctl/appctl --node NODE` | Execute the selected OVS tool through the node agent and its mounted OVS sockets. Remote commands may change live state. |
 | `db nb status`, `db sb status` | Show RAFT cluster and storage status for the selected leader. |
 | `db health` | Check both NB and SB storage on every running central container, without requiring a healthy leader. Report unhealthy storage as failure. |
 | `db nb backup`, `db sb backup` | Convert and download a standalone database, verify DB name and SHA256, and publish without overwriting an existing file. Write a JSON provenance sidecar; remove the temporary remote backup. |
@@ -97,7 +104,7 @@ kubectl ko
 | `diagnose node NODE` | Perform configuration checks and restrict the active pinger probes to one node. |
 | `diagnose subnet SUBNET` | Check the subnet, create an isolated temporary DaemonSet and NodePort Service, and check peer TCP/UDP, node ICMP and NodePort connectivity from those subnet Pods. Does not require optional CNI node TCP/UDP listeners. |
 | `diagnose connectivity` | Check configuration and probe explicit TCP/UDP IP endpoints using existing pinger Pods. Does not create the NodePort/Subnet probe resources. |
-| `diagnose environment` | Run the image environment checker in each running CNI container. |
+| `diagnose environment` | Run the environment checker through one independent node agent per node; it does not enter CNI containers. |
 | `logs` | Collect component files, container logs and Linux node state in parallel; limit each item and record partial failures in a manifest. |
 | `restart` | Restart and wait for central, OVS, controller, CNI, pinger and monitor in dependency order. |
 | `perf run` | Create isolated probe Pods/Service; measure Pod, host, Service and multicast performance. Temporarily configure an OVN LB and multicast membership, then clean up owned changes. Does not delete central leaders. |
@@ -163,7 +170,11 @@ example `diagnose cluster --external-address 1.1.1.1 --external-address
 or when a probe Pod has no matching IP family.
 No public Internet endpoint is required for the default cluster health check.
 
-Exec uses WebSocket with SPDY fallback only for supported handshake failures.
+The node agent uses Kubernetes `pods/attach` to carry a versioned gRPC stream
+over stdin/stdout. It does not use `pods/exec` against Kube-OVN component Pods.
+Probe Pods may use the normal Kubernetes streaming path for their own
+short-lived test process. Exec uses WebSocket with SPDY fallback only for
+supported handshake failures.
 Remote exit codes propagate; failed commands are never replayed. Streams have
 no TTY transformations or stdout banners. Invalid arguments fail before client
 creation. Closing exec does not promise to kill independently backgrounded
@@ -217,10 +228,12 @@ failure stops measurements and still cleans up the owned load balancer.
 ## Compatibility and migration
 
 The supported starting point is a matching CLI and Kube-OVN release. Remote
-image tools determine feature availability. There is no direct database
-connection or new diagnostic agent. Existing kubeconfig authorization applies:
-resource discovery requires get/list, exec needs the applicable pods/exec
-GET/POST authorization, logs need pods/log, probes need create/delete, and
+image tools determine feature availability. The independent node agent is
+required for node sockets, namespaces, captures and host diagnostics; it is
+deployed by the chart and does not share a component Pod. Existing kubeconfig
+authorization applies:
+resource discovery requires get/list, node-agent access needs `pods/attach`,
+logs need pods/log, probes need create/delete, and
 rollout/recovery need workload patch/scale permissions. Exec access is not a
 read-only database permission.
 

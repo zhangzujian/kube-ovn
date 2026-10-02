@@ -63,6 +63,10 @@ func (a *Application) databaseStatus(ctx context.Context, client *Client, _ []st
 	if len(targets) == 0 {
 		return errors.New("no running ovn-central containers are available")
 	}
+	targets, err = client.replaceWithAgents(ctx, targets)
+	if err != nil {
+		return err
+	}
 	var failures []error
 	for _, target := range targets {
 		if _, err := fmt.Fprintf(a.streams.Out, "Database storage on %s\n", target.Pod); err != nil {

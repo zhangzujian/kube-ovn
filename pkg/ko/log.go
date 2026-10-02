@@ -157,6 +157,13 @@ func (c *Client) collectionTasks(ctx context.Context, component string, options 
 			failures = append(failures, fmt.Errorf("no running containers for %s", group.selector))
 		}
 		for _, target := range targets {
+			if c.ComponentFree {
+				target, err = c.agentTarget(ctx, target.Node)
+				if err != nil {
+					failures = append(failures, err)
+					continue
+				}
+			}
 			directory := filepath.Join(options.output, target.Node, group.directory)
 			if group.component == "linux" {
 				tasks = append(tasks, c.linuxTasks(target, directory, options.maxBytes)...)

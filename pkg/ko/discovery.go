@@ -77,18 +77,44 @@ func (c *Client) leader(ctx context.Context, role string) (Target, error) {
 	if strings.HasPrefix(role, "ic-") {
 		container = "ovn-ic-server"
 	}
-	return c.uniqueTarget(ctx, "ovn-"+role+"-leader=true", "", container)
+	target, err := c.uniqueTarget(ctx, "ovn-"+role+"-leader=true", "", container)
+	if err != nil || !c.ComponentFree {
+		return target, err
+	}
+	return c.agentTarget(ctx, target.Node)
 }
 
 func (c *Client) nodeTarget(ctx context.Context, node, component string) (Target, error) {
 	if _, err := c.Kubernetes.CoreV1().Nodes().Get(ctx, node, metav1.GetOptions{}); err != nil {
 		return Target{}, fmt.Errorf("get node %s: %w", node, err)
 	}
+	if c.ComponentFree {
+		return c.agentTarget(ctx, node)
+	}
 	container := "openvswitch"
 	if component == "kube-ovn-cni" {
 		container = "cni-server"
 	}
 	return c.uniqueTarget(ctx, "app="+component, node, container)
+}
+
+func (c *Client) agentTarget(ctx context.Context, node string) (Target, error) {
+	return c.uniqueTarget(ctx, "app=kubectl-ko-node-agent", node, "agent")
+}
+
+func (c *Client) replaceWithAgents(ctx context.Context, targets []Target) ([]Target, error) {
+	if !c.ComponentFree {
+		return targets, nil
+	}
+	result := make([]Target, 0, len(targets))
+	for _, target := range targets {
+		agent, err := c.agentTarget(ctx, target.Node)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, agent)
+	}
+	return result, nil
 }
 
 func (c *Client) pod(ctx context.Context, name string) (*corev1.Pod, error) {

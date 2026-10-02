@@ -144,6 +144,10 @@ func (a *Application) environmentCheck(ctx context.Context, client *Client, _ []
 	if len(targets) == 0 {
 		return errors.New("no running CNI containers")
 	}
+	targets, err = client.replaceWithAgents(ctx, targets)
+	if err != nil {
+		return err
+	}
 	var failures []error
 	for _, target := range targets {
 		if _, err := fmt.Fprintf(a.streams.Out, "Environment check on %s\n", target.Node); err != nil {
@@ -221,9 +225,10 @@ func (a *Application) runDiagnosticProbes(ctx context.Context, client *Client, p
 			failures = append(failures, fmt.Errorf("probe on %s: %w", target.Node, err))
 			continue
 		}
+		execTarget := target
 		if mode == "all" || mode == "node" {
 			for _, argv := range [][]string{{"tail", "/var/log/ovn/ovn-controller.log"}, {"tail", "/var/log/openvswitch/ovs-vswitchd.log"}, {"ovs-vsctl", "show"}} {
-				if err := client.Executor.Exec(ctx, target, argv, a.outputStreams()); err != nil {
+				if err := client.Executor.Exec(ctx, execTarget, argv, a.outputStreams()); err != nil {
 					failures = append(failures, err)
 				}
 			}
@@ -237,7 +242,7 @@ func (a *Application) runDiagnosticProbes(ctx context.Context, client *Client, p
 			// are optional. Probe peers explicitly and retain ICMP node checks.
 			argv = append(argv, "--network-mode=diagnostic")
 		}
-		if err := client.Executor.Exec(ctx, target, argv, a.outputStreams()); err != nil {
+		if err := client.Executor.Exec(ctx, execTarget, argv, a.outputStreams()); err != nil {
 			failures = append(failures, fmt.Errorf("probe on %s: %w", target.Node, err))
 		}
 	}
@@ -353,6 +358,10 @@ func (c *Client) checkKubeProxy(ctx context.Context) error {
 	}
 	if len(targets) == 0 {
 		return errors.New("no CNI containers available to probe embedded kube-proxy")
+	}
+	targets, err = c.replaceWithAgents(ctx, targets)
+	if err != nil {
+		return err
 	}
 	for _, target := range targets {
 		pod, err := c.Kubernetes.CoreV1().Pods(c.Namespace).Get(ctx, target.Pod, metav1.GetOptions{})

@@ -123,8 +123,10 @@ func (a *Application) connect() (*Client, error) {
 		return nil, err
 	}
 	return &Client{
-		Kubernetes: client, Dynamic: dynamicClient, Executor: &remoteExecutor{client: client, config: config},
+		Kubernetes: client, Dynamic: dynamicClient,
+		Executor:  &helperExecutor{client: client, config: config, legacy: &remoteExecutor{client: client, config: config}},
 		Namespace: a.namespace, WorkloadNamespace: namespace, DiscoveryTimeout: a.discoveryTimeout,
+		ComponentFree: true,
 	}, nil
 }
 
@@ -152,7 +154,7 @@ func (a *Application) outputStreams() Streams {
 }
 
 func (a *Application) addControlCommands() {
-	parent := &cobra.Command{Use: "exec", Short: "Run an OVN or OVS tool in its cluster container"}
+	parent := &cobra.Command{Use: "exec", Short: "Run an OVN or OVS tool through the node agent"}
 	for _, role := range []string{"nb", "sb", "ic-nb", "ic-sb"} {
 		name := role + "ctl"
 		binary := "ovn-" + name
