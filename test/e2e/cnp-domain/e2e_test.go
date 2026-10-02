@@ -66,8 +66,10 @@ var _ = framework.SerialDescribe("[group:cluster-network-policy]", func() {
 		return framework.MakeClusterNetworkPolicyEgressRule(name, netpolv1alpha2.ClusterNetworkPolicyRuleActionAccept, protocols, []netpolv1alpha2.DomainName{netpolv1alpha2.DomainName(domain)})
 	}
 	denyHTTPS := func() netpolv1alpha2.ClusterNetworkPolicyEgressRule {
-		return netpolv1alpha2.ClusterNetworkPolicyEgressRule{Name: "deny-other-https", Action: netpolv1alpha2.ClusterNetworkPolicyRuleActionDeny, Protocols: protocols,
-			To: []netpolv1alpha2.ClusterNetworkPolicyEgressPeer{{Networks: []netpolv1alpha2.CIDR{"0.0.0.0/0", "::/0"}}}}
+		return netpolv1alpha2.ClusterNetworkPolicyEgressRule{
+			Name: "deny-other-https", Action: netpolv1alpha2.ClusterNetworkPolicyRuleActionDeny, Protocols: protocols,
+			To: []netpolv1alpha2.ClusterNetworkPolicyEgressPeer{{Networks: []netpolv1alpha2.CIDR{"0.0.0.0/0", "::/0"}}},
+		}
 	}
 	create := func(priority int32, rules ...netpolv1alpha2.ClusterNetworkPolicyEgressRule) *netpolv1alpha2.ClusterNetworkPolicy {
 		name := "cnp-" + framework.RandomSuffix()
@@ -149,8 +151,10 @@ var _ = framework.SerialDescribe("[group:cluster-network-policy]", func() {
 		connect("https://www.baidu.com", true)
 		connect("https://www.google.com", true)
 		connect("https://8.8.8.8", true)
-		denyCIDR := netpolv1alpha2.ClusterNetworkPolicyEgressRule{Name: "deny-google-dns", Action: netpolv1alpha2.ClusterNetworkPolicyRuleActionDeny, Protocols: protocols,
-			To: []netpolv1alpha2.ClusterNetworkPolicyEgressPeer{{Networks: []netpolv1alpha2.CIDR{"8.8.8.8/32"}}}}
+		denyCIDR := netpolv1alpha2.ClusterNetworkPolicyEgressRule{
+			Name: "deny-google-dns", Action: netpolv1alpha2.ClusterNetworkPolicyRuleActionDeny, Protocols: protocols,
+			To: []netpolv1alpha2.ClusterNetworkPolicyEgressPeer{{Networks: []netpolv1alpha2.CIDR{"8.8.8.8/32"}}},
+		}
 		policy := create(80, denyCIDR, allowDomain("allow-baidu", "*.baidu.com."), denyHTTPS())
 		waitResolvers(policy.Name, 1)
 		connect("https://www.baidu.com", true)
