@@ -2,6 +2,7 @@ package cnp
 
 import (
 	"encoding/json/v2"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -10,8 +11,12 @@ import (
 	coordv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 )
 
 func compatibleFleet(t *testing.T) (*Upgrade, *corev1.Pod, *appsv1.ReplicaSet) {
@@ -102,5 +107,86 @@ func TestExternalGateIsMandatory(t *testing.T) {
 	u.RollbackGuarded = true
 	if err := u.requireExternalGate(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestInventoryVerificationRejectsLeaderChange(t *testing.T) {
+	for _, changeLeader := range []bool{false, true} {
+		t.Run(fmt.Sprintf("changeLeader=%v", changeLeader), func(t *testing.T) {
+			u, pod, _ := compatibleFleet(t)
+			u.Timeout = time.Second
+			crd, err := Schema("dual")
+			if err != nil {
+				t.Fatal(err)
+			}
+			first := rawPolicy(t, `,"ports":[{"portNumber":{"port":80}}]}`)
+			first.SetName("first")
+			second := first.DeepCopy()
+			second.SetName("second")
+			second.SetUID("uid-2")
+			client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{Resource: "ClusterNetworkPolicyList"}, crd, first, second)
+			u.Dynamic = client
+			session := "session"
+			publish := func(receipt *Receipt) {
+				t.Helper()
+				capability, err := json.Marshal(Receipt{Capability: Capability, Leader: pod.Name, PodUID: string(pod.UID), Session: session, ImageID: u.Image})
+				if err != nil {
+					t.Fatal(err)
+				}
+				pod.Annotations[CapabilityAnnotation] = string(capability)
+				if receipt != nil {
+					data, err := json.Marshal(receipt)
+					if err != nil {
+						t.Fatal(err)
+					}
+					pod.Annotations[ReceiptAnnotation] = string(data)
+				}
+				if _, err := u.Kube.CoreV1().Pods(u.Namespace).Update(t.Context(), pod, metav1.UpdateOptions{}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			client.PrependReactor("patch", Resource.Resource, func(action k8stesting.Action) (bool, runtime.Object, error) {
+				patch := action.(k8stesting.PatchAction)
+				obj, err := client.Tracker().Get(Resource, "", patch.GetName())
+				if err != nil {
+					return true, nil, err
+				}
+				var operations []PatchOperation
+				if err := json.Unmarshal(patch.GetPatch(), &operations); err != nil {
+					return true, nil, err
+				}
+				plan, err := PlanObject(obj.(*unstructured.Unstructured), false)
+				if err != nil {
+					return true, nil, err
+				}
+				request := operations[2].Value.(map[string]any)[VerifyAnnotation].(string)
+				publish(&Receipt{
+					Capability: Capability, Leader: pod.Name, PodUID: string(pod.UID), Session: session, ImageID: u.Image,
+					Request: request, PolicyUID: plan.UID, Generation: plan.Generation, SemanticDigest: plan.SemanticDigest, OVNDigest: "verified-nb",
+				})
+				return true, obj, nil
+			})
+			gets := 0
+			client.PrependReactor("get", Resource.Resource, func(action k8stesting.Action) (bool, runtime.Object, error) {
+				if action.(k8stesting.GetAction).GetName() == first.GetName() {
+					gets++
+					if changeLeader && gets == 2 {
+						// Replace the leader session after the first receipt was
+						// validated, before the next policy requests its receipt.
+						session = "replacement-session"
+						publish(nil)
+					}
+				}
+				return false, nil, nil
+			})
+			err = u.Verify(t.Context())
+			if changeLeader {
+				if err == nil || !strings.Contains(err.Error(), "leader changed during inventory verification") {
+					t.Fatalf("receipts from different leader sessions were accepted: %v", err)
+				}
+			} else if err != nil {
+				t.Fatalf("stable leader verification failed: %v", err)
+			}
+		})
 	}
 }

@@ -33,8 +33,12 @@ func newControllerHelm(f *framework.Framework, source string) *controllerHelm {
 	deployment.ObjectMeta = metav1.ObjectMeta{Name: deployment.Name, Namespace: deployment.Namespace, Labels: deployment.Labels}
 	deployment.Status = appsv1.DeploymentStatus{}
 	deployment.Spec.Strategy = appsv1.DeploymentStrategy{Type: appsv1.RollingUpdateDeploymentStrategyType, RollingUpdate: &appsv1.RollingUpdateDeployment{
-		MaxSurge: new(intstr.FromInt32(0)), MaxUnavailable: new(intstr.FromInt32(1)),
+		MaxSurge: new(intstr.FromInt32(1)), MaxUnavailable: new(intstr.FromInt32(0)),
 	}}
+	// Helm computes expected ready replicas as replicas - maxUnavailable.
+	// A one-replica fixture therefore needs zero unavailable and a schedulable
+	// surge node, or --atomic can report success for an image that never starts.
+	delete(deployment.Spec.Template.Spec.NodeSelector, "kube-ovn/role")
 	for i := range deployment.Spec.Template.Spec.Containers {
 		if deployment.Spec.Template.Spec.Containers[i].Name == "kube-ovn-controller" {
 			deployment.Spec.Template.Spec.Containers[i].Image = "__CNP_TEST_IMAGE__"

@@ -134,7 +134,10 @@ slot and fail validation; they cannot validate a different UID or nonce. The
 append-only migration journal retains each successfully verified receipt.
 Evidence binds policy UID/generation/semantic digest, leader Pod UID, resolved
 image digest, process session and verification nonce. It is not CNP status or
-a readiness signal. Failed evidence publication blocks migration while enforcement
+a readiness signal. Full inventory verification requires every receipt to come
+from the same leader session and rechecks that session after the final inventory
+read. A leader change requires fresh verification of every policy.
+Failed evidence publication blocks migration while enforcement
 continues. Pod replacement removes evidence; every new request needs a fresh
 receipt from the current leader. No additional account or permission is needed.
 
@@ -199,6 +202,10 @@ preserving its flags and volumes. Failed atomic upgrades must restore the legacy
 image before native writes and the compatible image after finalization, while
 retaining the independent CRD hash, policy UIDs/generations and semantic digests.
 Historical revision 1 is rolled back only after guarded reverse migration.
+The one-replica Helm fixture uses a schedulable surge node and
+`maxSurge: 1, maxUnavailable: 0`. Helm considers zero ready replicas sufficient
+when replicas and maxUnavailable are both one, so that strategy cannot verify
+an atomic failure rollback. The separate two-replica rollout uses `0 / 1`.
 The fixture exercises Helm's actual release/rollback engine; production chart
 rollout values are verified separately, and it does not test every platform hook.
 It then runs native CNP and retained

@@ -375,13 +375,17 @@ func (u *Upgrade) Verify(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	leader, err := u.VerifyController(ctx)
+	if err != nil {
+		return err
+	}
 	for _, obj := range plan.Objects {
 		if err := u.verifyObject(ctx, obj); err != nil {
 			return err
 		}
-	}
-	if _, err := u.VerifyController(ctx); err != nil {
-		return err
+		if obj.Receipt.Session != leader.Session || obj.Receipt.PodUID != leader.PodUID {
+			return errors.New("leader changed during inventory verification; verify all policies again")
+		}
 	}
 	current, err := u.Plan(ctx, false)
 	if err != nil {
@@ -389,6 +393,13 @@ func (u *Upgrade) Verify(ctx context.Context) error {
 	}
 	if current.SchemaDigest != plan.SchemaDigest || !sameInventory(plan, current) {
 		return errors.New("CNP inventory/schema changed during verification; re-plan")
+	}
+	currentLeader, err := u.VerifyController(ctx)
+	if err != nil {
+		return err
+	}
+	if currentLeader.Session != leader.Session || currentLeader.PodUID != leader.PodUID {
+		return errors.New("leader changed during inventory verification; verify all policies again")
 	}
 	return nil
 }
