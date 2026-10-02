@@ -139,3 +139,10 @@ func enableHAControllers(f *framework.Framework) {
 	framework.ExpectNoError(err)
 	waitDeployment(f, deployment.Name, 2)
 }
+
+func waitCompatibleController(u *cnp.Upgrade) {
+	framework.ExpectNoError(wait.PollUntilContextTimeout(context.Background(), time.Second, 3*time.Minute, true, func(ctx context.Context) (bool, error) {
+		_, err := u.VerifyController(ctx)
+		return err == nil, nil
+	}))
+}

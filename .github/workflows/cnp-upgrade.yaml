@@ -122,6 +122,9 @@ jobs:
         with:
           version: v0.33.0
           install_only: true
+      - uses: azure/setup-helm@v4.3.1
+        with:
+          version: v3.19.0
       - uses: actions/download-artifact@v8
         with:
           name: cnp-upgrade-candidate

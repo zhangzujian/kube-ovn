@@ -191,6 +191,16 @@ uses controlled DNSNameResolver status with live allowed and denied listeners;
 every listener is checked before denial rules are installed. This isolates
 representation migration from external DNS availability. The separate domain
 E2E suite exercises real queries and address discovery.
+The fixture installs the fixed v1.16.10 DNSNameResolver schema before enabling
+DNS on v1.15.28, whose identical v1 API fields and RBAC were already present but
+whose installer did not include that optional CRD.
+An isolated controller-only Helm release adopts the installed Deployment,
+preserving its flags and volumes. Failed atomic upgrades must restore the legacy
+image before native writes and the compatible image after finalization, while
+retaining the independent CRD hash, policy UIDs/generations and semantic digests.
+Historical revision 1 is rolled back only after guarded reverse migration.
+The fixture exercises Helm's actual release/rollback engine; production chart
+rollout values are verified separately, and it does not test every platform hook.
 It then runs native CNP and retained
 v1alpha1 ANP/BANP conformance. Real API-server tests also reject stale patches
 after same-name recreation.
