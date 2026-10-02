@@ -66,6 +66,47 @@ class ComponentPrerequisitesTest(unittest.TestCase):
                 prerequisites.main()
             command.assert_not_called()
 
+    def test_existing_component_crds_are_preserved(self):
+        calls = []
+
+        def convert(document):
+            name = prerequisites.re.search(r"(?m)^  name: (.+)$", document)[1]
+            if "kind: CustomResourceDefinition" in document:
+                return {"kind": "CustomResourceDefinition", "metadata": {"name": name}, "spec": {"group": "kubeovn.io"}}
+            role = copy.deepcopy(self.source)
+            role["metadata"]["name"] = name
+            return role
+
+        existing = ["subnets.kubeovn.io", "vpcs.kubeovn.io"]
+
+        def command(*args, stdin=None):
+            calls.append(args)
+            if args[:2] == ("get", "clusterrole"):
+                live = copy.deepcopy(self.live)
+                live["metadata"]["name"] = args[2]
+                return json.dumps(live)
+            if args[:2] == ("get", "crd"):
+                if args[-1] == "json":
+                    return json.dumps({"items": [{"metadata": {"name": name}} for name in existing]})
+                # Reproduce kubectl's output for the previous escaped JSONPath.
+                return "\\n".join(existing) + "\\n"
+            return ""
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            roles = "\n---\n".join("apiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRole\nmetadata:\n  name: " + name + "\n" for name in prerequisites.ROLES)
+            (root / "source.sh").write_text(roles)
+            target = roles
+            for name in [*existing, "router-lb-rules.kubeovn.io"]:
+                target += "\n---\napiVersion: apiextensions.k8s.io/v1\nkind: CustomResourceDefinition\nmetadata:\n  name: " + name + "\n"
+            (root / "target.sh").write_text(target)
+            argv = ["prerequisites", "--source-installer", str(root / "source.sh"), "--target-installer", str(root / "target.sh"), "--output", str(root / "plan")]
+            with mock.patch.dict(prerequisites.os.environ, {"GITHUB_ACTIONS": "true"}), mock.patch("sys.argv", argv), mock.patch.object(prerequisites, "as_json", side_effect=convert), mock.patch.object(prerequisites, "kubectl", side_effect=command):
+                prerequisites.main()
+            self.assertEqual([path.name for path in (root / "plan").glob("*.json")], ["router-lb-rules.kubeovn.io.json"])
+            created = [Path(args[2]).name for args in calls if args[0] == "create"]
+            self.assertEqual(created, ["router-lb-rules.kubeovn.io.json"] * 2)
+
     def test_crd_preflight_failure_does_not_grant_permissions(self):
         calls = []
 
@@ -84,7 +125,7 @@ class ComponentPrerequisitesTest(unittest.TestCase):
                 live["metadata"]["name"] = args[2]
                 return json.dumps(live)
             if args[:2] == ("get", "crd"):
-                return ""
+                return json.dumps({"items": []})
             if args[0] == "create" and "--dry-run=server" in args:
                 raise ValueError("CRD preflight rejected")
             return ""

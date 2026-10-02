@@ -112,7 +112,10 @@ def main():
             path.write_text(json.dumps(patch, indent=2) + "\n")
             patches.append((name, path))
 
-    existing_crds = set(kubectl("get", "crd", "-o", 'jsonpath={range .items[*]}{.metadata.name}{"\\n"}{end}').splitlines())
+    existing_crds = {
+        item["metadata"]["name"]
+        for item in json.loads(kubectl("get", "crd", "-o", "json"))["items"]
+    }
     crds = []
     for block in documents(args.target_installer, "CustomResourceDefinition"):
         match = re.search(r"(?m)^  name: ([-a-z0-9]+\.kubeovn\.io)$", block)
