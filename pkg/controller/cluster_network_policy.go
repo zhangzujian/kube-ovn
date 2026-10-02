@@ -403,7 +403,9 @@ func (c *Controller) handleDeleteCnp(cnp *v1alpha2.ClusterNetworkPolicy) error {
 
 	// Delete the CNP from the priority mapping
 	c.priorityMapMutex.Lock()
-	err := c.deleteCnpPriorityMapEntries(cnp)
+	// Raw tombstones need not contain a valid spec. Remove the last registered
+	// entries by identity instead of trusting a missing or changed priority.
+	err := c.wipeCnpPriorityMapEntries(cnp)
 	c.priorityMapMutex.Unlock()
 	if err != nil {
 		// Do not exit on errors, try to go as far as possible in the deletion

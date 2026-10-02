@@ -56,7 +56,7 @@ var _ = framework.SerialDescribe("[group:cluster-network-policy]", func() {
 		ginkgo.By(fmt.Sprintf("Checking HTTPS connectivity to %s, allowed=%t", target, allowed))
 		framework.WaitUntil(time.Second, 90*time.Second, func(ctx context.Context) (bool, error) {
 			// Each attempt opens a new connection, avoiding a retained conntrack decision.
-			_, _, err := framework.ExecShellInPod(ctx, f, namespaceName, podName, "curl -kfsS --noproxy '*' --connect-timeout 3 --max-time 5 "+target+" >/dev/null")
+			_, _, err := framework.ExecShellInPod(ctx, f, namespaceName, podName, "curl -ksS --noproxy '*' --connect-timeout 3 --max-time 5 "+target+" >/dev/null")
 			return (err == nil) == allowed, nil
 		}, fmt.Sprintf("HTTPS connectivity to %s, allowed=%t", target, allowed))
 	}
