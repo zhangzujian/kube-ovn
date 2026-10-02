@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json/v2"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 
@@ -100,9 +101,15 @@ func TestNetworkInspectReadsPodAndHostLinks(t *testing.T) {
 			_, err := io.WriteString(streams.Out, `{"headings":["name","external_ids","ofport"],"data":[["pod123_h",["map",[["pod_name","web"],["pod_namespace","app"],["pod_netns","/var/run/netns/pod"]]],4]]}`)
 			return err
 		case "nsenter":
+			if !slices.Contains(argv, "-s") {
+				t.Errorf("pod netns ip command lacks -s: %v", argv)
+			}
 			_, err := io.WriteString(streams.Out, `[{"ifindex":2,"ifname":"eth0","link_index":42,"mtu":1500,"operstate":"UP","address":"0a:58:0a:f4:00:02","flags":["BROADCAST","UP"],"link_type":"ether","linkinfo":{"info_kind":"veth"},"addr_info":[{"family":"inet","local":"10.244.0.2","prefixlen":24}]}]`)
 			return err
 		case "ip":
+			if !slices.Contains(argv, "-s") {
+				t.Errorf("host netns ip command lacks -s: %v", argv)
+			}
 			_, err := io.WriteString(streams.Out, `[{"ifindex":42,"ifname":"pod123_h","link_index":2,"mtu":1500,"operstate":"UP","address":"aa:bb:cc:dd:ee:ff","flags":["BROADCAST","UP"],"link_type":"ether","linkinfo":{"info_kind":"veth"}}]`)
 			return err
 		default:

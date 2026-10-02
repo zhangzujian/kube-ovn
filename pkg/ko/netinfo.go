@@ -173,7 +173,7 @@ func (c *Client) podNetNS(ctx context.Context, target Target, pod *corev1.Pod) (
 }
 
 func (c *Client) ipLinks(ctx context.Context, target Target, netns string) ([]ipJSONLink, error) {
-	output, err := c.capture(ctx, target, namespaceCommand(netns, "ip", "-j", "-d", "addr", "show")...)
+	output, err := c.capture(ctx, target, namespaceCommand(netns, "ip", "-s", "-j", "-d", "addr", "show")...)
 	if err != nil {
 		return nil, err
 	}
