@@ -194,7 +194,11 @@ CI covers schema compilation, OpenAPI/CEL/pruning/defaulting, real API-server
 round-trips and guarded patching, numeric ACLs, invalid conditions, legacy
 ReplicaSet/Pod gates, chart strategies and the two independent Go modules.
 The upgrade job creates disposable kind clusters from the pinned v1.15.28 and
-v1.16.10 installers for IPv4, IPv6 and dual stack. It upgrades central/OVS/node
+v1.16.10 installers for IPv4, IPv6 and dual stack. Before changing component
+images, SubjectAccessReview checks require effective ServiceCIDR get/list/watch
+access for both the controller and CNI service accounts. These checks do not
+grant permissions and reject missing prerequisites before starting a rollout.
+It upgrades central/OVS/node
 components, exercises both mixed leader arrangements, migrates both tiers and
 directions including DNS and node peers, resumes a partial migration, rejects a concurrent spec update while
 retaining that update, resurrects a legacy standby to test the gate, finalizes/reverses

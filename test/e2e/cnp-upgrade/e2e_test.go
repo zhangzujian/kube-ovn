@@ -17,6 +17,7 @@ import (
 
 	"github.com/onsi/ginkgo/v2"
 	appsv1 "k8s.io/api/apps/v1"
+	authorizationv1 "k8s.io/api/authorization/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -339,6 +340,24 @@ func executeProbe(ctx context.Context, f *framework.Framework, pod *corev1.Pod, 
 
 func upgradeComponents(f *framework.Framework, source, target string) {
 	ctx := context.Background()
+	ginkgo.By("Checking target ServiceCIDR access before changing component images")
+	for _, account := range []string{"ovn", "kube-ovn-cni"} {
+		for _, verb := range []string{"get", "list", "watch"} {
+			review, err := f.ClientSet.AuthorizationV1().SubjectAccessReviews().Create(ctx, &authorizationv1.SubjectAccessReview{
+				Spec: authorizationv1.SubjectAccessReviewSpec{
+					User:   "system:serviceaccount:kube-system:" + account,
+					Groups: []string{"system:serviceaccounts", "system:serviceaccounts:kube-system", "system:authenticated"},
+					ResourceAttributes: &authorizationv1.ResourceAttributes{
+						Group: "networking.k8s.io", Resource: "servicecidrs", Verb: verb,
+					},
+				},
+			}, metav1.CreateOptions{})
+			framework.ExpectNoError(err)
+			framework.ExpectEqual(review.Status.Allowed && !review.Status.Denied, true,
+				fmt.Sprintf("target component prerequisite missing: %s cannot %s servicecidrs.networking.k8s.io (%s; %s)",
+					account, verb, review.Status.Reason, review.Status.EvaluationError))
+		}
+	}
 	for _, name := range []string{"ovn-central"} {
 		deployment, err := f.ClientSet.AppsV1().Deployments("kube-system").Get(ctx, name, metav1.GetOptions{})
 		framework.ExpectNoError(err)
