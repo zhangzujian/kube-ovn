@@ -7,9 +7,11 @@ import (
 	"time"
 
 	"github.com/onsi/ginkgo/v2"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
@@ -128,6 +130,11 @@ func enableHAControllers(f *framework.Framework) {
 	deployment, err := client.Get(ctx, "kube-ovn-controller", metav1.GetOptions{})
 	framework.ExpectNoError(err)
 	deployment.Spec.Replicas = new(int32(2))
+	// Two nodes with required anti-affinity cannot host a third surge Pod.
+	// Replace the single-replica Helm strategy before changing the template.
+	deployment.Spec.Strategy = appsv1.DeploymentStrategy{Type: appsv1.RollingUpdateDeploymentStrategyType, RollingUpdate: &appsv1.RollingUpdateDeployment{
+		MaxSurge: new(intstr.FromInt32(0)), MaxUnavailable: new(intstr.FromInt32(1)),
+	}}
 	deployment.Spec.Template.Spec.NodeSelector = nil
 	deployment.Spec.Template.Spec.Affinity = &corev1.Affinity{PodAntiAffinity: &corev1.PodAntiAffinity{
 		RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{{
