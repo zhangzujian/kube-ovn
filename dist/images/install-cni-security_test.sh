@@ -3,10 +3,12 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 INSTALL_SCRIPT="$SCRIPT_DIR/install.sh"
+IMAGE_DOCKERFILE="$SCRIPT_DIR/Dockerfile"
 
 grep -q '^DISABLE_LEGACY_CNI_EXECUTION=.*true' "$INSTALL_SCRIPT"
 grep -q -- '--disable-legacy-cni-execution=$DISABLE_LEGACY_CNI_EXECUTION' "$INSTALL_SCRIPT"
 grep -q 'runAsUser: ${CNI_SERVER_RUN_AS_USER}' "$INSTALL_SCRIPT"
+! grep -Eq 'setcap .*CAP_SYS_ADMIN.*kube-ovn-daemon' "$IMAGE_DOCKERFILE"
 
 # Evaluate the installer inputs and the generated capability selection without
 # running the installer (which applies resources to the current Kubernetes
