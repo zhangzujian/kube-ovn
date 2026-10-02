@@ -659,6 +659,14 @@ func (c *Controller) updateSubnetDHCPOption(ctx context.Context, subnet *kubeovn
 		klog.Errorf("failed to update DHCP and RA options for switch %s: %v", subnet.Name, err)
 		return err
 	}
+	if c.config.EnableDistributedSharedSubnet {
+		c.distributedDHCPOptionsMu.Lock()
+		if c.distributedDHCPOptions == nil {
+			c.distributedDHCPOptions = make(map[string]ovs.DHCPOptionsUUIDs)
+		}
+		c.distributedDHCPOptions[subnet.Name] = *dhcpOptionsUUIDs
+		c.distributedDHCPOptionsMu.Unlock()
+	}
 
 	if subnet.Status.DHCPv4OptionsUUID != dhcpOptionsUUIDs.DHCPv4OptionsUUID || subnet.Status.DHCPv6OptionsUUID != dhcpOptionsUUIDs.DHCPv6OptionsUUID {
 		subnet.Status.DHCPv4OptionsUUID = dhcpOptionsUUIDs.DHCPv4OptionsUUID

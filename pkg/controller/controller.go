@@ -82,7 +82,6 @@ type Controller struct {
 	bnpNamePrioMap   map[string]int32
 	priorityMapMutex sync.RWMutex
 
-<<<<<<< HEAD
 	OVNNbClient         ovs.NbClient
 	OVNSbClient         ovs.SbClient
 	distributedICClient *ovs.LegacyClient
@@ -90,6 +89,12 @@ type Controller struct {
 	// code while the legacy client interfaces remain unchanged.
 	OVNNbTables table.Provider
 	OVNSbTables table.Provider
+
+	// distributedDHCPOptions stores the DHCP_Options UUIDs from this zone's
+	// NB. UUIDs are database-local, so Subnet.status cannot be the source of
+	// truth when each zone has an independent NB database.
+	distributedDHCPOptionsMu sync.RWMutex
+	distributedDHCPOptions   map[string]ovs.DHCPOptionsUUIDs
 
 	// ExternalGatewayType define external gateway type, centralized
 	ExternalGatewayType string
@@ -815,7 +820,6 @@ func run(ctx context.Context, config *Configuration, startRuntime RuntimeStarter
 	); err != nil {
 		util.LogFatalAndExit(err, "failed to create ovn sb client")
 	}
-<<<<<<< HEAD
 	controller.OVNSbClient = sbClient
 	controller.OVNSbTables = sbClient
 	if config.EnableDistributedSharedSubnet {
