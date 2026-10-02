@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -26,7 +27,7 @@ func main() {
 
 func run() error {
 	if len(os.Args) < 2 {
-		return fmt.Errorf("usage: cnp-upgrade <plan|prepare|verify-controller|open|migrate|verify|rollback-plan|rollback|finalize|crd> [flags]")
+		return errors.New("usage: cnp-upgrade <plan|prepare|verify-controller|open|migrate|verify|rollback-plan|rollback|finalize|crd> [flags]")
 	}
 	command := os.Args[1]
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
@@ -46,13 +47,13 @@ func run() error {
 		return err
 	}
 	if flags.NArg() != 0 {
-		return fmt.Errorf("unexpected positional arguments")
+		return errors.New("unexpected positional arguments")
 	}
 	if command == "crd" {
 		return writeCRDs(outputDir)
 	}
 	if u.Timeout <= 0 {
-		return fmt.Errorf("timeout must be positive")
+		return errors.New("timeout must be positive")
 	}
 	loading := clientcmd.NewDefaultClientConfigLoadingRules()
 	loading.ExplicitPath = kubeconfig
@@ -68,7 +69,7 @@ func run() error {
 	}
 	if command == "migrate" || command == "rollback" {
 		if journal == "" {
-			return fmt.Errorf("--journal is required")
+			return errors.New("--journal is required")
 		}
 		file, err := os.OpenFile(journal, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 		if err != nil {
@@ -130,6 +131,7 @@ func writeCRDs(dir string) error {
 		if err != nil {
 			return err
 		}
+		// #nosec G306 -- These are published CRD schemas, with no sensitive data.
 		if err := os.WriteFile(filepath.Join(dir, mode+".yaml"), data, 0o644); err != nil {
 			return err
 		}

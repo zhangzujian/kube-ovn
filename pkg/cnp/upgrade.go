@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -92,10 +93,10 @@ func (u *Upgrade) Prepare(ctx context.Context) error {
 
 func (u *Upgrade) requireExternalGate() error {
 	if !u.WritersFrozen || !u.RollbackGuarded {
-		return fmt.Errorf("freeze all CNP/schema writers and prevent legacy controller rollback before acknowledging both external gates")
+		return errors.New("freeze all CNP/schema writers and prevent legacy controller rollback before acknowledging both external gates")
 	}
 	if !strings.Contains(u.Image, "@sha256:") {
-		return fmt.Errorf("a verified compatible controller image pinned by digest is required")
+		return errors.New("a verified compatible controller image pinned by digest is required")
 	}
 	return nil
 }
@@ -104,7 +105,7 @@ func (u *Upgrade) requireExternalGate() error {
 // terminating Pods), scaled ReplicaSets and the active leader's capability.
 func (u *Upgrade) VerifyController(ctx context.Context) (*Receipt, error) {
 	if !strings.Contains(u.Image, "@sha256:") {
-		return nil, fmt.Errorf("--controller-image must be pinned by digest")
+		return nil, errors.New("--controller-image must be pinned by digest")
 	}
 	deployment, err := u.Kube.AppsV1().Deployments(u.Namespace).Get(ctx, u.Deployment, metav1.GetOptions{})
 	if err != nil {
@@ -139,7 +140,7 @@ func (u *Upgrade) VerifyController(ctx context.Context) (*Receipt, error) {
 		return nil, err
 	}
 	if lease.Spec.HolderIdentity == nil || lease.Spec.RenewTime == nil || lease.Spec.LeaseDurationSeconds == nil || time.Since(lease.Spec.RenewTime.Time) > time.Duration(*lease.Spec.LeaseDurationSeconds)*time.Second {
-		return nil, fmt.Errorf("no current controller leader")
+		return nil, errors.New("no current controller leader")
 	}
 	var leader *corev1.Pod
 	count := int32(0)
@@ -161,7 +162,7 @@ func (u *Upgrade) VerifyController(ctx context.Context) (*Receipt, error) {
 		}
 	}
 	if leader == nil || deployment.Spec.Replicas == nil || count != *deployment.Spec.Replicas {
-		return nil, fmt.Errorf("controller rollout is not stable")
+		return nil, errors.New("controller rollout is not stable")
 	}
 	cm, err := u.Kube.CoreV1().ConfigMaps(u.Namespace).Get(ctx, CapabilityName(leader.UID), metav1.GetOptions{})
 	if err != nil {
@@ -172,14 +173,14 @@ func (u *Upgrade) VerifyController(ctx context.Context) (*Receipt, error) {
 		return nil, err
 	}
 	if record.Capability != Capability || record.Leader != leader.Name || record.PodUID != string(leader.UID) || record.Session == "" || !sameDigest(record.ImageID, u.Image) {
-		return nil, fmt.Errorf("leader has not published compatible, cache-synchronized capability")
+		return nil, errors.New("leader has not published compatible, cache-synchronized capability")
 	}
 	return &record, nil
 }
 
 func verifyDeployment(deployment *appsv1.Deployment, image string) error {
 	if deployment.Spec.Paused || deployment.Spec.Replicas == nil || *deployment.Spec.Replicas == 0 || deployment.Status.ObservedGeneration != deployment.Generation || deployment.Status.UpdatedReplicas != *deployment.Spec.Replicas || deployment.Status.AvailableReplicas != *deployment.Spec.Replicas {
-		return fmt.Errorf("controller Deployment has not completed its rollout")
+		return errors.New("controller Deployment has not completed its rollout")
 	}
 	return verifyTemplate(deployment.Spec.Template, image)
 }
@@ -197,12 +198,12 @@ func verifyTemplate(template corev1.PodTemplateSpec, image string) error {
 				}
 			}
 			if !enabled {
-				return fmt.Errorf("--enable-anp=true must remain enabled throughout upgrade")
+				return errors.New("--enable-anp=true must remain enabled throughout upgrade")
 			}
 			return nil
 		}
 	}
-	return fmt.Errorf("controller container not found")
+	return errors.New("controller container not found")
 }
 
 func verifyPod(pod *corev1.Pod, image string) error {
@@ -246,7 +247,7 @@ func (u *Upgrade) replaceSchema(ctx context.Context, expectedDigest, mode string
 		return err
 	}
 	if actualDigest != expectedDigest {
-		return fmt.Errorf("CNP schema changed during upgrade")
+		return errors.New("CNP schema changed during upgrade")
 	}
 	target, err := Schema(mode)
 	if err != nil {
@@ -290,7 +291,7 @@ func (u *Upgrade) replaceSchema(ctx context.Context, expectedDigest, mode string
 		return err
 	}
 	if found != mode {
-		return fmt.Errorf("CNP schema update was not observed")
+		return errors.New("CNP schema update was not observed")
 	}
 	if err := wait.PollUntilContextTimeout(ctx, time.Second, u.Timeout, true, func(ctx context.Context) (bool, error) {
 		return u.probeSchema(ctx, mode)
@@ -356,7 +357,7 @@ func (u *Upgrade) OpenNative(ctx context.Context) error {
 		return err
 	}
 	if plan.SchemaMode != "legacy-only" && plan.SchemaMode != "dual" {
-		return fmt.Errorf("open requires legacy-only or dual schema")
+		return errors.New("open requires legacy-only or dual schema")
 	}
 	if err := u.Verify(ctx); err != nil {
 		return err
@@ -366,7 +367,7 @@ func (u *Upgrade) OpenNative(ctx context.Context) error {
 		return err
 	}
 	if !sameInventory(plan, current) {
-		return fmt.Errorf("CNP inventory changed before opening native writes")
+		return errors.New("CNP inventory changed before opening native writes")
 	}
 	return u.replaceSchema(ctx, plan.SchemaDigest, "dual")
 }
@@ -391,7 +392,7 @@ func (u *Upgrade) Verify(ctx context.Context) error {
 		return err
 	}
 	if current.SchemaDigest != plan.SchemaDigest || !sameInventory(plan, current) {
-		return fmt.Errorf("CNP inventory/schema changed during verification; re-plan")
+		return errors.New("CNP inventory/schema changed during verification; re-plan")
 	}
 	return nil
 }
@@ -501,7 +502,7 @@ func (u *Upgrade) checkSchema(ctx context.Context, expectedDigest string) error 
 		return err
 	}
 	if digest != expectedDigest {
-		return fmt.Errorf("CNP schema changed during operation")
+		return errors.New("CNP schema changed during operation")
 	}
 	return nil
 }
@@ -513,7 +514,7 @@ func (u *Upgrade) Migrate(ctx context.Context, legacy bool) error {
 		return err
 	}
 	if u.Journal == nil {
-		return fmt.Errorf("an append-only object migration journal is required")
+		return errors.New("an append-only object migration journal is required")
 	}
 	plan, err := u.Plan(ctx, legacy)
 	if err != nil {
@@ -532,7 +533,7 @@ func (u *Upgrade) Migrate(ctx context.Context, legacy bool) error {
 		}
 	}
 	if plan.SchemaMode != "dual" {
-		return fmt.Errorf("object migration requires the dual schema")
+		return errors.New("object migration requires the dual schema")
 	}
 	for _, obj := range plan.Objects {
 		if _, err := u.VerifyController(ctx); err != nil {
@@ -611,7 +612,7 @@ func (u *Upgrade) Finalize(ctx context.Context) error {
 		return err
 	}
 	if plan.SchemaMode != "dual" && plan.SchemaMode != "native" {
-		return fmt.Errorf("finalize requires dual or native schema")
+		return errors.New("finalize requires dual or native schema")
 	}
 	for _, obj := range plan.Objects {
 		if len(obj.Patch) != 0 {
@@ -626,7 +627,7 @@ func (u *Upgrade) Finalize(ctx context.Context) error {
 		return err
 	}
 	if !sameInventory(plan, current) {
-		return fmt.Errorf("CNP inventory changed before finalize")
+		return errors.New("CNP inventory changed before finalize")
 	}
 	return u.replaceSchema(ctx, plan.SchemaDigest, "native")
 }
@@ -634,12 +635,13 @@ func (u *Upgrade) Finalize(ctx context.Context) error {
 func (u *Upgrade) saveState(ctx context.Context, phase, object string) error {
 	client := u.Kube.CoreV1().ConfigMaps(u.Namespace)
 	cm, err := client.Get(ctx, UpgradeStateName, metav1.GetOptions{})
-	if apierrors.IsNotFound(err) {
+	switch {
+	case apierrors.IsNotFound(err):
 		cm = &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: UpgradeStateName, Labels: map[string]string{"kube-ovn.io/cnp-upgrade": "true"}}}
-	} else if err != nil {
+	case err != nil:
 		return err
-	} else if cm.Labels["kube-ovn.io/cnp-upgrade"] != "true" {
-		return fmt.Errorf("refusing to overwrite unrelated upgrade ConfigMap")
+	case cm.Labels["kube-ovn.io/cnp-upgrade"] != "true":
+		return errors.New("refusing to overwrite unrelated upgrade ConfigMap")
 	}
 	if cm.Data == nil {
 		cm.Data = map[string]string{}

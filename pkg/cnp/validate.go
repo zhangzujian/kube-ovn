@@ -1,6 +1,7 @@
 package cnp
 
 import (
+	"errors"
 	"fmt"
 	"net/netip"
 
@@ -18,7 +19,7 @@ func ValidateStructure(policy *v1alpha2.ClusterNetworkPolicy) error {
 		return fmt.Errorf("subject: %w", err)
 	}
 	if len(policy.Spec.Ingress) > 25 || len(policy.Spec.Egress) > 25 {
-		return fmt.Errorf("at most 25 rules per direction are supported")
+		return errors.New("at most 25 rules per direction are supported")
 	}
 	for i, rule := range policy.Spec.Ingress {
 		if err := validateRule(rule.Action, len(rule.From), len(rule.Protocols)); err != nil {
@@ -59,7 +60,7 @@ func ValidateStructure(policy *v1alpha2.ClusterNetworkPolicy) error {
 			if len(peer.DomainNames) != 0 {
 				count++
 				if rule.Action != v1alpha2.ClusterNetworkPolicyRuleActionAccept {
-					return fmt.Errorf("domainNames requires Accept")
+					return errors.New("domainNames requires Accept")
 				}
 			}
 			if count != 1 {
@@ -72,7 +73,7 @@ func ValidateStructure(policy *v1alpha2.ClusterNetworkPolicy) error {
 
 func validatePodSelector(namespaces *metav1.LabelSelector, pods *v1alpha2.NamespacedPod) error {
 	if (namespaces == nil) == (pods == nil) {
-		return fmt.Errorf("exactly one of namespaces or pods must be set")
+		return errors.New("exactly one of namespaces or pods must be set")
 	}
 	selectors := []*metav1.LabelSelector{namespaces}
 	if pods != nil {
@@ -91,7 +92,7 @@ func validateRule(action v1alpha2.ClusterNetworkPolicyRuleAction, peers, protoco
 		return fmt.Errorf("unsupported action %q", action)
 	}
 	if peers < 1 || peers > 25 || protocols > 25 {
-		return fmt.Errorf("expected 1 to 25 peers and at most 25 protocols")
+		return errors.New("expected 1 to 25 peers and at most 25 protocols")
 	}
 	return nil
 }

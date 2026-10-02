@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -70,17 +71,17 @@ func normalizeRule(rule map[string]any) error {
 	ports, legacy := rule["ports"]
 	protocols, native := rule["protocols"]
 	if legacy && native {
-		return fmt.Errorf("ports and protocols are mutually exclusive")
+		return errors.New("ports and protocols are mutually exclusive")
 	}
 	if native {
 		items, ok := protocols.([]any)
 		if !ok || len(items) == 0 || len(items) > 25 {
-			return fmt.Errorf("protocols must contain 1 to 25 entries")
+			return errors.New("protocols must contain 1 to 25 entries")
 		}
 		for _, item := range items {
 			protocol, ok := item.(map[string]any)
 			if !ok || len(protocol) != 1 {
-				return fmt.Errorf("each protocol must set exactly one field")
+				return errors.New("each protocol must set exactly one field")
 			}
 			for transport, value := range protocol {
 				if transport == "destinationNamedPort" {
@@ -88,11 +89,11 @@ func normalizeRule(rule map[string]any) error {
 				}
 				attributes, ok := value.(map[string]any)
 				if !ok {
-					return fmt.Errorf("protocol attributes must be an object")
+					return errors.New("protocol attributes must be an object")
 				}
 				port, ok := attributes["destinationPort"].(map[string]any)
 				if !ok || len(port) != 1 {
-					return fmt.Errorf("destinationPort must set exactly one field")
+					return errors.New("destinationPort must set exactly one field")
 				}
 			}
 		}
@@ -102,7 +103,7 @@ func normalizeRule(rule map[string]any) error {
 	}
 	items, ok := ports.([]any)
 	if !ok || len(items) == 0 || len(items) > 25 {
-		return fmt.Errorf("ports must contain 1 to 25 entries")
+		return errors.New("ports must contain 1 to 25 entries")
 	}
 	converted := make([]any, 0, len(items))
 	for _, item := range items {
@@ -123,7 +124,7 @@ func validateRawSelectors(obj *unstructured.Unstructured) error {
 		return err
 	}
 	if !found || len(subject) != 1 {
-		return fmt.Errorf("subject must set exactly one selector")
+		return errors.New("subject must set exactly one selector")
 	}
 	for _, direction := range []string{"ingress", "egress"} {
 		rules, found, err := unstructured.NestedSlice(obj.Object, "spec", direction)
@@ -160,11 +161,11 @@ func validateRawSelectors(obj *unstructured.Unstructured) error {
 func convertLegacyPort(item any) (map[string]any, error) {
 	port, ok := item.(map[string]any)
 	if !ok || len(port) != 1 {
-		return nil, fmt.Errorf("each legacy port must set exactly one field")
+		return nil, errors.New("each legacy port must set exactly one field")
 	}
 	for kind, value := range port {
 		if kind == "namedPort" {
-			return nil, fmt.Errorf("named ports are not supported by Kube-OVN CNP")
+			return nil, errors.New("named ports are not supported by Kube-OVN CNP")
 		}
 		number, ok := value.(map[string]any)
 		if !ok || (kind != "portNumber" && kind != "portRange") {
@@ -174,7 +175,7 @@ func convertLegacyPort(item any) (map[string]any, error) {
 		if p, exists := number["protocol"]; exists {
 			protocol, ok = p.(string)
 			if !ok {
-				return nil, fmt.Errorf("protocol must be a string")
+				return nil, errors.New("protocol must be a string")
 			}
 		}
 		if protocol != "TCP" && protocol != "UDP" && protocol != "SCTP" {
@@ -186,12 +187,12 @@ func convertLegacyPort(item any) (map[string]any, error) {
 			case "protocol":
 			case "port":
 				if kind != "portNumber" {
-					return nil, fmt.Errorf("port is only valid in portNumber")
+					return nil, errors.New("port is only valid in portNumber")
 				}
 				destination["number"] = v
 			case "start", "end":
 				if kind != "portRange" {
-					return nil, fmt.Errorf("range is only valid in portRange")
+					return nil, errors.New("range is only valid in portRange")
 				}
 			default:
 				return nil, fmt.Errorf("unknown legacy port field %q", field)
@@ -202,7 +203,7 @@ func convertLegacyPort(item any) (map[string]any, error) {
 		}
 		return map[string]any{strings.ToLower(protocol): map[string]any{"destinationPort": destination}}, nil
 	}
-	return nil, fmt.Errorf("empty legacy port")
+	return nil, errors.New("empty legacy port")
 }
 
 // ProtocolPort returns the transport and numeric destination match.
@@ -223,17 +224,17 @@ func ProtocolPort(p v1alpha2.ClusterNetworkPolicyProtocol) (string, *v1alpha2.Po
 		transport, port = "sctp", p.SCTP.DestinationPort
 	}
 	if p.DestinationNamedPort != "" {
-		return "", nil, fmt.Errorf("destinationNamedPort is not supported by Kube-OVN CNP")
+		return "", nil, errors.New("destinationNamedPort is not supported by Kube-OVN CNP")
 	}
 	if count != 1 || port == nil {
-		return "", nil, fmt.Errorf("exactly one transport with destinationPort is required")
+		return "", nil, errors.New("exactly one transport with destinationPort is required")
 	}
 	if port.Range == nil {
 		if port.Number < 1 || port.Number > 65535 {
-			return "", nil, fmt.Errorf("destination port must be between 1 and 65535")
+			return "", nil, errors.New("destination port must be between 1 and 65535")
 		}
 	} else if port.Number != 0 || port.Range.Start < 1 || port.Range.End > 65535 || port.Range.Start >= port.Range.End {
-		return "", nil, fmt.Errorf("invalid destination port range")
+		return "", nil, errors.New("invalid destination port range")
 	}
 	return transport, port, nil
 }

@@ -9,12 +9,11 @@ on:
       - 'pkg/ovs/ovn-nb-cnp*'
       - 'pkg/ovs/ovn-nb-acl*'
       - 'cmd/cnp-upgrade/**'
+      - 'test/e2e/cnp-upgrade/**'
       - 'yamls/cnp/**'
       - 'go.mod'
       - 'go.sum'
       - '.github/workflows/cnp-upgrade.yaml'
-  push:
-    branches: ['feat/network-policy-api-v0.2-upgrade']
   workflow_dispatch:
 
 permissions:
@@ -56,3 +55,91 @@ jobs:
         run: |
           go build ./cmd/controller ./cmd/cnp-upgrade
           go test -run '^$' ./test/e2e/cnp-domain
+          go test -run '^$' ./test/e2e/cnp-upgrade
+
+  build-upgrade-image:
+    needs: validate
+    runs-on: ubuntu-26.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Build candidate and upgrade suite
+        run: |
+          make build-go
+          docker build --build-arg VERSION="$(cat VERSION)" -t cnp-upgrade:candidate -f dist/images/Dockerfile dist/images
+          docker save cnp-upgrade:candidate -o cnp-upgrade.tar
+          go test -c -o cnp-upgrade.test ./test/e2e/cnp-upgrade
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cnp-upgrade-candidate
+          path: |
+            cnp-upgrade.tar
+            cnp-upgrade.test
+          retention-days: 7
+
+  version-upgrade:
+    needs: build-upgrade-image
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        source: ['v1.15.28', 'v1.16.10']
+        family: ['ipv4', 'ipv6', 'dual']
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: helm/kind-action@v1.15.0
+        with:
+          version: v0.33.0
+          install_only: true
+      - uses: actions/download-artifact@v8
+        with:
+          name: cnp-upgrade-candidate
+      - name: Install the legacy release in an isolated kind cluster
+        env:
+          SOURCE_VERSION: ${{ matrix.source }}
+          IP_FAMILY: ${{ matrix.family }}
+        run: bash hack/cnp-upgrade-e2e.sh
+      - name: Upgrade, verify traffic, migrate, finalize and roll back
+        env:
+          CNP_UPGRADE_SOURCE_IMAGE: docker.io/kubeovn/kube-ovn:${{ matrix.source }}
+          E2E_BRANCH: master
+          E2E_IP_FAMILY: ${{ matrix.family }}
+          E2E_NETWORK_MODE: overlay
+        run: |
+          chmod +x cnp-upgrade.test
+          ./cnp-upgrade.test -ginkgo.v -ginkgo.timeout=35m -kubeconfig "$HOME/.kube/config"
+      - name: Run v0.2.0 CNP conformance on the compatible controller
+        run: |
+          kubectl get cnp -o json | jq -e '.items | length == 0'
+          kubectl apply -f yamls/cnp/native.yaml
+          KUBECONFIG="$HOME/.kube/config" make kube-ovn-cnp-e2e
+      - name: Collect upgrade evidence
+        if: always()
+        run: |
+          mkdir -p cnp-evidence
+          kubectl get pods,deployments,replicasets,leases -n kube-system -o yaml > cnp-evidence/control-plane.yaml
+          kubectl get configmaps -n kube-system -l kube-ovn.io/cnp-evidence=true -o yaml > cnp-evidence/application-receipts.yaml
+          kubectl get cnp,crd -o yaml > cnp-evidence/policy-schema.yaml
+          kubectl get events -A -o yaml > cnp-evidence/events.yaml
+          kubectl logs -n kube-system -l app=kube-ovn-controller --all-containers=true --tail=5000 > cnp-evidence/controller.log
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: cnp-upgrade-${{ matrix.source }}-${{ matrix.family }}
+          path: |
+            cnp-evidence
+            cnp-test-report.yaml
+          retention-days: 7

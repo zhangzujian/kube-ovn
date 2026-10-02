@@ -58,6 +58,12 @@ existing kubeconfig authorized for the policy CRD, CNP metadata/spec, controller
 Deployment/ReplicaSet/Pod/Lease reads and ConfigMaps in the controller namespace.
 It never changes RBAC, credentials, deployments or OVN directly.
 
+For this capability gate, pin the controller to an architecture-specific manifest
+digest and use the same architecture for the controller replicas. A multi-arch
+index whose resolved imageID differs from that digest, or an opaque runtime
+imageID, is rejected rather than guessed. Other node components can follow the
+release's existing multi-architecture deployment procedure independently.
+
 ## Upgrade an existing cluster
 
 1. Export raw policy manifests, CRD and effective deployment values into your
@@ -165,6 +171,16 @@ release with a documented minimum upgrade source.
 CI covers schema compilation, OpenAPI/CEL/pruning/defaulting, real API-server
 round-trips and guarded patching, numeric ACLs, invalid conditions, legacy
 ReplicaSet/Pod gates, chart strategies and the two independent Go modules.
+The upgrade job creates disposable kind clusters from the pinned v1.15.28 and
+v1.16.10 installers for IPv4, IPv6 and dual stack. It upgrades central/OVS/node
+components, exercises both mixed leader arrangements, migrates both tiers and
+directions, resurrects a legacy standby to test the gate, finalizes/reverses
+schema and objects, and rolls back the controller while continuously probing
+new connections to allowed and denied ports. It then runs native CNP conformance.
+The test image is pinned through a disposable local registry; no public registry
+credentials are needed. Run `bash hack/cnp-upgrade-e2e.sh` only in that isolated CI
+job. Component database downgrade remains subject to the release's normal rules;
+the test's rollback returns the controller while preserving upgraded components.
 The release gate additionally requires isolated cluster runs from both supported
 legacy versions, mixed leaders and failures, IPv4/IPv6, both tiers/directions,
 DNS/nodes, ANP/BANP and NP regression, partial migration, concurrent GitOps/spec

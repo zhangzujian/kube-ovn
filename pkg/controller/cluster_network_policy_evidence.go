@@ -3,6 +3,7 @@ package controller
 import (
 	"crypto/rand"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -31,7 +32,7 @@ func (c *Controller) initCnpEvidence() error {
 		}
 	}
 	if !strings.Contains(record.ImageID, "@sha256:") {
-		return fmt.Errorf("controller imageID is not resolved to a digest")
+		return errors.New("controller imageID is not resolved to a digest")
 	}
 	if err := c.writeCnpEvidence(cnp.CapabilityName(pod.UID), record, metav1.OwnerReference{APIVersion: "v1", Kind: "Pod", Name: pod.Name, UID: pod.UID}); err != nil {
 		return err
