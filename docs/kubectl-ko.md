@@ -70,6 +70,8 @@ kubectl ko
       status | backup | kick SERVER_ID
   trace --pod POD|--node NODE --dst-ip IP [OPTIONS]
   capture --pod POD -- [TCPDUMP_ARGS...]
+  network
+    inspect --pod POD [--output table|json]
   diagnose
     cluster
     node NODE
@@ -100,6 +102,7 @@ kubectl ko
 | `db nb restore` | Reconstruct the central NB/SB cluster from the NB database already present on the explicit bootstrap node. Verify the shared hostPath, use temporary per-node helpers when OVS does not mount the databases, stop central, preserve originals and RAFT headers, rebuild, verify storage and restart OVS. Helpers use the central image and security context and are cleaned up by UID. This is not local-file import; SB-only restore is not supported. |
 | `trace` | Resolve Pod/Node addresses, MACs and logical ports, trace through OVN, then OVS. Supports IPv4/IPv6, ICMP/TCP/UDP, IPv4 ARP request/reply, explicit destination MAC, hostNetwork, Underlay/U2O and VM logical ports. `--engine ovn` runs only OVN trace. |
 | `capture` | Execute tcpdump in a Pod's network namespace, including hostNetwork and internal-port paths. A remote `-w PATH` stays remote; `-w -` streams the original pcap bytes locally. |
+| `network inspect` | Show the Pod network namespace path, every interface's index, kind, MAC, MTU, state and addresses, plus the host-side veth peer when one exists. `--output=json` emits machine-readable data. Host-network Pods use the host namespace and expose peer indexes for host links. |
 | `diagnose cluster` | Check cluster configuration, component rollout and leaders; create a unique temporary NodePort Service and run active pinger checks. |
 | `diagnose node NODE` | Perform configuration checks and restrict the active pinger probes to one node. |
 | `diagnose subnet SUBNET` | Check the subnet, create an isolated temporary DaemonSet and NodePort Service, and check peer TCP/UDP, node ICMP and NodePort connectivity from those subnet Pods. Does not require optional CNI node TCP/UDP listeners. |
@@ -131,6 +134,7 @@ selected by `--kube-ovn-namespace`, `KUBE_OVN_NS`, then `kube-system`.
 | --- | --- |
 | Global | `--timeout=0` bounds the whole invocation; zero allows long streams. `--discovery-timeout=10s` bounds target selection. Kubernetes `--request-timeout` does not truncate an established exec stream. |
 | Raw tools / capture | `exec` OVS tools require `--node`; `capture` requires `--pod`. All remote arguments must follow `--`. |
+| Network inspection | `network inspect` requires `--pod`; `--output=table` is the default and `--output=json` is intended for automation. |
 | Trace | Exactly one of `--pod` / `--node`; required `--dst-ip`; `--protocol=icmp`, `--engine=all`, optional `--dst-mac`. TCP/UDP require `--dst-port=1..65535`. ARP uses `--arp-op=request|reply` and IPv4. |
 | Database backup | `--output FILE`; otherwise a unique DB-specific filename. |
 | Database recovery | Required `--source-node NODE` and either `--yes` or `--dry-run`. |
@@ -146,6 +150,8 @@ kubectl ko exec vsctl --node worker-a -- --timeout=5 show
 kubectl ko trace --pod app/web --dst-ip 10.0.0.8 --protocol tcp --dst-port 443
 kubectl ko trace --node worker-a --dst-ip 2001:db8::8 --engine ovn
 kubectl ko capture --namespace app --pod web -- -w - > capture.pcap
+kubectl ko network inspect --pod app/web
+kubectl ko network inspect --pod app/web --output json
 kubectl ko diagnose subnet ovn-default --tcp-port 8100 --udp-port 8101
 kubectl ko diagnose connectivity --target tcp://10.0.0.8:8100 --target 'udp://[2001:db8::8]:8101'
 kubectl ko db nb backup --output northbound.backup
@@ -172,6 +178,9 @@ No public Internet endpoint is required for the default cluster health check.
 
 The node agent uses Kubernetes `pods/attach` to carry a versioned gRPC stream
 over stdin/stdout. It does not use `pods/exec` against Kube-OVN component Pods.
+`network inspect` resolves the Pod netns from OVSDB through the agent, then
+reads Pod and host links with `ip -j`; it reports the host-side veth peer by
+ifindex without entering `kube-ovn-cni` or `ovs-ovn`.
 Probe Pods may use the normal Kubernetes streaming path for their own
 short-lived test process. Exec uses WebSocket with SPDY fallback only for
 supported handshake failures.

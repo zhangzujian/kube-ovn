@@ -48,7 +48,36 @@ func (a *Application) addNetworkCommands() {
 	}
 	capture.Flags().StringVar(&pod, "pod", "", "Pod to capture, optionally qualified by namespace")
 	a.root.AddCommand(capture)
+	a.addNetworkInspectCommand()
 	a.addTraceCommand()
+}
+
+func (a *Application) addNetworkInspectCommand() {
+	var pod, output string
+	command := &cobra.Command{
+		Use:   "inspect --pod [NAMESPACE/]POD",
+		Short: "Show a Pod network namespace, interfaces and veth peers",
+		Args: func(cmd *cobra.Command, args []string) error {
+			if err := cobra.NoArgs(cmd, args); err != nil {
+				return err
+			}
+			if err := validatePodReference(pod); err != nil {
+				return err
+			}
+			if output != "table" && output != "json" {
+				return errors.New("--output must be table or json")
+			}
+			return nil
+		},
+		RunE: a.run(func(ctx context.Context, client *Client, _ []string) error {
+			return a.networkInspect(ctx, client, pod, output)
+		}),
+	}
+	command.Flags().StringVar(&pod, "pod", "", "Pod to inspect, optionally qualified by namespace")
+	command.Flags().StringVarP(&output, "output", "o", "table", "Output format: table or json")
+	parent := &cobra.Command{Use: "network", Short: "Inspect Pod network namespaces and interfaces"}
+	parent.AddCommand(command)
+	a.root.AddCommand(parent)
 }
 
 type traceOptions struct {

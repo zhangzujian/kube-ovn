@@ -1,0 +1,296 @@
+package ko
+
+import (
+	"context"
+	"encoding/json/v2"
+	"errors"
+	"fmt"
+	"io"
+	"maps"
+	"slices"
+	"strconv"
+	"strings"
+
+	corev1 "k8s.io/api/core/v1"
+)
+
+type podNetworkInfo struct {
+	Namespace   string                `json:"namespace"`
+	Name        string                `json:"name"`
+	Node        string                `json:"node"`
+	NetNS       string                `json:"netns"`
+	HostNetwork bool                  `json:"hostNetwork"`
+	Interfaces  []podNetworkInterface `json:"interfaces"`
+}
+
+type podNetworkInterface struct {
+	Name      string       `json:"name"`
+	Index     int          `json:"index"`
+	PeerIndex int          `json:"peerIndex,omitzero"`
+	Kind      string       `json:"kind,omitempty"`
+	MAC       string       `json:"mac,omitempty"`
+	MTU       int          `json:"mtu,omitzero"`
+	OperState string       `json:"operState,omitempty"`
+	Flags     []string     `json:"flags,omitempty"`
+	Addresses []string     `json:"addresses,omitempty"`
+	HostPeer  *networkLink `json:"hostPeer,omitempty"`
+	Peer      *networkLink `json:"peer,omitempty"`
+}
+
+type networkLink struct {
+	Name      string   `json:"name"`
+	Index     int      `json:"index"`
+	PeerIndex int      `json:"peerIndex,omitzero"`
+	Kind      string   `json:"kind,omitempty"`
+	MAC       string   `json:"mac,omitempty"`
+	MTU       int      `json:"mtu,omitzero"`
+	OperState string   `json:"operState,omitempty"`
+	Flags     []string `json:"flags,omitempty"`
+	Addresses []string `json:"addresses,omitempty"`
+}
+
+type ipJSONLink struct {
+	Index     int            `json:"ifindex"`
+	Name      string         `json:"ifname"`
+	LinkIndex int            `json:"link_index"`
+	MTU       int            `json:"mtu"`
+	OperState string         `json:"operstate"`
+	Address   string         `json:"address"`
+	Flags     []string       `json:"flags"`
+	LinkType  string         `json:"link_type"`
+	LinkInfo  ipJSONLinkInfo `json:"linkinfo"`
+	AddrInfo  []ipJSONAddr   `json:"addr_info"`
+}
+
+type ipJSONLinkInfo struct {
+	InfoKind string `json:"info_kind"`
+}
+
+type ipJSONAddr struct {
+	Family    string `json:"family"`
+	Local     string `json:"local"`
+	PrefixLen int    `json:"prefixlen"`
+}
+
+func (c *Client) podNetwork(ctx context.Context, reference string) (*podNetworkInfo, error) {
+	pod, err := c.pod(ctx, reference)
+	if err != nil {
+		return nil, err
+	}
+	target, err := c.nodeTarget(ctx, pod.Spec.NodeName, "ovs")
+	if err != nil {
+		return nil, err
+	}
+
+	netns := "/proc/1/ns/net"
+	if !pod.Spec.HostNetwork {
+		netns, err = c.podNetNS(ctx, target, pod)
+		if err != nil {
+			return nil, err
+		}
+	}
+	podLinks, err := c.ipLinks(ctx, target, netns)
+	if err != nil {
+		return nil, fmt.Errorf("inspect pod network namespace %s: %w", netns, err)
+	}
+	hostLinks := podLinks
+	if !pod.Spec.HostNetwork {
+		hostLinks, err = c.ipLinks(ctx, target, "")
+		if err != nil {
+			return nil, fmt.Errorf("inspect host network namespace: %w", err)
+		}
+	}
+	hostByIndex := make(map[int]networkLink, len(hostLinks))
+	for _, link := range hostLinks {
+		hostByIndex[link.Index] = link.networkLink()
+	}
+
+	result := &podNetworkInfo{
+		Namespace:   pod.Namespace,
+		Name:        pod.Name,
+		Node:        pod.Spec.NodeName,
+		NetNS:       netns,
+		HostNetwork: pod.Spec.HostNetwork,
+		Interfaces:  make([]podNetworkInterface, 0, len(podLinks)),
+	}
+	for _, link := range podLinks {
+		item := link.podNetworkInterface()
+		if pod.Spec.HostNetwork {
+			if peer, ok := hostByIndex[link.LinkIndex]; ok && peer.Index != link.Index {
+				item.Peer = new(peer)
+			}
+		} else if peer, ok := hostByIndex[link.LinkIndex]; ok {
+			item.HostPeer = new(peer)
+		}
+		result.Interfaces = append(result.Interfaces, item)
+	}
+	return result, nil
+}
+
+func (c *Client) podNetNS(ctx context.Context, target Target, pod *corev1.Pod) (string, error) {
+	podName := pod.Name
+	for _, owner := range pod.OwnerReferences {
+		if owner.Kind == "VirtualMachineInstance" {
+			podName = owner.Name
+			break
+		}
+	}
+	rows, err := c.ovsRows(ctx, target, "ovs-vsctl", "name,external_ids,ofport", "Interface",
+		"external_ids:pod_name="+strconv.Quote(podName),
+		"external_ids:pod_namespace="+strconv.Quote(pod.Namespace))
+	if err != nil {
+		return "", fmt.Errorf("find OVS interfaces for pod %s/%s: %w", pod.Namespace, pod.Name, err)
+	}
+	paths := make(map[string]struct{}, len(rows))
+	for _, row := range rows {
+		externalIDs := ovsMap(row["external_ids"])
+		if path := externalIDs["pod_netns"]; path != "" {
+			paths[path] = struct{}{}
+		}
+	}
+	if len(paths) == 0 {
+		return "", fmt.Errorf("no OVS interface contains pod netns for %s/%s", pod.Namespace, pod.Name)
+	}
+	if len(paths) != 1 {
+		return "", fmt.Errorf("pod %s/%s has multiple network namespaces: %s", pod.Namespace, pod.Name, strings.Join(slices.Sorted(maps.Keys(paths)), ", "))
+	}
+	for path := range paths {
+		return path, nil
+	}
+	return "", errors.New("pod netns path is empty")
+}
+
+func (c *Client) ipLinks(ctx context.Context, target Target, netns string) ([]ipJSONLink, error) {
+	output, err := c.capture(ctx, target, namespaceCommand(netns, "ip", "-j", "-d", "addr", "show")...)
+	if err != nil {
+		return nil, err
+	}
+	var links []ipJSONLink
+	if err := json.Unmarshal([]byte(output), &links); err != nil {
+		return nil, fmt.Errorf("decode ip link JSON: %w", err)
+	}
+	return links, nil
+}
+
+func (link ipJSONLink) networkLink() networkLink {
+	return networkLink{
+		Name:      link.Name,
+		Index:     link.Index,
+		PeerIndex: link.LinkIndex,
+		Kind:      link.kind(),
+		MAC:       link.Address,
+		MTU:       link.MTU,
+		OperState: link.OperState,
+		Flags:     slices.Clone(link.Flags),
+		Addresses: link.addresses(),
+	}
+}
+
+func (link ipJSONLink) podNetworkInterface() podNetworkInterface {
+	return podNetworkInterface{
+		Name:      link.Name,
+		Index:     link.Index,
+		PeerIndex: link.LinkIndex,
+		Kind:      link.kind(),
+		MAC:       link.Address,
+		MTU:       link.MTU,
+		OperState: link.OperState,
+		Flags:     slices.Clone(link.Flags),
+		Addresses: link.addresses(),
+	}
+}
+
+func (link ipJSONLink) kind() string {
+	if link.LinkInfo.InfoKind != "" {
+		return link.LinkInfo.InfoKind
+	}
+	return link.LinkType
+}
+
+func (link ipJSONLink) addresses() []string {
+	addresses := make([]string, 0, len(link.AddrInfo))
+	for _, address := range link.AddrInfo {
+		if address.Local == "" {
+			continue
+		}
+		addresses = append(addresses, fmt.Sprintf("%s/%d", address.Local, address.PrefixLen))
+	}
+	return addresses
+}
+
+func (a *Application) networkInspect(ctx context.Context, client *Client, pod, output string) error {
+	info, err := client.podNetwork(ctx, pod)
+	if err != nil {
+		return err
+	}
+	if output == "json" {
+		if err := json.MarshalWrite(a.streams.Out, info); err != nil {
+			return err
+		}
+		_, err := io.WriteString(a.streams.Out, "\n")
+		return err
+	}
+	return writePodNetwork(a.streams.Out, info)
+}
+
+func writePodNetwork(out io.Writer, info *podNetworkInfo) error {
+	if _, err := fmt.Fprintf(out, "Pod: %s/%s\nNode: %s\nNetwork namespace: %s\nHost network: %t\nInterfaces:\n", info.Namespace, info.Name, info.Node, info.NetNS, info.HostNetwork); err != nil {
+		return err
+	}
+	if len(info.Interfaces) == 0 {
+		_, err := io.WriteString(out, "  (none)\n")
+		return err
+	}
+	for _, item := range info.Interfaces {
+		if _, err := fmt.Fprintf(out, "  - %s (ifindex=%d", item.Name, item.Index); err != nil {
+			return err
+		}
+		if item.Kind != "" {
+			if _, err := fmt.Fprintf(out, ", kind=%s", item.Kind); err != nil {
+				return err
+			}
+		}
+		if item.MAC != "" {
+			if _, err := fmt.Fprintf(out, ", mac=%s", item.MAC); err != nil {
+				return err
+			}
+		}
+		if item.MTU != 0 {
+			if _, err := fmt.Fprintf(out, ", mtu=%d", item.MTU); err != nil {
+				return err
+			}
+		}
+		if item.OperState != "" {
+			if _, err := fmt.Fprintf(out, ", state=%s", item.OperState); err != nil {
+				return err
+			}
+		}
+		if len(item.Flags) > 0 {
+			if _, err := fmt.Fprintf(out, ", flags=%s", strings.Join(item.Flags, ",")); err != nil {
+				return err
+			}
+		}
+		if _, err := io.WriteString(out, ")\n"); err != nil {
+			return err
+		}
+		if len(item.Addresses) > 0 {
+			if _, err := fmt.Fprintf(out, "      addresses: %s\n", strings.Join(item.Addresses, ", ")); err != nil {
+				return err
+			}
+		}
+		if item.HostPeer != nil {
+			if _, err := fmt.Fprintf(out, "      host peer: %s (ifindex=%d, kind=%s, mac=%s, mtu=%d, state=%s, flags=%s)\n", item.HostPeer.Name, item.HostPeer.Index, item.HostPeer.Kind, item.HostPeer.MAC, item.HostPeer.MTU, item.HostPeer.OperState, strings.Join(item.HostPeer.Flags, ",")); err != nil {
+				return err
+			}
+		} else if item.Peer != nil {
+			if _, err := fmt.Fprintf(out, "      peer: %s (ifindex=%d, kind=%s, mac=%s, mtu=%d, state=%s, flags=%s)\n", item.Peer.Name, item.Peer.Index, item.Peer.Kind, item.Peer.MAC, item.Peer.MTU, item.Peer.OperState, strings.Join(item.Peer.Flags, ",")); err != nil {
+				return err
+			}
+		} else if item.PeerIndex != 0 {
+			if _, err := fmt.Fprintf(out, "      peer ifindex: %d\n", item.PeerIndex); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
