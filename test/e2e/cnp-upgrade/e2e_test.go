@@ -277,11 +277,11 @@ func probeConnections(ctx context.Context, f *framework.Framework, pod *corev1.P
 		}
 	}
 	for _, test := range extra {
-		command := fmt.Sprintf("curl -gsS --noproxy '*' --connect-timeout 2 --max-time 3 %s >/dev/null", test.allowed)
+		commands := []string{fmt.Sprintf("curl -gsS --noproxy '*' --connect-timeout 2 --max-time 3 %s >/dev/null", test.allowed)}
 		for _, denied := range test.denied {
-			command += fmt.Sprintf(" && ! curl -gsS --noproxy '*' --connect-timeout 1 --max-time 2 %s >/dev/null", denied)
+			commands = append(commands, fmt.Sprintf("! curl -gsS --noproxy '*' --connect-timeout 1 --max-time 2 %s >/dev/null", denied))
 		}
-		stderr, err := executeProbe(ctx, f, pod, command)
+		stderr, err := executeProbe(ctx, f, pod, strings.Join(commands, " && "))
 		if err != nil {
 			return fmt.Errorf("experimental peer probe %s failed at %s (%s): %w", test.allowed, time.Now().UTC().Format(time.RFC3339Nano), stderr, err)
 		}
