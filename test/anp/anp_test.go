@@ -1,8 +1,8 @@
 package anp
 
 import (
+	"net/url"
 	"os"
-	"path"
 	"slices"
 	"testing"
 	"time"
@@ -55,7 +55,10 @@ func TestAdminNetworkPolicyConformance(t *testing.T) {
 			t.Fatalf("Failed to get git revision from pseudo version: %v", err)
 		}
 	}
-	manifestsURL := path.Join(NetworkPolicyAPIRepoRaw, gitRef, NetworkPolicyAPIRepoPath)
+	manifestsURL, err := conformanceManifestsURL(gitRef)
+	if err != nil {
+		t.Fatalf("Failed to construct manifests URL: %v", err)
+	}
 	t.Logf("Using manifests URL: %s", manifestsURL)
 
 	t.Log("Configuring environment for adminnetworkpolicies conformance tests")
@@ -118,4 +121,8 @@ func TestAdminNetworkPolicyConformance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error writing conformance profile report: %v", err)
 	}
+}
+
+func conformanceManifestsURL(gitRef string) (string, error) {
+	return url.JoinPath(NetworkPolicyAPIRepoRaw, gitRef, NetworkPolicyAPIRepoPath)
 }

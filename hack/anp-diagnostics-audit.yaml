@@ -1,0 +1,17 @@
+apiVersion: audit.k8s.io/v1
+kind: Policy
+omitManagedFields: true
+rules:
+  - level: RequestResponse
+    verbs: [create, patch, update, delete]
+    resources:
+      - group: policy.networking.k8s.io
+        resources: [adminnetworkpolicies, baselineadminnetworkpolicies]
+      - group: networking.k8s.io
+        resources: [networkpolicies]
+  - level: Metadata
+    verbs: [create, get]
+    resources:
+      - group: ''
+        resources: [pods/exec]
+  - level: None
