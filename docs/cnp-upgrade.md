@@ -191,7 +191,11 @@ the legacy controller to two nodes and rolls both replicas to the compatible
 image with `maxSurge: 0, maxUnavailable: 1`, while the same probes continue.
 Node tests use host-network listeners on advertised node addresses. DNS migration
 uses controlled DNSNameResolver status with live allowed and denied listeners;
-every listener is checked before denial rules are installed. This isolates
+every listener, including the basic policy ports, is checked before denial rules
+are installed. Separate denied ports exercise Admin ingress, Baseline ingress
+and Baseline egress; the latter two cannot mask each other. Each continuous probe
+sample records its start time, elapsed time, endpoints, cancellation state and
+result in the job log. This isolates
 representation migration from external DNS availability. The separate domain
 E2E suite exercises real queries and address discovery.
 The fixture installs the fixed v1.16.10 DNSNameResolver schema before enabling

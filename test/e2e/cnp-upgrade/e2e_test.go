@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -58,6 +59,7 @@ var _ = framework.SerialDescribe("[group:cnp-upgrade]", func() {
 			{Name: "allowed", Image: "registry.k8s.io/e2e-test-images/agnhost:2.45", Args: []string{"netexec", "--http-port=8080", "--udp-port=-1"}},
 			{Name: "denied", Image: "registry.k8s.io/e2e-test-images/agnhost:2.45", Args: []string{"netexec", "--http-port=8081", "--udp-port=-1"}},
 			{Name: "baseline-denied", Image: "registry.k8s.io/e2e-test-images/agnhost:2.45", Args: []string{"netexec", "--http-port=8082", "--udp-port=-1"}},
+			{Name: "baseline-ingress-denied", Image: "registry.k8s.io/e2e-test-images/agnhost:2.45", Args: []string{"netexec", "--http-port=8083", "--udp-port=-1"}},
 			{Name: "dns-allowed", Image: "registry.k8s.io/e2e-test-images/agnhost:2.45", Args: []string{"netexec", "--http-port=8090", "--udp-port=-1"}},
 		}}}
 		server.Spec.NodeName = nodes.Items[0].Name
@@ -66,7 +68,18 @@ var _ = framework.SerialDescribe("[group:cnp-upgrade]", func() {
 		probe.Spec.NodeName = nodes.Items[1].Name
 		probe = f.PodClient().CreateSync(probe)
 		extra := createExperimentalProbes(f, &nodes.Items[0], server)
-		verifyExperimentalListeners(f, probe, extra)
+		listeners := slices.Clone(extra)
+		for _, address := range server.Status.PodIPs {
+			listeners = append(listeners, connectionProbe{
+				allowed: "http://" + net.JoinHostPort(address.IP, "8080"),
+				denied: []string{
+					"http://" + net.JoinHostPort(address.IP, "8081"),
+					"http://" + net.JoinHostPort(address.IP, "8082"),
+					"http://" + net.JoinHostPort(address.IP, "8083"),
+				},
+			})
+		}
+		verifyExperimentalListeners(f, probe, listeners)
 		names := []string{"cnp-upgrade-admin-" + framework.RandomSuffix(), "cnp-upgrade-baseline-" + framework.RandomSuffix(), "cnp-upgrade-experimental-" + framework.RandomSuffix()}
 		defer func() {
 			for _, name := range names {
@@ -258,19 +271,36 @@ func upgradePolicy(name, namespace string, baseline bool) *unstructured.Unstruct
 	}
 	if !baseline {
 		rules = append(rules, map[string]any{"name": "pass-8082", "action": "Pass", peerKey: peer, "ports": []any{map[string]any{"portNumber": map[string]any{"port": int64(8082)}}}})
+		rules = append(rules, map[string]any{"name": "pass-8083", "action": "Pass", peerKey: peer, "ports": []any{map[string]any{"portNumber": map[string]any{"port": int64(8083)}}}})
+	} else {
+		// Egress accepts this port so only Baseline ingress can reject it.
+		rules = append(rules, map[string]any{"name": "accept-8083", "action": "Accept", peerKey: peer, "ports": []any{map[string]any{"portNumber": map[string]any{"port": int64(8083)}}}})
 	}
 	rules = append(rules, map[string]any{"name": "deny-range", "action": "Deny", peerKey: peer, "ports": []any{map[string]any{"portRange": map[string]any{"protocol": "TCP", "start": denyStart, "end": denyStart + 1}}}})
+	spec := map[string]any{"tier": tier, "priority": int64(10), "subject": subject, direction: rules}
+	if baseline {
+		spec["ingress"] = []any{
+			map[string]any{"name": "accept-8080", "action": "Accept", "from": peer, "ports": []any{map[string]any{"portNumber": map[string]any{"port": int64(8080)}}}},
+			map[string]any{"name": "deny-8083", "action": "Deny", "from": peer, "ports": []any{map[string]any{"portNumber": map[string]any{"port": int64(8083)}}}},
+		}
+	}
 	return &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": cnp.Resource.GroupVersion().String(), "kind": "ClusterNetworkPolicy", "metadata": map[string]any{"name": name},
-		"spec": map[string]any{"tier": tier, "priority": int64(10), "subject": subject, direction: rules},
+		"spec": spec,
 	}}
 }
 
-func probeConnections(ctx context.Context, f *framework.Framework, pod *corev1.Pod, addresses []string, extra ...connectionProbe) error {
+func probeConnections(ctx context.Context, f *framework.Framework, pod *corev1.Pod, addresses []string, extra ...connectionProbe) (err error) {
+	started := time.Now()
+	defer func() {
+		framework.Logf("CNP new-connection sample: started=%s elapsed=%s addresses=%v experimental=%v cancelled=%v result=%v",
+			started.UTC().Format(time.RFC3339Nano), time.Since(started), addresses, extra, ctx.Err() != nil, err)
+	}()
 	for _, address := range addresses {
 		allowed, denied := "http://"+net.JoinHostPort(address, "8080"), "http://"+net.JoinHostPort(address, "8081")
 		command := fmt.Sprintf("curl -gsS --noproxy '*' --connect-timeout 2 --max-time 3 %s >/dev/null && ! curl -gsS --noproxy '*' --connect-timeout 1 --max-time 2 %s >/dev/null", allowed, denied)
 		command += fmt.Sprintf(" && ! curl -gsS --noproxy '*' --connect-timeout 1 --max-time 2 http://%s >/dev/null", net.JoinHostPort(address, "8082"))
+		command += fmt.Sprintf(" && ! curl -gsS --noproxy '*' --connect-timeout 1 --max-time 2 http://%s >/dev/null", net.JoinHostPort(address, "8083"))
 		stderr, err := executeProbe(ctx, f, pod, command)
 		if err != nil {
 			return fmt.Errorf("positive/negative new-connection probe %s failed at %s (%s): %w", address, time.Now().UTC().Format(time.RFC3339Nano), stderr, err)
