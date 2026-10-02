@@ -166,7 +166,9 @@ class Recorder:
                 with self.lock:
                     self.ring.append(destination)
                     if len(self.ring) > self.window:
-                        shutil.rmtree(self.ring.pop(0))
+                        expired = self.ring.pop(0)
+                        if expired != self.output / "initial":
+                            shutil.rmtree(expired)
                 self.stop.wait(self.interval)
         except Exception as err:
             self.errors.append("rolling collector: " + str(err))

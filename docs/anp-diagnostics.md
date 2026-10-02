@@ -4,7 +4,10 @@ The `Historical ANP and BANP Diagnostics` workflow runs the retained
 `network-policy-api v0.1.8` conformance suite against **v1.15.28 and v1.16.10**,
 each in **IPv4, IPv6 and dual-stack** disposable two-node kind clusters. It tests
 historical components without upgrading their controller, CRDs or host CNI to a
-candidate release. The only conformance harness correction is preserving `https://`
+candidate release. The historical v1alpha2 CNP informer prerequisite is installed
+from upstream commit `3910463a5686`, rather than the v0.1.8 release tag which does
+not contain that CRD. The optional v1.15 DNSNameResolver CRD uses the pinned
+v1.16.10 installer schema, matching the reference fixture. The only conformance harness correction is preserving `https://`
 in the base manifest URL; policy assertions and the upstream single-shot probes
 are unchanged.
 

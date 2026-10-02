@@ -24,12 +24,19 @@ KIND_AUDITING=true make "kind-init-$IP_FAMILY" K8S_VERSION=v1.35.0
 make untaint-control-plane
 kubectl config use-context kind-kube-ovn
 
-for resource in adminnetworkpolicies baselineadminnetworkpolicies clusternetworkpolicies; do
+for resource in adminnetworkpolicies baselineadminnetworkpolicies; do
   curl --fail --silent --show-error --location \
     "https://raw.githubusercontent.com/kubernetes-sigs/network-policy-api/v0.1.8/config/crd/experimental/policy.networking.k8s.io_${resource}.yaml" \
     -o "anp-diagnostics/${resource}.yaml"
   kubectl apply -f "anp-diagnostics/${resource}.yaml"
 done
+
+# ENABLE_ANP also starts the historical v1alpha2 CNP informer. The v0.1.8
+# release predates this CRD; pin the same upstream revision as the old controller.
+curl --fail --silent --show-error --location \
+  https://raw.githubusercontent.com/kubernetes-sigs/network-policy-api/3910463a5686/config/crd/experimental/policy.networking.k8s.io_clusternetworkpolicies.yaml \
+  -o anp-diagnostics/clusternetworkpolicies.yaml
+kubectl apply -f anp-diagnostics/clusternetworkpolicies.yaml
 
 # v1.15 exposes DNSNameResolver but its installer does not ship the CRD.
 curl --fail --silent --show-error --location \
