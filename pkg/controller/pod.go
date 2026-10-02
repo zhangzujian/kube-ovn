@@ -640,6 +640,24 @@ func subnetDHCPOptionsUUIDs(subnet *kubeovnv1.Subnet) *ovs.DHCPOptionsUUIDs {
 	}
 }
 
+// localSubnetDHCPOptionsUUIDs returns the DHCP option rows from the local NB
+// when distributed mode is enabled. Subnet status is shared by all zones, but
+// UUIDs are local to each independent NB database.
+func (c *Controller) localSubnetDHCPOptionsUUIDs(subnet *kubeovnv1.Subnet) *ovs.DHCPOptionsUUIDs {
+	if c != nil && c.config != nil && c.config.EnableDistributedSharedSubnet {
+		c.distributedDHCPOptionsMu.RLock()
+		options, ok := c.distributedDHCPOptions[subnet.Name]
+		c.distributedDHCPOptionsMu.RUnlock()
+		if ok {
+			return &ovs.DHCPOptionsUUIDs{
+				DHCPv4OptionsUUID: options.DHCPv4OptionsUUID,
+				DHCPv6OptionsUUID: options.DHCPv6OptionsUUID,
+			}
+		}
+	}
+	return subnetDHCPOptionsUUIDs(subnet)
+}
+
 // dhcpOptionsForPodIPFamily returns DHCP options that match the IP families
 // actually allocated to the pod. A pod can request one family from a dual-stack
 // subnet, so using the subnet's full DHCP option set would attach DHCP for an
@@ -679,7 +697,7 @@ func (c *Controller) reconcilePodDHCPOptions(pod *v1.Pod, podNets []*kubeovnNet)
 		podIP := pod.Annotations[fmt.Sprintf(util.IPAddressAnnotationTemplate, podNet.ProviderName)]
 		dhcpV4 := pod.Annotations[fmt.Sprintf(util.DHCPv4OptionsAnnotationTemplate, podNet.ProviderName)]
 		dhcpV6 := pod.Annotations[fmt.Sprintf(util.DHCPv6OptionsAnnotationTemplate, podNet.ProviderName)]
-		dhcpOptions, dhcpV4, dhcpV6 := dhcpOptionsForPodIPFamily(subnetDHCPOptionsUUIDs(subnet), podIP, dhcpV4, dhcpV6)
+		dhcpOptions, dhcpV4, dhcpV6 := dhcpOptionsForPodIPFamily(c.localSubnetDHCPOptionsUUIDs(subnet), podIP, dhcpV4, dhcpV6)
 
 		var mtu int
 		var gateway string
@@ -731,7 +749,7 @@ func (c *Controller) reconcileDistributedExistingPodPorts(pod *v1.Pod, podNets [
 
 		dhcpV4 := pod.Annotations[fmt.Sprintf(util.DHCPv4OptionsAnnotationTemplate, podNet.ProviderName)]
 		dhcpV6 := pod.Annotations[fmt.Sprintf(util.DHCPv6OptionsAnnotationTemplate, podNet.ProviderName)]
-		subnetDHCP, dhcpV4, dhcpV6 := dhcpOptionsForPodIPFamily(subnetDHCPOptionsUUIDs(podNet.Subnet), ipStr, dhcpV4, dhcpV6)
+		subnetDHCP, dhcpV4, dhcpV6 := dhcpOptionsForPodIPFamily(c.localSubnetDHCPOptionsUUIDs(podNet.Subnet), ipStr, dhcpV4, dhcpV6)
 		mtu, err := c.getSubnetMTU(podNet.Subnet)
 		if err != nil {
 			return err
@@ -870,7 +888,7 @@ func (c *Controller) reconcileAllocateSubnets(pod *v1.Pod, needAllocatePodNets [
 
 			dhcpV4 := pod.Annotations[fmt.Sprintf(util.DHCPv4OptionsAnnotationTemplate, podNet.ProviderName)]
 			dhcpV6 := pod.Annotations[fmt.Sprintf(util.DHCPv6OptionsAnnotationTemplate, podNet.ProviderName)]
-			subnetDHCP, dhcpV4, dhcpV6 := dhcpOptionsForPodIPFamily(subnetDHCPOptionsUUIDs(subnet), ipStr, dhcpV4, dhcpV6)
+			subnetDHCP, dhcpV4, dhcpV6 := dhcpOptionsForPodIPFamily(c.localSubnetDHCPOptionsUUIDs(subnet), ipStr, dhcpV4, dhcpV6)
 
 			var mtu int
 			var gateway string

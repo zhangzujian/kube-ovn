@@ -524,6 +524,14 @@ func (c *Controller) updateSubnetDHCPOption(subnet *kubeovnv1.Subnet, needRouter
 		klog.Errorf("failed to update dhcp options for switch %s, %v", subnet.Name, err)
 		return err
 	}
+	if c.config.EnableDistributedSharedSubnet {
+		c.distributedDHCPOptionsMu.Lock()
+		if c.distributedDHCPOptions == nil {
+			c.distributedDHCPOptions = make(map[string]ovs.DHCPOptionsUUIDs)
+		}
+		c.distributedDHCPOptions[subnet.Name] = *dhcpOptionsUUIDs
+		c.distributedDHCPOptionsMu.Unlock()
+	}
 
 	vpc, err := c.vpcsLister.Get(subnet.Spec.Vpc)
 	if err != nil {

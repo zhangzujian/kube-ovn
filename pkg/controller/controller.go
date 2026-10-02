@@ -78,6 +78,12 @@ type Controller struct {
 	OVNSbClient         ovs.SbClient
 	distributedICClient *ovs.LegacyClient
 
+	// distributedDHCPOptions stores the DHCP_Options UUIDs from this zone's
+	// NB. UUIDs are database-local, so Subnet.status cannot be the source of
+	// truth when each zone has an independent NB database.
+	distributedDHCPOptionsMu sync.RWMutex
+	distributedDHCPOptions   map[string]ovs.DHCPOptionsUUIDs
+
 	// ExternalGatewayType define external gateway type, centralized
 	ExternalGatewayType string
 
