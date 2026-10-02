@@ -12,7 +12,9 @@ on:
       - 'test/e2e/cnp-upgrade/**'
       - 'test/e2e/cnp-domain/**'
       - 'test/cnp/**'
+      - 'test/anp/**'
       - 'hack/cnp-upgrade-e2e.sh'
+      - 'hack/cnp-conformance-evidence.sh'
       - 'hack/cnp_upgrade_prerequisites*'
       - 'yamls/cnp/**'
       - 'go.mod'
@@ -66,6 +68,7 @@ jobs:
           git diff --exit-code -- go.mod go.sum yamls/cnp
           (cd test/cnp && go mod tidy && go test -run '^$' ./...)
           git diff --exit-code -- test/cnp/go.mod test/cnp/go.sum
+          (cd test/anp && go test -count=1 -run '^TestConformanceManifestsURL$' ./...)
       - name: Run isolated API-server and compatibility tests
         run: |
           export KUBEBUILDER_ASSETS="$(setup-envtest use 1.35.x -p path)"
@@ -160,9 +163,9 @@ jobs:
         run: |
           kubectl get cnp -o json | jq -e '.items | length == 0'
           kubectl apply -f yamls/cnp/native.yaml
-          KUBECONFIG="$HOME/.kube/config" make kube-ovn-cnp-e2e
+          KUBECONFIG="$HOME/.kube/config" bash hack/cnp-conformance-evidence.sh cnp make kube-ovn-cnp-e2e
       - name: Verify retained v1alpha1 ANP and BANP conformance
-        run: KUBECONFIG="$HOME/.kube/config" make kube-ovn-anp-e2e
+        run: KUBECONFIG="$HOME/.kube/config" bash hack/cnp-conformance-evidence.sh anp make kube-ovn-anp-e2e
       - name: Collect upgrade evidence
         if: always()
         run: |
@@ -188,4 +191,5 @@ jobs:
           path: |
             cnp-evidence
             cnp-test-report.yaml
+            anp-test-report.yaml
           retention-days: 7
