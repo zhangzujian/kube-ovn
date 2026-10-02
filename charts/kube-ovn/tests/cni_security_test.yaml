@@ -33,7 +33,6 @@ tests:
     set:
       masterNodes:
         - "10.0.0.1"
-      cni_conf.DISABLE_LEGACY_CNI_EXECUTION: false
     asserts:
       - notContains:
           path: spec.template.spec.containers[0].args
