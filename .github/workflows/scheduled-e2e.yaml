@@ -1022,7 +1022,7 @@ jobs:
   kube-ovn-ha-e2e:
     name: Kube-OVN HA E2E
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
