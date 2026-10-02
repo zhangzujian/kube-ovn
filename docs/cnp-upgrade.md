@@ -194,7 +194,15 @@ CI covers schema compilation, OpenAPI/CEL/pruning/defaulting, real API-server
 round-trips and guarded patching, numeric ACLs, invalid conditions, legacy
 ReplicaSet/Pod gates, chart strategies and the two independent Go modules.
 The upgrade job creates disposable kind clusters from the pinned v1.15.28 and
-v1.16.10 installers for IPv4, IPv6 and dual stack. Before changing component
+v1.16.10 installers for IPv4, IPv6 and dual stack. It prepares target component
+prerequisites with `hack/cnp_upgrade_prerequisites.py`, restricted to the
+`kind-kube-ovn` context in GitHub Actions. It checks both existing component
+roles against the pinned source installer, then appends only missing target
+resource permissions with UID/resourceVersion/rules tests. It creates missing
+`kubeovn.io` CRDs after validating all proposed changes with server dry-run;
+existing CRDs, policy schemas, accounts and bindings are not replaced. The
+generated prerequisite manifests and patches are retained in failure evidence.
+Before changing component
 images, SubjectAccessReview checks require effective ServiceCIDR get/list/watch
 access for both the controller and CNI service accounts. These checks do not
 grant permissions and reject missing prerequisites before starting a rollout.

@@ -55,6 +55,10 @@ ENABLE_ANP=true ENABLE_DNS_NAME_RESOLVER=true DEL_NON_HOST_NET_POD=false bash le
 kubectl rollout status deployment/kube-ovn-controller -n kube-system --timeout=300s
 kubectl rollout status daemonset/kube-ovn-cni -n kube-system --timeout=300s
 
+# Normal version upgrades prepare target component RBAC and missing Kube-OVN
+# CRDs before changing images. Keep policy schemas and existing accounts intact.
+python hack/cnp_upgrade_prerequisites.py --source-installer legacy-install.sh
+
 # Publishing only to a disposable registry gives the test controller a real
 # manifest digest without public registry credentials or permission changes.
 docker load --input cnp-upgrade.tar
