@@ -4,8 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json/v2"
-
-	"k8s.io/apimachinery/pkg/types"
 )
 
 const Capability = "cnp-dual-read-v1"
@@ -29,13 +27,10 @@ type Receipt struct {
 
 const VerifyAnnotation = "kube-ovn.io/cnp-verify-request"
 
-func ReceiptName(uid types.UID) string {
-	return "kube-ovn-cnp-" + Hash([]byte(uid))[:32]
-}
-
-func CapabilityName(uid types.UID) string {
-	return "kube-ovn-cnp-controller-" + Hash([]byte(uid))[:24]
-}
+const (
+	CapabilityAnnotation = "kube-ovn.io/cnp-capability"
+	ReceiptAnnotation    = "kube-ovn.io/cnp-verification-receipt"
+)
 
 func Hash(data []byte) string {
 	sum := sha256.Sum256(data)

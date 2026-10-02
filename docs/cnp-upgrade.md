@@ -125,12 +125,18 @@ separate transactions; this does not promise policy-wide atomicity. Receipts
 confirm NB transaction success/read-back, not southbound convergence or end-to-end
 traffic. Continuous probes are a separate mandatory release gate.
 
-The controller uses its existing ConfigMap permissions for evidence. Evidence
-is bound to the policy UID, generation, semantic digest, leader Pod UID, resolved
-image digest, session and verification nonce. It is not CNP status or a readiness
-signal. Failure to publish evidence blocks migration while enforcement continues.
-Evidence is owned by its corresponding CNP or controller Pod and is garbage
-collected with that owner. No additional account or permission is needed.
+The controller uses its existing Pod patch permission for evidence, which is
+also available on v1.15.28 where ConfigMaps are read-only. The leader Pod stores
+`kube-ovn.io/cnp-capability` and one `kube-ovn.io/cnp-verification-receipt` annotation.
+The requested receipt slot has bounded size regardless of policy count. Verify
+one object at a time: concurrent verification sessions can replace each other's
+slot and fail validation; they cannot validate a different UID or nonce. The
+append-only migration journal retains each successfully verified receipt.
+Evidence binds policy UID/generation/semantic digest, leader Pod UID, resolved
+image digest, process session and verification nonce. It is not CNP status or
+a readiness signal. Failed evidence publication blocks migration while enforcement
+continues. Pod replacement removes evidence; every new request needs a fresh
+receipt from the current leader. No additional account or permission is needed.
 
 ## Rollback
 

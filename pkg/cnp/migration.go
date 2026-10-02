@@ -21,6 +21,7 @@ type ObjectPlan struct {
 	Generation      int64            `json:"generation"`
 	SemanticDigest  string           `json:"semanticDigest"`
 	Patch           []PatchOperation `json:"patch"`
+	Receipt         *Receipt         `json:"receipt,omitzero"`
 }
 
 // PlanObject uses the current raw object; it never restores a historical spec.

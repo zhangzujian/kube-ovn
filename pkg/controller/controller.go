@@ -325,7 +325,7 @@ type Controller struct {
 
 	cnpsLister     *cnp.Lister
 	cnpContext     context.Context
-	cnpSession     *cnp.Receipt
+	cnpSession     atomic.Pointer[cnp.Receipt]
 	cnpReceipts    *xsync.Map[string, *cnp.Receipt]
 	cnpsSynced     cache.InformerSynced
 	addCnpQueue    workqueue.TypedRateLimitingInterface[string]
@@ -914,6 +914,7 @@ func Run(ctx context.Context, config *Configuration) {
 		if err := controller.initCnpEvidence(); err != nil {
 			// Policy enforcement must continue even if upgrade evidence is unavailable.
 			klog.Errorf("CNP upgrade verification is unavailable: %v", err)
+			go controller.retryCnpEvidence(ctx)
 		}
 	}
 

@@ -151,7 +151,7 @@ jobs:
         run: |
           mkdir -p cnp-evidence
           kubectl get pods,deployments,replicasets,leases -n kube-system -o yaml > cnp-evidence/control-plane.yaml
-          kubectl get configmaps -n kube-system -l kube-ovn.io/cnp-evidence=true -o yaml > cnp-evidence/application-receipts.yaml
+          kubectl get pods -n kube-system -l app=kube-ovn-controller -o json | jq '[.items[] | {name:.metadata.name,uid:.metadata.uid,capability:.metadata.annotations["kube-ovn.io/cnp-capability"],receipt:.metadata.annotations["kube-ovn.io/cnp-verification-receipt"]}]' > cnp-evidence/application-receipts.json
           kubectl get cnp,crd -o yaml > cnp-evidence/policy-schema.yaml
           kubectl get events -A -o yaml > cnp-evidence/events.yaml
           kubectl logs -n kube-system -l app=kube-ovn-controller --all-containers=true --tail=5000 > cnp-evidence/controller.log

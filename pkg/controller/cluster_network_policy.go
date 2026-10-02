@@ -155,7 +155,7 @@ func (c *Controller) handleAddCnp(key string) (err error) {
 		return err
 	}
 	c.priorityMapMutex.Unlock()
-	if c.cnpSession != nil {
+	if c.cnpSession.Load() != nil {
 		unchanged, err := c.reuseCnpEvidence(cnp)
 		if err != nil {
 			return err

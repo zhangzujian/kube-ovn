@@ -26,8 +26,8 @@ func compatibleFleet(t *testing.T) (*Upgrade, *corev1.Pod, *appsv1.ReplicaSet) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cm := &corev1.ConfigMap{Name: CapabilityName(pod.UID), Namespace: "kube-system", Data: map[string]string{"receipt": string(data)}}
-	client := fake.NewClientset([]runtime.Object{deployment, set, pod, lease, cm}...)
+	pod.Annotations = map[string]string{CapabilityAnnotation: string(data)}
+	client := fake.NewClientset([]runtime.Object{deployment, set, pod, lease}...)
 	return &Upgrade{Kube: client, Namespace: "kube-system", Deployment: deployment.Name, Image: image}, pod, set
 }
 
@@ -65,7 +65,8 @@ func TestControllerGateRejectsUnsafeFleet(t *testing.T) {
 			}
 		}},
 		{"capability missing", func(t *testing.T, u *Upgrade, pod *corev1.Pod, _ *appsv1.ReplicaSet) {
-			if err := u.Kube.CoreV1().ConfigMaps(u.Namespace).Delete(t.Context(), CapabilityName(pod.UID), metav1.DeleteOptions{}); err != nil {
+			delete(pod.Annotations, CapabilityAnnotation)
+			if _, err := u.Kube.CoreV1().Pods(u.Namespace).Update(t.Context(), pod, metav1.UpdateOptions{}); err != nil {
 				t.Fatal(err)
 			}
 		}},

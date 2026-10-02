@@ -164,12 +164,8 @@ func (u *Upgrade) VerifyController(ctx context.Context) (*Receipt, error) {
 	if leader == nil || deployment.Spec.Replicas == nil || count != *deployment.Spec.Replicas {
 		return nil, errors.New("controller rollout is not stable")
 	}
-	cm, err := u.Kube.CoreV1().ConfigMaps(u.Namespace).Get(ctx, CapabilityName(leader.UID), metav1.GetOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("leader capability unavailable: %w", err)
-	}
 	var record Receipt
-	if err := json.Unmarshal([]byte(cm.Data["receipt"]), &record); err != nil {
+	if err := json.Unmarshal([]byte(leader.Annotations[CapabilityAnnotation]), &record); err != nil {
 		return nil, err
 	}
 	if record.Capability != Capability || record.Leader != leader.Name || record.PodUID != string(leader.UID) || record.Session == "" || !sameDigest(record.ImageID, u.Image) {
@@ -441,21 +437,31 @@ func (u *Upgrade) verifyObject(ctx context.Context, plan *ObjectPlan) error {
 		return err
 	}
 	err = wait.PollUntilContextTimeout(ctx, time.Second, u.Timeout, true, func(ctx context.Context) (bool, error) {
-		cm, err := u.Kube.CoreV1().ConfigMaps(u.Namespace).Get(ctx, ReceiptName(types.UID(plan.UID)), metav1.GetOptions{})
+		pod, err := u.Kube.CoreV1().Pods(u.Namespace).Get(ctx, leader.Leader, metav1.GetOptions{})
 		if apierrors.IsNotFound(err) {
 			return false, nil
 		}
 		if err != nil {
 			return false, err
 		}
+		if string(pod.UID) != leader.PodUID || pod.DeletionTimestamp != nil {
+			return false, errors.New("leader Pod changed during verification")
+		}
+		if pod.Annotations[ReceiptAnnotation] == "" {
+			return false, nil
+		}
 		var record Receipt
-		if err := json.Unmarshal([]byte(cm.Data["receipt"]), &record); err != nil {
+		if err := json.Unmarshal([]byte(pod.Annotations[ReceiptAnnotation]), &record); err != nil {
 			return false, err
 		}
-		if record.Error != "" && record.Generation == plan.Generation {
+		if record.Error != "" && record.Request == request && record.PolicyUID == plan.UID && record.Generation == plan.Generation && record.Session == leader.Session {
 			return false, fmt.Errorf("CNP %s application failed: %s", plan.Name, record.Error)
 		}
-		return record.Request == request && record.Error == "" && record.PolicyUID == plan.UID && record.Generation == plan.Generation && record.SemanticDigest == plan.SemanticDigest && record.OVNDigest != "" && record.Session == leader.Session && record.PodUID == leader.PodUID && record.Capability == Capability && sameDigest(record.ImageID, u.Image), nil
+		matched := record.Request == request && record.Error == "" && record.PolicyUID == plan.UID && record.Generation == plan.Generation && record.SemanticDigest == plan.SemanticDigest && record.OVNDigest != "" && record.Session == leader.Session && record.PodUID == leader.PodUID && record.Capability == Capability && sameDigest(record.ImageID, u.Image)
+		if matched {
+			plan.Receipt = &record
+		}
+		return matched, nil
 	})
 	if err != nil {
 		return fmt.Errorf("CNP %s not verified: %w", plan.Name, err)

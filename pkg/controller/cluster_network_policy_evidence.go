@@ -1,17 +1,20 @@
 package controller
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
-	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/network-policy-api/apis/v1alpha2"
 
@@ -34,36 +37,63 @@ func (c *Controller) initCnpEvidence() error {
 	if !strings.Contains(record.ImageID, "@sha256:") {
 		return errors.New("controller imageID is not resolved to a digest")
 	}
-	if err := c.writeCnpEvidence(cnp.CapabilityName(pod.UID), record, metav1.OwnerReference{APIVersion: "v1", Kind: "Pod", Name: pod.Name, UID: pod.UID}); err != nil {
+	if err := c.writeCnpEvidence(record); err != nil {
 		return err
 	}
-	c.cnpSession = record
+	c.cnpSession.Store(record)
 	return nil
 }
 
-func (c *Controller) writeCnpEvidence(name string, record *cnp.Receipt, owner metav1.OwnerReference) error {
+// Pod status and API access can be transiently unavailable during startup.
+// Recovery must not require another controller restart or stop enforcement.
+func (c *Controller) retryCnpEvidence(ctx context.Context) {
+	_ = wait.PollUntilContextCancel(ctx, 5*time.Second, false, func(context.Context) (bool, error) {
+		if err := c.initCnpEvidence(); err != nil {
+			klog.Errorf("CNP upgrade verification is unavailable: %v", err)
+			return false, nil
+		}
+		for _, item := range c.cnpsLister.Indexer.List() {
+			c.addCnpQueue.Add(item.(*unstructured.Unstructured).GetName())
+		}
+		return true, nil
+	})
+}
+
+// Evidence uses the leader Pod's existing patch permission, including on legacy
+// releases with read-only ConfigMap access. One requested receipt slot bounds
+// annotation size independently of the number of policies. The upgrade tool
+// verifies one nonce at a time and persists object history in its journal.
+func (c *Controller) writeCnpEvidence(record *cnp.Receipt) error {
+	annotation := cnp.CapabilityAnnotation
+	if record.PolicyUID != "" {
+		if record.Request == "" {
+			return nil
+		}
+		annotation = cnp.ReceiptAnnotation
+	}
 	data, err := json.Marshal(record)
 	if err != nil {
 		return err
 	}
-	client := c.config.KubeClient.CoreV1().ConfigMaps(c.config.PodNamespace)
-	cm, err := client.Get(c.cnpContext, name, metav1.GetOptions{})
-	if apierrors.IsNotFound(err) {
-		_, err = client.Create(c.cnpContext, &corev1.ConfigMap{
-			Name: name, Labels: map[string]string{"kube-ovn.io/cnp-evidence": "true"}, OwnerReferences: []metav1.OwnerReference{owner},
-			Data: map[string]string{"receipt": string(data)},
-		}, metav1.CreateOptions{})
+	client := c.config.KubeClient.CoreV1().Pods(c.config.PodNamespace)
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		pod, err := client.Get(c.cnpContext, record.Leader, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		if string(pod.UID) != record.PodUID || pod.DeletionTimestamp != nil {
+			return errors.New("refusing to publish evidence on a replaced/terminating leader Pod")
+		}
+		patch, err := json.Marshal(map[string]any{"metadata": map[string]any{
+			"uid": string(pod.UID), "resourceVersion": pod.ResourceVersion,
+			"annotations": map[string]string{annotation: string(data)},
+		}})
+		if err != nil {
+			return err
+		}
+		_, err = client.Patch(c.cnpContext, pod.Name, types.MergePatchType, patch, metav1.PatchOptions{})
 		return err
-	}
-	if err != nil {
-		return err
-	}
-	if cm.Labels["kube-ovn.io/cnp-evidence"] != "true" || len(cm.OwnerReferences) != 1 || cm.OwnerReferences[0].UID != owner.UID {
-		return fmt.Errorf("refusing to overwrite unrelated ConfigMap %s", name)
-	}
-	cm.Data = map[string]string{"receipt": string(data)}
-	_, err = client.Update(c.cnpContext, cm, metav1.UpdateOptions{})
-	return err
+	})
 }
 
 func (c *Controller) cnpOVNDigest(policy *v1alpha2.ClusterNetworkPolicy) (string, error) {
@@ -127,10 +157,11 @@ func (c *Controller) reuseCnpEvidence(policy *v1alpha2.ClusterNetworkPolicy) (bo
 }
 
 func (c *Controller) completeCnpEvidence(policy *v1alpha2.ClusterNetworkPolicy) error {
-	if c.cnpSession == nil {
+	session := c.cnpSession.Load()
+	if session == nil {
 		return nil
 	}
-	record := *c.cnpSession
+	record := *session
 	record.PolicyUID, record.Generation = string(policy.UID), policy.Generation
 	record.Request = policy.Annotations[cnp.VerifyAnnotation]
 	var err error
@@ -150,15 +181,19 @@ func (c *Controller) completeCnpEvidence(policy *v1alpha2.ClusterNetworkPolicy) 
 	if current.GetUID() != policy.UID || current.GetGeneration() != policy.Generation || current.GetAnnotations()[cnp.VerifyAnnotation] != record.Request || current.GetAnnotations()[util.ACLActionsLogAnnotation] != policy.Annotations[util.ACLActionsLogAnnotation] {
 		return fmt.Errorf("CNP %s changed during application", policy.Name)
 	}
-	if err := c.writeCnpEvidence(cnp.ReceiptName(policy.UID), &record, metav1.OwnerReference{APIVersion: cnp.Resource.GroupVersion().String(), Kind: "ClusterNetworkPolicy", Name: policy.Name, UID: policy.UID}); err != nil {
-		return err
+	previous, found := c.cnpReceipts.Load(policy.Name)
+	if record.Request != "" && (!found || previous.Request != record.Request || previous.PolicyUID != record.PolicyUID) {
+		if err := c.writeCnpEvidence(&record); err != nil {
+			return err
+		}
 	}
 	c.cnpReceipts.Store(policy.Name, &record)
 	return nil
 }
 
 func (c *Controller) failCnpEvidence(key string, cause error) {
-	if c.cnpSession == nil {
+	session := c.cnpSession.Load()
+	if session == nil {
 		return
 	}
 	c.cnpReceipts.Delete(key)
@@ -167,9 +202,10 @@ func (c *Controller) failCnpEvidence(key string, cause error) {
 		return
 	}
 	raw := obj.(*unstructured.Unstructured)
-	record := *c.cnpSession
+	record := *session
 	record.PolicyUID, record.Generation, record.Error = string(raw.GetUID()), raw.GetGeneration(), cause.Error()
-	if err := c.writeCnpEvidence(cnp.ReceiptName(raw.GetUID()), &record, metav1.OwnerReference{APIVersion: cnp.Resource.GroupVersion().String(), Kind: "ClusterNetworkPolicy", Name: key, UID: raw.GetUID()}); err != nil {
+	record.Request = raw.GetAnnotations()[cnp.VerifyAnnotation]
+	if err := c.writeCnpEvidence(&record); err != nil {
 		klog.Errorf("failed to record CNP %s application error: %v", key, err)
 	}
 }
