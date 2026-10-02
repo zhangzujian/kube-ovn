@@ -18,6 +18,16 @@ This change moves Pod attachment privileges out of the `kube-ovn-daemon` CNI ser
 
 ## Upgrade and rollback
 
+The installer publishes `kube-ovn` as an atomic symlink to an immutable execution
+bundle under the CNI bin directory. Each bundle includes `ovs-vsctl`, `ethtool`,
+their ELF loader, and shared libraries from the image. CNI resolves tools beside
+its actual executable and does not require these packages on the node. The tools
+run in the CNI process environment with the runtime's privileges; no daemon RPC
+executes their commands. Installation verifies both tools with `--version` before
+publishing the bundle. Previous bundles are retained for running invocations and
+rollback; operators may retire them after those invocations have exited and the
+rollback window has closed.
+
 1. Install the new image and CNI binary on a node.
 2. Verify the CNI binary can reach the daemon socket and that a test ADD receives a plan.
 3. Enable `--disable-legacy-cni-execution=true` only after the new CNI binary is present on every node in the rollout.
