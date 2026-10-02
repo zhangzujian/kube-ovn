@@ -102,7 +102,7 @@ kubectl ko
 | `db nb restore` | Reconstruct the central NB/SB cluster from the NB database already present on the explicit bootstrap node. Verify the shared hostPath, use temporary per-node helpers when OVS does not mount the databases, stop central, preserve originals and RAFT headers, rebuild, verify storage and restart OVS. Helpers use the central image and security context and are cleaned up by UID. This is not local-file import; SB-only restore is not supported. |
 | `trace` | Resolve Pod/Node addresses, MACs and logical ports, trace through OVN, then OVS. Supports IPv4/IPv6, ICMP/TCP/UDP, IPv4 ARP request/reply, explicit destination MAC, hostNetwork, Underlay/U2O and VM logical ports. `--engine ovn` runs only OVN trace. |
 | `capture` | Execute tcpdump in a Pod's network namespace, including hostNetwork and internal-port paths. A remote `-w PATH` stays remote; `-w -` streams the original pcap bytes locally. |
-| `network inspect` | Show the Pod network namespace path, every interface's index, kind, MAC, MTU, state and addresses, plus the host-side veth peer when one exists. `--output=json` emits machine-readable data. Host-network Pods use the host namespace and expose peer indexes for host links. |
+| `network inspect` | Show the Pod network namespace path, every interface's index, kind, MAC, MTU, state and addresses, plus the host-side veth peer when one exists. For `macvlan`/`ipvlan`, also show the parent host NIC with its link details. `--output=json` emits machine-readable data. Host-network Pods use the host namespace and expose peer indexes for host links. |
 | `diagnose cluster` | Check cluster configuration, component rollout and leaders; create a unique temporary NodePort Service and run active pinger checks. |
 | `diagnose node NODE` | Perform configuration checks and restrict the active pinger probes to one node. |
 | `diagnose subnet SUBNET` | Check the subnet, create an isolated temporary DaemonSet and NodePort Service, and check peer TCP/UDP, node ICMP and NodePort connectivity from those subnet Pods. Does not require optional CNI node TCP/UDP listeners. |
@@ -180,7 +180,8 @@ The node agent uses Kubernetes `pods/attach` to carry a versioned gRPC stream
 over stdin/stdout. It does not use `pods/exec` against Kube-OVN component Pods.
 `network inspect` resolves the Pod netns from OVSDB through the agent, then
 reads Pod and host links with `ip -j`; it reports the host-side veth peer by
-ifindex without entering `kube-ovn-cni` or `ovs-ovn`.
+ifindex and resolves `macvlan`/`ipvlan` parent NICs by link name or ifindex,
+without entering `kube-ovn-cni` or `ovs-ovn`.
 Probe Pods may use the normal Kubernetes streaming path for their own
 short-lived test process. Exec uses WebSocket with SPDY fallback only for
 supported handshake failures.

@@ -33,6 +33,7 @@ type podNetworkInterface struct {
 	OperState string       `json:"operState,omitempty"`
 	Flags     []string     `json:"flags,omitempty"`
 	Addresses []string     `json:"addresses,omitempty"`
+	Parent    *networkLink `json:"parent,omitempty"`
 	HostPeer  *networkLink `json:"hostPeer,omitempty"`
 	Peer      *networkLink `json:"peer,omitempty"`
 }
@@ -56,6 +57,7 @@ type ipJSONLink struct {
 	MTU       int            `json:"mtu"`
 	OperState string         `json:"operstate"`
 	Address   string         `json:"address"`
+	LinkName  string         `json:"link"`
 	Flags     []string       `json:"flags"`
 	LinkType  string         `json:"link_type"`
 	LinkInfo  ipJSONLinkInfo `json:"linkinfo"`
@@ -101,8 +103,14 @@ func (c *Client) podNetwork(ctx context.Context, reference string) (*podNetworkI
 		}
 	}
 	hostByIndex := make(map[int]networkLink, len(hostLinks))
+	hostByName := make(map[string]networkLink, len(hostLinks))
 	for _, link := range hostLinks {
 		hostByIndex[link.Index] = link.networkLink()
+		hostByName[link.Name] = link.networkLink()
+	}
+	podByIndex := make(map[int]networkLink, len(podLinks))
+	for _, link := range podLinks {
+		podByIndex[link.Index] = link.networkLink()
 	}
 
 	result := &podNetworkInfo{
@@ -115,7 +123,11 @@ func (c *Client) podNetwork(ctx context.Context, reference string) (*podNetworkI
 	}
 	for _, link := range podLinks {
 		item := link.podNetworkInterface()
-		if pod.Spec.HostNetwork {
+		if link.isMacvlanOrIPVLAN() {
+			if parent, ok := link.parentLink(hostByName, hostByIndex, podByIndex); ok && parent.Index != link.Index {
+				item.Parent = new(parent)
+			}
+		} else if pod.Spec.HostNetwork {
 			if peer, ok := hostByIndex[link.LinkIndex]; ok && peer.Index != link.Index {
 				item.Peer = new(peer)
 			}
@@ -200,6 +212,28 @@ func (link ipJSONLink) podNetworkInterface() podNetworkInterface {
 	}
 }
 
+func (link ipJSONLink) isMacvlanOrIPVLAN() bool {
+	kind := strings.ToLower(link.kind())
+	return kind == "macvlan" || kind == "ipvlan"
+}
+
+func (link ipJSONLink) parentLink(byName map[string]networkLink, byIndex, localByIndex map[int]networkLink) (networkLink, bool) {
+	if link.LinkName != "" {
+		if parent, ok := byName[link.LinkName]; ok {
+			return parent, true
+		}
+	}
+	if link.LinkIndex != 0 {
+		if parent, ok := byIndex[link.LinkIndex]; ok {
+			return parent, true
+		}
+		if parent, ok := localByIndex[link.LinkIndex]; ok {
+			return parent, true
+		}
+	}
+	return networkLink{}, false
+}
+
 func (link ipJSONLink) kind() string {
 	if link.LinkInfo.InfoKind != "" {
 		return link.LinkInfo.InfoKind
@@ -278,7 +312,11 @@ func writePodNetwork(out io.Writer, info *podNetworkInfo) error {
 				return err
 			}
 		}
-		if item.HostPeer != nil {
+		if item.Parent != nil {
+			if _, err := fmt.Fprintf(out, "      parent: %s (ifindex=%d, kind=%s, mac=%s, mtu=%d, state=%s, flags=%s)\n", item.Parent.Name, item.Parent.Index, item.Parent.Kind, item.Parent.MAC, item.Parent.MTU, item.Parent.OperState, strings.Join(item.Parent.Flags, ",")); err != nil {
+				return err
+			}
+		} else if item.HostPeer != nil {
 			if _, err := fmt.Fprintf(out, "      host peer: %s (ifindex=%d, kind=%s, mac=%s, mtu=%d, state=%s, flags=%s)\n", item.HostPeer.Name, item.HostPeer.Index, item.HostPeer.Kind, item.HostPeer.MAC, item.HostPeer.MTU, item.HostPeer.OperState, strings.Join(item.HostPeer.Flags, ",")); err != nil {
 				return err
 			}

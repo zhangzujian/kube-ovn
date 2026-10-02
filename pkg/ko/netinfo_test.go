@@ -43,6 +43,35 @@ func TestIPLinksExposeAddressesAndHostVethPeer(t *testing.T) {
 	}
 }
 
+func TestIPLinksExposeMacvlanParent(t *testing.T) {
+	var podLinks []ipJSONLink
+	err := json.Unmarshal([]byte(`[
+        {"ifindex":5,"ifname":"net1","link_index":10,"link":"eth0","mtu":1500,"operstate":"UP","address":"02:00:00:00:00:05","flags":["BROADCAST","UP"],"link_type":"ether","linkinfo":{"info_kind":"macvlan"},"addr_info":[{"family":"inet","local":"192.0.2.5","prefixlen":24}]}
+    ]`), &podLinks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var hostLinks []ipJSONLink
+	err = json.Unmarshal([]byte(`[
+        {"ifindex":10,"ifname":"eth0","mtu":1500,"operstate":"UP","address":"aa:bb:cc:dd:ee:01","flags":["BROADCAST","UP"],"link_type":"ether"}
+    ]`), &hostLinks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hostByName := map[string]networkLink{hostLinks[0].Name: hostLinks[0].networkLink()}
+	hostByIndex := map[int]networkLink{hostLinks[0].Index: hostLinks[0].networkLink()}
+	item := podLinks[0].podNetworkInterface()
+	parent, ok := podLinks[0].parentLink(hostByName, hostByIndex, nil)
+	if !ok {
+		t.Fatal("macvlan parent was not found")
+	}
+	item.Parent = new(parent)
+
+	if item.Kind != "macvlan" || item.Parent.Name != "eth0" || item.Parent.Index != 10 {
+		t.Fatalf("unexpected macvlan parent: %#v", item)
+	}
+}
+
 func TestWritePodNetworkIncludesNetnsAndPeer(t *testing.T) {
 	info := &podNetworkInfo{
 		Namespace: "app", Name: "web", Node: "worker-a", NetNS: "/var/run/netns/pod", Interfaces: []podNetworkInterface{{
