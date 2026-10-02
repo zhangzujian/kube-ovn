@@ -300,7 +300,7 @@ cni:
   nonPrimaryCNI: false
   # -- Whether the daemon rejects legacy CNI requests that perform host networking. The CNI binary must be upgraded before enabling this. Keep false for features that still require daemon-side network namespace operations.
   # @section -- CNI configuration
-  disableLegacyCNIExecution: true
+  disableLegacyCNIExecution: false
 
 # -- Configuration of the validating webhook used to verify custom resources before they are pushed to Kubernetes.
 # Make sure cert-manager is installed for the generation of certificates for the webhook.

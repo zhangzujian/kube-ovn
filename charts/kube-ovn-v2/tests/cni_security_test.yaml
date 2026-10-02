@@ -7,6 +7,7 @@ tests:
     set:
       masterNodes:
         - "10.0.0.1"
+      cni.disableLegacyCNIExecution: true
     asserts:
       - contains:
           path: spec.template.spec.containers[0].args
@@ -34,9 +35,9 @@ tests:
         - "10.0.0.1"
       cni.disableLegacyCNIExecution: false
     asserts:
-      - contains:
+      - notContains:
           path: spec.template.spec.containers[0].args
-          content: --disable-legacy-cni-execution=false
+          content: --disable-legacy-cni-execution=true
       - equal:
           path: spec.template.spec.containers[0].securityContext.runAsUser
           value: 0

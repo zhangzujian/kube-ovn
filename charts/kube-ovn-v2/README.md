@@ -1050,7 +1050,7 @@ false
 			<td>cni.disableLegacyCNIExecution</td>
 			<td>bool</td>
 			<td><pre lang="json">
-true
+false
 </pre>
 </td>
 			<td>Whether the daemon rejects legacy CNI requests that perform host networking. The CNI binary must be upgraded before enabling this. Keep false for features that still require daemon-side network namespace operations.</td>
