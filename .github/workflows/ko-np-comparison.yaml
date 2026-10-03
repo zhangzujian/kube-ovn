@@ -58,7 +58,6 @@ jobs:
       E2E_IP_FAMILY: ${{ matrix.layout.family }}
       VERSION: v1.17.0-debug
       DEBUG_WRAPPER: valgrind
-      NP_IMAGE_DIRECTORY: ${{ runner.temp }}/np-comparison-images
     steps:
       - uses: jlumbroso/free-disk-space@v2.0.0
         with:
@@ -94,23 +93,24 @@ jobs:
           artifact-ids: ${{ matrix.source.artifact }}
           run-id: ${{ matrix.source.run }}
           github-token: ${{ github.token }}
-          path: ${{ env.NP_IMAGE_DIRECTORY }}
+          path: ${{ runner.temp }}/np-comparison-images
           merge-multiple: true
       - uses: actions/download-artifact@v8
         with:
           artifact-ids: 11276728041
           run-id: 37131618946
           github-token: ${{ github.token }}
-          path: ${{ env.NP_IMAGE_DIRECTORY }}
+          path: ${{ runner.temp }}/np-comparison-images
           merge-multiple: true
       - name: Verify immutable source and original images
         env:
           EXPECTED_SOURCE: ${{ matrix.source.sha }}
+          NP_IMAGE_DIRECTORY: ${{ runner.temp }}/np-comparison-images
         run: |
           test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
           test -z "$(git status --porcelain)"
           mkdir comparison-results
-          git rev-parse HEAD HEAD^{tree} > comparison-results/source.txt
+          git rev-parse HEAD 'HEAD^{tree}' > comparison-results/source.txt
           sha256sum "$NP_IMAGE_DIRECTORY"/*.tar > comparison-results/images.sha256
           docker load --input "$NP_IMAGE_DIRECTORY/kube-ovn.tar"
           docker load --input "$NP_IMAGE_DIRECTORY/kind-node-v1.37.0.tar"
