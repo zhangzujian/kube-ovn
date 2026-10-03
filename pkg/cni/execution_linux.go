@@ -36,6 +36,11 @@ type (
 	executionHandler struct{ Config *executionConfig }
 )
 
+var (
+	getNetNSForReleaseVf        = ns.GetNS
+	getCurrentNetNSForReleaseVf = ns.GetCurrentNS
+)
+
 var pciAddrRegexp = regexp.MustCompile(`\b([0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}.\d{1}\S*)`)
 
 const (
@@ -763,7 +768,7 @@ func (csh executionHandler) releaseVf(podName, podNamespace, podNetns, ifName, n
 		klog.Infof("skip releasing VF interface %s: pod network namespace is empty", podDesc)
 		return nil
 	}
-	netns, err := ns.GetNS(podNetns)
+	netns, err := getNetNSForReleaseVf(podNetns)
 	if err != nil {
 		var nsPathNotExistErr ns.NSPathNotExistErr
 		if os.IsNotExist(err) || errors.As(err, &nsPathNotExistErr) {
@@ -774,7 +779,7 @@ func (csh executionHandler) releaseVf(podName, podNamespace, podNetns, ifName, n
 	}
 	defer netns.Close()
 
-	hostNS, err := ns.GetCurrentNS()
+	hostNS, err := getCurrentNetNSForReleaseVf()
 	if err != nil {
 		return fmt.Errorf("failed to get host namespace %s: %w", podDesc, err)
 	}
@@ -804,6 +809,7 @@ func (csh executionHandler) releaseVf(podName, podNamespace, podNetns, ifName, n
 	})
 	if err != nil {
 		klog.Error(err)
+		return fmt.Errorf("failed to release VF interface %s %s: %w", ifName, podDesc, err)
 	}
 
 	return nil
