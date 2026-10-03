@@ -1,0 +1,157 @@
+name: Fixed candidate Talos verification
+
+on:
+  push:
+    branches: [ko-talos-verification-100a]
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.14.0
+          args: --help
+      - run: make lint
+        env:
+          CI: true
+
+  verification:
+    name: Fixed Talos (${{ matrix.family }}, ${{ matrix.mode }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        family: [ipv4, ipv6, dual]
+        mode: [overlay, underlay]
+    env:
+      CI: true
+      TALOS_VERSION: v1.14.2
+      EXPECTED_SOURCE: 100a48deaf2de5ac17b2a64ac1443b7a0416bbaf
+    steps:
+      - uses: jlumbroso/free-disk-space@v2.0.0
+        with:
+          android: true
+          dotnet: true
+          haskell: true
+          docker-images: false
+          large-packages: false
+          tool-cache: false
+          swap-storage: false
+      - uses: actions/checkout@v7
+        with:
+          ref: 100a48deaf2de5ac17b2a64ac1443b7a0416bbaf
+          persist-credentials: false
+      - name: Verify immutable source and runner capacity
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
+          test -z "$(git status --porcelain)"
+          mkdir talos-verification-results
+          git rev-parse HEAD 'HEAD^{tree}' > talos-verification-results/source.txt
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import shutil
+          import stat
+
+          memory = int(next(line.split()[1] for line in Path("/proc/meminfo").read_text().splitlines() if line.startswith("MemTotal:")))
+          device = Path("/dev/kvm")
+          result = {"memoryKiB": memory, "cpuCount": os.cpu_count(), "freeDiskBytes": shutil.disk_usage(".").free, "kvmCharacterDevice": device.exists() and stat.S_ISCHR(device.stat().st_mode), "requiredVMs": 2, "memoryKiBPerVM": 3145728, "vcpuPerVM": 4, "boundary": "Standard hosted runner changes execution capacity only; original source, two-VM topology, assertions and 30-minute budget retained. Original queued matrix remains unchanged."}
+          Path("talos-verification-results/runner.json").write_text(json.dumps(result, indent=2) + "\n")
+          print(json.dumps(result))
+          assert result["kvmCharacterDevice"], "No KVM device; no installation verdict"
+          assert memory >= 8 * 1024 * 1024, "Insufficient memory for original two-VM layout"
+          assert result["freeDiskBytes"] >= 40 * 1024**3, "Insufficient free disk"
+          PY
+      - name: Install original Talos CLI and KVM tooling
+        run: |
+          curl --fail --location --retry 3 "https://github.com/siderolabs/talos/releases/download/$TALOS_VERSION/talosctl-linux-amd64" --output "$RUNNER_TEMP/talosctl"
+          chmod 755 "$RUNNER_TEMP/talosctl"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          sudo apt-get update
+          sudo apt-get install -y qemu-kvm libvirt-daemon-system
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: 11277552742
+          run-id: 37131618946
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/talos-verification-images
+          merge-multiple: true
+      - name: Verify and load original image artifact
+        env:
+          IMAGE_DIRECTORY: ${{ runner.temp }}/talos-verification-images
+        run: |
+          sha256sum "$IMAGE_DIRECTORY/kube-ovn.tar" > talos-verification-results/image.sha256
+          docker load --input "$IMAGE_DIRECTORY/kube-ovn.tar"
+          docker run --rm --entrypoint /kube-ovn/kube-ovn-controller kubeovn/kube-ovn:v1.17.0 --help > talos-verification-results/controller-version.txt 2>&1
+          grep -F 'git-100a48d' talos-verification-results/controller-version.txt
+          talosctl version --client --short > talos-verification-results/talosctl-version.txt
+      - name: Create original Talos layout
+        env:
+          IP_FAMILY: ${{ matrix.family }}
+        run: |
+          pipx install jinjanator
+          make "talos-init-$IP_FAMILY"
+          kubectl describe node
+      - name: Install Kube-OVN and run original rollout assertions
+        id: install
+        env:
+          IP_FAMILY: ${{ matrix.family }}
+          NETWORK_MODE: ${{ matrix.mode }}
+        run: |
+          make "talos-install-$NETWORK_MODE-$IP_FAMILY"
+          kubectl -n kube-system rollout status ds/kube-ovn-pinger
+          kubectl -n kube-system rollout restart deploy/coredns
+          kubectl -n kube-system rollout status deploy/coredns
+          kubectl get pod -o wide -A
+          kubectl get endpointslice -A
+          kubectl get subnet -o wide
+          if [ "$NETWORK_MODE" = underlay ]; then
+            kubectl get provider-network -o wide
+            kubectl get vlan -o wide
+          fi
+      - name: Original restart check
+        if: ${{ success() || (failure() && steps.install.conclusion == 'failure') }}
+        run: make check-kube-ovn-pod-restarts || make check-kube-ovn-pod-restarts
+      - name: Capture selected resource status
+        if: ${{ always() && steps.install.outcome != 'skipped' }}
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          import subprocess
+
+          output = {"queries": {}, "pods": [], "agents": []}
+          try:
+              query = subprocess.run(["kubectl", "-n", "kube-system", "get", "pods", "-o", "json"], capture_output=True, timeout=20, check=False)
+              output["queries"]["pods"] = {"exit": query.returncode}
+              if query.returncode == 0:
+                  for pod in json.loads(query.stdout)["items"]:
+                      metadata, spec, status = pod["metadata"], pod["spec"], pod.get("status", {})
+                      if metadata["name"].startswith(("kube-ovn-", "ovn-central-", "ovs-ovn-", "coredns-")):
+                          output["pods"].append({"name": metadata["name"], "uid": metadata["uid"], "node": spec.get("nodeName"), "phase": status.get("phase"), "ready": [c.get("ready") for c in status.get("containerStatuses", [])], "restarts": [c.get("restartCount") for c in status.get("containerStatuses", [])]})
+                      if metadata.get("labels", {}).get("app") == "kubectl-ko-node-agent":
+                          output["agents"].append({"name": metadata["name"], "uid": metadata["uid"], "node": spec.get("nodeName"), "hostNetwork": spec.get("hostNetwork"), "hostPID": spec.get("hostPID"), "automountServiceAccountToken": spec.get("automountServiceAccountToken"), "images": [c["image"] for c in spec["containers"]], "ready": [c.get("ready") for c in status.get("containerStatuses", [])]})
+          except (subprocess.TimeoutExpired, json.JSONDecodeError) as error:
+              output["queries"]["pods"] = {"errorType": type(error).__name__}
+          Path("talos-verification-results/status.json").write_text(json.dumps(output, indent=2) + "\n")
+          PY
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: current-talos-${{ matrix.family }}-${{ matrix.mode }}
+          path: talos-verification-results/
+          if-no-files-found: error
