@@ -7,9 +7,66 @@ import (
 	"io"
 	"net"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
+
+type cancellationRunner struct {
+	started   chan struct{}
+	cancelled chan struct{}
+	finished  chan struct{}
+}
+
+func (r cancellationRunner) Run(ctx context.Context, _ Request, _, _ io.Writer) Result {
+	close(r.started)
+	<-ctx.Done()
+	close(r.cancelled)
+	<-r.finished
+	return Result{Code: 130, Error: ctx.Err().Error()}
+}
+
+func TestServeWaitsForCancelledRunner(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	runner := cancellationRunner{make(chan struct{}), make(chan struct{}), make(chan struct{})}
+	finish := sync.OnceFunc(func() { close(runner.finished) })
+	t.Cleanup(finish)
+	serverDone := make(chan error, 1)
+	go func() { serverDone <- Serve(t.Context(), serverConn, runner) }()
+	client, err := Dial(clientConn)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = client.Close() })
+	requestDone := make(chan error, 1)
+	go func() {
+		requestDone <- Run(t.Context(), client, Request{Version: Version, Argv: []string{"wait"}}, io.Discard, io.Discard)
+	}()
+	select {
+	case <-runner.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("runner did not start")
+	}
+	// A lost exec connection must cancel the runner and wait for its cleanup.
+	require.NoError(t, clientConn.Close())
+	select {
+	case <-runner.cancelled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("disconnected request did not cancel the runner")
+	}
+	select {
+	case err := <-serverDone:
+		t.Fatalf("helper returned before command cleanup: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	finish()
+	select {
+	case <-serverDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("helper did not return after command cleanup")
+	}
+	require.Error(t, <-requestDone)
+}
 
 type testRunner struct {
 	result Result
