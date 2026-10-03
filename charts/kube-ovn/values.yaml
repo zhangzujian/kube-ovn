@@ -47,8 +47,10 @@ distributed:
   sharedSubnet: false
   zone: ""
   gatewayOwner: ""
-  # Optional local NB/SB endpoints. Set these when each node runs its own
-  # OVN databases; empty values retain the normal ovn-central discovery.
+  # Explicit opt-in: NB/SB, northd and ovn-ic must already run on every node.
+  externalInterconnect: false
+  # Required local NB/SB endpoints, reachable from each controller and agent.
+  # Distributed mode never falls back to centralized database discovery.
   nbEndpoint: ""
   sbEndpoint: ""
   icNbEndpoint: ""

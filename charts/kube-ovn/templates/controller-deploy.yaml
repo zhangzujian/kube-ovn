@@ -2,6 +2,19 @@
 {{- if and .Values.distributed.sharedSubnet (not .Values.func.ENABLE_IC) }}
 {{- fail "distributed.sharedSubnet requires func.ENABLE_IC=true" }}
 {{- end }}
+{{- if .Values.distributed.sharedSubnet }}
+{{- if .Values.distributed.zone }}
+{{- fail "distributed.zone must be empty: experimental zones use the node name" }}
+{{- end }}
+{{- if not .Values.distributed.externalInterconnect }}
+{{- fail "distributed.sharedSubnet requires distributed.externalInterconnect=true and pre-provisioned per-node NB/SB/northd/ovn-ic" }}
+{{- end }}
+{{- range $field := list "nbEndpoint" "sbEndpoint" "icNbEndpoint" "gatewayOwner" }}
+{{- if not (index $.Values.distributed $field) }}
+{{- fail (printf "distributed.sharedSubnet requires distributed.%s" $field) }}
+{{- end }}
+{{- end }}
+{{- end }}
 kind: {{ ternary "DaemonSet" "Deployment" .Values.distributed.sharedSubnet }}
 apiVersion: apps/v1
 metadata:

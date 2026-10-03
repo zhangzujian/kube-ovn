@@ -28,6 +28,13 @@ import (
 var lastNoPodLSP = strset.New()
 
 func (c *Controller) gc() error {
+	if !c.ownsGlobalState() {
+		if c.config.GCInterval == 0 {
+			return nil
+		}
+		return c.gcLogicalSwitch()
+	}
+
 	if c.config.GCInterval == 0 {
 		klog.Infof("gc is disabled")
 		return nil
@@ -141,6 +148,11 @@ func (c *Controller) gcLogicalSwitch() error {
 		return err
 	}
 
+	transitSwitches, err := c.distributedTransitSwitches(subnets)
+	if err != nil {
+		return err
+	}
+
 	lss, err := c.OVNNbClient.ListLogicalSwitchNames(c.config.EnableExternalVpc, nil)
 	if err != nil {
 		klog.Errorf("failed to list logical switch: %v", err)
@@ -157,6 +169,9 @@ func (c *Controller) gcLogicalSwitch() error {
 	klog.Infof("logical switch in ovn: %v", lss)
 	klog.Infof("subnet in kubernetes: %v", subnetNames)
 	for _, ls := range lss {
+		if transitSwitches[ls] {
+			continue
+		}
 		if ls == util.InterconnectionSwitch ||
 			ls == util.ExternalGatewaySwitch ||
 			ls == c.config.ExternalGatewaySwitch {
@@ -215,6 +230,9 @@ func (c *Controller) gcCustomLogicalRouter() error {
 }
 
 func (c *Controller) gcNode() error {
+	if !c.ownsGlobalState() {
+		return nil
+	}
 	klog.Infof("start to gc nodes")
 	ips, err := c.ipsLister.List(labels.Everything())
 	if err != nil {
@@ -414,6 +432,9 @@ func (c *Controller) checkIPOwnerExists(ip *kubeovnv1.IP) (bool, error) {
 }
 
 func (c *Controller) gcIP() error {
+	if !c.ownsGlobalState() {
+		return nil
+	}
 	klog.Infof("start to gc ips")
 	ips, err := c.ipsLister.List(labels.Everything())
 	if err != nil {
@@ -440,6 +461,9 @@ func (c *Controller) gcIP() error {
 func (c *Controller) keepNodeLSPs(nodes []*corev1.Node, ipMap *strset.Set) map[string]string {
 	result := make(map[string]string, len(nodes))
 	for _, node := range nodes {
+		if !c.isLocalNode(node.Name) {
+			continue
+		}
 		if node.Annotations[util.AllocatedAnnotation] == "true" {
 			portName := util.NodeLspName(node.Name)
 			result[portName] = node.Name
@@ -479,6 +503,9 @@ func (c *Controller) markAndCleanLSP() error {
 	}
 	ipMap := strset.NewWithSize(len(pods) + len(nodes))
 	for _, pod := range pods {
+		if !c.isLocalNode(pod.Spec.NodeName) {
+			continue
+		}
 		if pod.Spec.HostNetwork {
 			continue
 		}
@@ -569,6 +596,9 @@ func (c *Controller) markAndCleanLSP() error {
 			klog.Errorf("failed to delete lsp %s: %v", lsp.Name, err)
 			return err
 		}
+		if !c.ownsGlobalState() {
+			continue
+		}
 		ipCR, err := c.config.KubeOvnClient.KubeovnV1().IPs().Get(context.Background(), lsp.Name, metav1.GetOptions{})
 		if err != nil {
 			if k8serrors.IsNotFound(err) {
@@ -577,6 +607,15 @@ func (c *Controller) markAndCleanLSP() error {
 			}
 			klog.Errorf("failed to get ip %s, %v", lsp.Name, err)
 			return err
+		}
+		if c.config.EnableDistributedSharedSubnet {
+			exists, err := c.checkIPOwnerExists(ipCR)
+			if err != nil {
+				return err
+			}
+			if exists {
+				continue
+			}
 		}
 		if ipCR.Labels[util.IPReservedLabel] != "true" {
 			klog.Infof("gc ip %s", ipCR.Name)

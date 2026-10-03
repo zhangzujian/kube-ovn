@@ -78,11 +78,8 @@ type Controller struct {
 	OVNSbClient         ovs.SbClient
 	distributedICClient *ovs.LegacyClient
 
-	// distributedDHCPOptions stores the DHCP_Options UUIDs from this zone's
-	// NB. UUIDs are database-local, so Subnet.status cannot be the source of
-	// truth when each zone has an independent NB database.
-	distributedDHCPOptionsMu sync.RWMutex
-	distributedDHCPOptions   map[string]ovs.DHCPOptionsUUIDs
+	// Serialize subnet-scoped DHCP row lookup/create/update in this local NB.
+	distributedDHCPOptionsMu sync.Mutex
 
 	// ExternalGatewayType define external gateway type, centralized
 	ExternalGatewayType string
@@ -745,6 +742,9 @@ func Run(ctx context.Context, config *Configuration) {
 		config.OvsDbConnectMaxRetry,
 	); err != nil {
 		util.LogFatalAndExit(err, "failed to create ovn sb client")
+	}
+	if err := controller.validateDistributedNB(); err != nil {
+		util.LogFatalAndExit(err, "invalid distributed NB identity")
 	}
 	if config.EnableDistributedSharedSubnet {
 		controller.distributedICClient = ovs.NewLegacyClient(config.OvnTimeout)

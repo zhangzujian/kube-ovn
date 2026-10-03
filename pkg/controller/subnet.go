@@ -514,23 +514,13 @@ func (c *Controller) getSubnetMTU(subnet *kubeovnv1.Subnet) (int, error) {
 }
 
 func (c *Controller) updateSubnetDHCPOption(subnet *kubeovnv1.Subnet, needRouter bool) error {
-	mtu, err := c.getSubnetMTU(subnet)
-	if err != nil {
-		return err
-	}
-
-	dhcpOptionsUUIDs, err := c.OVNNbClient.UpdateDHCPOptions(subnet, mtu)
+	dhcpOptionsUUIDs, err := c.reconcileSubnetDHCPRows(subnet)
 	if err != nil {
 		klog.Errorf("failed to update dhcp options for switch %s, %v", subnet.Name, err)
 		return err
 	}
-	if c.config.EnableDistributedSharedSubnet {
-		c.distributedDHCPOptionsMu.Lock()
-		if c.distributedDHCPOptions == nil {
-			c.distributedDHCPOptions = make(map[string]ovs.DHCPOptionsUUIDs)
-		}
-		c.distributedDHCPOptions[subnet.Name] = *dhcpOptionsUUIDs
-		c.distributedDHCPOptionsMu.Unlock()
+	if !c.ownsGlobalState() {
+		return nil
 	}
 
 	vpc, err := c.vpcsLister.Get(subnet.Spec.Vpc)
@@ -575,6 +565,9 @@ func (c *Controller) handleAddOrUpdateSubnet(key string) error {
 		}
 		klog.Error(err)
 		return c.recordSubnetKeyError(key, "GetSubnetFailed", err)
+	}
+	if !c.ownsGlobalState() {
+		return c.reconcileDistributedFollowerSubnet(cachedSubnet.DeepCopy())
 	}
 	klog.V(3).Infof("handle add or update subnet %s", cachedSubnet.Name)
 	subnet, err := c.formatSubnet(cachedSubnet)
@@ -822,10 +815,6 @@ func (c *Controller) distributedPlan(subnet *kubeovnv1.Subnet, vpc *kubeovnv1.Vp
 		if item.Spec.Vpc != subnet.Spec.Vpc || item.Spec.Vlan != "" || !isOvnSubnet(item) || item.Spec.CIDRBlock == "" {
 			continue
 		}
-		cidr, gateway, err := distributedAddress(item.Spec.CIDRBlock, item.Spec.Gateway)
-		if err != nil {
-			return distributed.Plan{}, fmt.Errorf("subnet %s is not supported by distributed mode: %w", item.Name, err)
-		}
 		itemUID := string(item.UID)
 		if itemUID == "" {
 			itemUID = item.Name
@@ -834,8 +823,8 @@ func (c *Controller) distributedPlan(subnet *kubeovnv1.Subnet, vpc *kubeovnv1.Vp
 			Name:       item.Name,
 			VPCUID:     vpcUID,
 			SubnetUID:  itemUID,
-			CIDR:       cidr,
-			GatewayIP:  gateway,
+			CIDR:       item.Spec.CIDRBlock,
+			GatewayIP:  item.Spec.Gateway,
 			GatewayMAC: gatewayMACForSubnet(item),
 		})
 	}
@@ -844,15 +833,6 @@ func (c *Controller) distributedPlan(subnet *kubeovnv1.Subnet, vpc *kubeovnv1.Vp
 		return distributed.Plan{}, err
 	}
 	return plan, nil
-}
-
-func distributedAddress(cidrBlock, gateway string) (string, string, error) {
-	cidrs := strings.Split(cidrBlock, ",")
-	gateways := strings.Split(gateway, ",")
-	if len(cidrs) != len(gateways) || len(cidrs) == 0 {
-		return "", "", errors.New("distributed subnet requires one gateway per CIDR")
-	}
-	return strings.Join(cidrs, ","), strings.Join(gateways, ","), nil
 }
 
 func gatewayMACForSubnet(subnet *kubeovnv1.Subnet) string {
@@ -946,6 +926,9 @@ func (c *Controller) finishOvnSubnetReconcile(subnet *kubeovnv1.Subnet, vpc *kub
 func (c *Controller) reconcileSubnetBaseACLs(subnet *kubeovnv1.Subnet, router string) error {
 	switch {
 	case subnet.Spec.Routed:
+		if !c.ownsGlobalState() {
+			return nil
+		}
 		gateway := subnet.Spec.Gateway
 		if subnet.Status.U2OInterconnectionIP != "" && subnet.Spec.U2OInterconnection {
 			gateway = subnet.Status.U2OInterconnectionIP
@@ -1053,6 +1036,10 @@ func (c *Controller) handleDeleteLogicalSwitch(key string) (err error) {
 }
 
 func (c *Controller) handleDeleteSubnet(subnet *kubeovnv1.Subnet) (err error) {
+	if !c.ownsGlobalState() {
+		return c.handleDeleteLogicalSwitch(subnet.Name)
+	}
+
 	c.subnetKeyMutex.LockKey(subnet.Name)
 	defer func() { _ = c.subnetKeyMutex.UnlockKey(subnet.Name) }()
 	defer func() {
@@ -1162,6 +1149,12 @@ func (c *Controller) updateVlanStatusForSubnetDeletion(vlan *kubeovnv1.Vlan, sub
 }
 
 func (c *Controller) reconcileSubnet(subnet *kubeovnv1.Subnet) error {
+	if c.config.EnableDistributedSharedSubnet {
+		if c.ownsGlobalState() {
+			return c.reconcileNamespaces(subnet)
+		}
+		return nil
+	}
 	if err := c.reconcileNamespaces(subnet); err != nil {
 		klog.Errorf("reconcile namespaces for subnet %s failed, %v", subnet.Name, err)
 		return err

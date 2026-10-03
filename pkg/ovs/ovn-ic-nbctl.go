@@ -59,8 +59,9 @@ func (c LegacyClient) EnsureTransitSwitch(name, subnet string) error {
 	args := []string{MayExist, "ts-add", name}
 	if subnet != "" {
 		args = append(args, "--", "set", "Transit_Switch", name,
-			fmt.Sprintf(`external_ids:subnet="%s"`, subnet),
-			fmt.Sprintf(`external_ids:vendor="%s"`, util.CniTypeName))
+			fmt.Sprintf(`external_ids:distributed-cidr="%s"`, subnet),
+			`external_ids:vendor="kube-ovn-distributed"`,
+			"--", "--if-exists", "remove", "Transit_Switch", name, "external_ids", "subnet")
 	}
 	if _, err := c.ovnIcNbCommand(args...); err != nil {
 		return fmt.Errorf("ensure transit switch %s: %w", name, err)

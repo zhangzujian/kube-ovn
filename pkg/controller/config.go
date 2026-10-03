@@ -433,6 +433,12 @@ func ParseFlags() (*Configuration, error) {
 		if config.DistributedZone == "" {
 			return nil, errors.New("--distributed-zone is required with --distributed-shared-subnet")
 		}
+		if config.DistributedZone != os.Getenv(util.EnvNodeName) {
+			return nil, errors.New("--distributed-zone must equal NODE_NAME in the experimental per-node mode")
+		}
+		if config.OvnNbAddr == "" || config.OvnSbAddr == "" {
+			return nil, errors.New("explicit local OVN NB/SB endpoints are required in distributed mode")
+		}
 		if config.DistributedGatewayOwner == "" {
 			return nil, errors.New("--distributed-gateway-owner is required with --distributed-shared-subnet")
 		}
