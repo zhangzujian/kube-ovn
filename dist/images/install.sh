@@ -9970,7 +9970,7 @@ spec:
             type: DirectoryOrCreate
         - name: host-etc-ovn
           hostPath:
-            path: /etc/ovn
+            path: /etc/origin/ovn
             type: DirectoryOrCreate
         - name: host-logs-ovn
           hostPath:

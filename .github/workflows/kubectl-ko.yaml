@@ -15,6 +15,7 @@ on:
       - makefiles/build.mk
       - charts/kube-ovn/templates/kubectl-ko-node-agent.yaml
       - dist/images/Dockerfile
+      - dist/images/install.sh
       - .github/workflows/kubectl-ko.yaml
   push:
     tags: [v*]
