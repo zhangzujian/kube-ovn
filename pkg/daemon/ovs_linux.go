@@ -79,8 +79,14 @@ func (csh cniServerHandler) configureNic(podName, podNamespace, provider, netns,
 	var err error
 	var hostNicName, containerNicName, pfPci string
 	var vfID int
+	var podNS ns.NetNS
 	if deviceID == "" {
-		hostNicName, containerNicName, err = setupVethPair(containerID, ifName, mtu)
+		podNS, err = ns.GetNS(netns)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open netns %q: %w", netns, err)
+		}
+		defer podNS.Close()
+		hostNicName, containerNicName, err = setupVethPair(podNS, containerID, ifName, mtu)
 		if err != nil {
 			klog.Errorf("failed to create veth pair %v", err)
 			return nil, err
@@ -285,13 +291,15 @@ func (csh cniServerHandler) configureNic(podName, podNamespace, provider, netns,
 		}
 	}
 
-	podNS, err := ns.GetNS(netns)
-	if err != nil {
-		err = fmt.Errorf("failed to open netns %q: %w", netns, err)
-		klog.Error(err)
-		return nil, err
+	if podNS == nil {
+		podNS, err = ns.GetNS(netns)
+		if err != nil {
+			err = fmt.Errorf("failed to open netns %q: %w", netns, err)
+			klog.Error(err)
+			return nil, err
+		}
+		defer podNS.Close()
 	}
-	defer podNS.Close()
 	finalRoutes, err := csh.configureContainerNic(podName, podNamespace, containerNicName, ifName, ip, gateway, isDefaultRoute, vmMigration, routes, macAddr, podNS, mtu, gwCheckMode, u2oInterconnectionIP, routedSubnet)
 	if err != nil {
 		klog.Error(err)
@@ -485,20 +493,25 @@ func configureHostNic(nicName string) error {
 }
 
 func (csh cniServerHandler) configureContainerNic(podName, podNamespace, nicName, ifName, ipAddr, gateway string, isDefaultRoute, vmMigration bool, routes []request.Route, macAddr net.HardwareAddr, netns ns.NetNS, mtu, gwCheckMode int, u2oInterconnectionIP string, routedSubnet bool) ([]request.Route, error) {
-	containerLink, err := netlink.LinkByName(nicName)
-	if err != nil {
-		return nil, fmt.Errorf("can not find container nic %s: %w", nicName, err)
-	}
+	// Veth endpoints are created in the Pod namespace. SR-IOV interfaces are
+	// still created in the host namespace and need to be moved here.
+	containerLink, hostErr := netlink.LinkByName(nicName)
+	var err error
+	if hostErr != nil {
+		if _, ok := hostErr.(netlink.LinkNotFoundError); !ok {
+			return nil, fmt.Errorf("failed to find container nic %s: %w", nicName, hostErr)
+		}
+	} else {
+		// Set link alias to its origin link name for fastpath to recognize and bypass netfilter.
+		if err := netlink.LinkSetAlias(containerLink, nicName); err != nil {
+			klog.Errorf("failed to set link alias for container nic %s: %v", nicName, err)
+			return nil, err
+		}
 
-	// Set link alias to its origin link name for fastpath to recognize and bypass netfilter
-	if err := netlink.LinkSetAlias(containerLink, nicName); err != nil {
-		klog.Errorf("failed to set link alias for container nic %s: %v", nicName, err)
-		return nil, err
-	}
-
-	fd := int(netns.Fd()) // #nosec G115
-	if err = netlink.LinkSetNsFd(containerLink, fd); err != nil {
-		return nil, fmt.Errorf("failed to move link to netns: %w", err)
+		fd := int(netns.Fd()) // #nosec G115
+		if err := netlink.LinkSetNsFd(containerLink, fd); err != nil {
+			return nil, fmt.Errorf("failed to move link to netns: %w", err)
+		}
 	}
 
 	// do not perform ipv4/ipv6 duplicate address detection during VM live migration
@@ -506,6 +519,16 @@ func (csh cniServerHandler) configureContainerNic(podName, podNamespace, nicName
 	detectIPv4Conflict := !vmMigration && csh.Config.EnableArpDetectIPConflict
 	var finalRoutes []request.Route
 	err = ns.WithNetNSPath(netns.Path(), func(_ ns.NetNS) error {
+		if containerLink == nil {
+			var linkErr error
+			containerLink, linkErr = netlink.LinkByName(nicName)
+			if linkErr != nil {
+				return fmt.Errorf("can not find container nic %s in Pod namespace: %w", nicName, linkErr)
+			}
+			if linkErr = netlink.LinkSetAlias(containerLink, nicName); linkErr != nil {
+				return fmt.Errorf("failed to set link alias for container nic %s: %w", nicName, linkErr)
+			}
+		}
 		if err = netlink.LinkSetName(containerLink, ifName); err != nil {
 			klog.Error(err)
 			return err
@@ -1806,23 +1829,48 @@ func (c *Controller) removeProviderNic(nicName, brName string) error {
 	return nil
 }
 
-func setupVethPair(containerID, ifName string, mtu int) (string, string, error) {
-	var err error
+func setupVethPair(podNS ns.NetNS, containerID, ifName string, mtu int) (string, string, error) {
 	hostNicName, containerNicName := generateNicName(containerID, ifName)
-	// Create a veth pair, put one end to container ,the other to ovs port
+	hostNS, err := ns.GetCurrentNS()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to open host netns: %w", err)
+	}
+	defer hostNS.Close()
+
+	// Create the veth pair in the Pod namespace, then move only the OVS-facing
+	// endpoint to the host namespace. If moving it fails, delete the pair while
+	// both endpoints are still in the Pod namespace.
 	// NOTE: DO NOT use ovs internal type interface for container.
 	// Kubernetes will detect 'eth0' nic in pod, so the nic name in pod must be 'eth0'.
 	// When renaming internal interface to 'eth0', ovs will delete and recreate this interface.
-	veth := netlink.Veth{Name: hostNicName, PeerName: containerNicName}
-	if mtu > 0 {
-		veth.MTU = mtu
-	}
-	if err = netlink.LinkAdd(&veth); err != nil {
-		if err := netlink.LinkDel(&veth); err != nil {
-			klog.Errorf("failed to delete veth %v", err)
-			return "", "", err
+	var moved bool
+	if err = podNS.Do(func(_ ns.NetNS) error {
+		veth := netlink.Veth{Name: containerNicName, PeerName: hostNicName}
+		if mtu > 0 {
+			veth.MTU = mtu
 		}
-		return "", "", fmt.Errorf("failed to create veth for %w", err)
+		if err := netlink.LinkAdd(&veth); err != nil {
+			return fmt.Errorf("failed to create veth for %w", err)
+		}
+		defer func() {
+			if !moved {
+				if cleanupErr := netlink.LinkDel(&veth); cleanupErr != nil {
+					klog.Errorf("failed to delete veth after setup failure: %v", cleanupErr)
+				}
+			}
+		}()
+
+		hostLink, err := netlink.LinkByName(hostNicName)
+		if err != nil {
+			return fmt.Errorf("failed to find host veth endpoint %s: %w", hostNicName, err)
+		}
+		if err = netlink.LinkSetNsFd(hostLink, int(hostNS.Fd())); err != nil { // #nosec G115
+			return fmt.Errorf("failed to move host veth endpoint %s to host netns: %w", hostNicName, err)
+		}
+		moved = true
+		return nil
+	}); err != nil {
+		return "", "", err
 	}
 	return hostNicName, containerNicName, nil
 }
