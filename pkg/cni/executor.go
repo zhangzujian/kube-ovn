@@ -1,4 +1,4 @@
-package daemon
+package cni
 
 import (
 	"errors"
@@ -20,11 +20,11 @@ type CNIExecutorConfig struct {
 
 // CNIExecutor applies Pod network plans in the process that the runtime starts.
 type CNIExecutor struct {
-	handler cniServerHandler
+	handler executionHandler
 }
 
 func NewCNIExecutor(config CNIExecutorConfig) *CNIExecutor {
-	return &CNIExecutor{handler: cniServerHandler{Config: &Configuration{EnableArpDetectIPConflict: config.EnableArpDetectIPConflict}}}
+	return &CNIExecutor{handler: executionHandler{Config: &executionConfig{EnableArpDetectIPConflict: config.EnableArpDetectIPConflict}}}
 }
 
 // Add applies a prepared plan and returns facts observed after configuration.
@@ -108,7 +108,7 @@ func validateCNIPlan(plan *request.CNIPlan) error {
 	return nil
 }
 
-func removePlanDefaultRoutes(handler *cniServerHandler, plan *request.CNIPlan) error {
+func removePlanDefaultRoutes(handler *executionHandler, plan *request.CNIPlan) error {
 	var ipv4, ipv6 bool
 	for _, route := range plan.Routes {
 		if route.Destination == "" {
