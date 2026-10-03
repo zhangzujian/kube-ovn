@@ -10006,7 +10006,9 @@ if ! sh -c "echo \":$PATH:\" | grep -q \":/usr/local/bin:\""; then
 fi
 
 echo "[Step 6/6] Run network diagnose"
-kubectl cp kube-system/"$(kubectl -n kube-system get pods -o wide | grep cni | awk '{print $1}' | awk 'NR==1{print}')":/kube-ovn/kubectl-ko /usr/local/bin/kubectl-ko
+KO_AGENT_POD=$(kubectl -n kube-system get pods -l app=kubectl-ko-node-agent --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}')
+: "${KO_AGENT_POD:?No running kubectl-ko-node-agent Pod found}"
+kubectl cp -c agent "kube-system/${KO_AGENT_POD}:/kube-ovn/kubectl-ko" /usr/local/bin/kubectl-ko
 chmod +x /usr/local/bin/kubectl-ko
 # show pod status in kube-system namespace before diagnose
 kubectl get pod -n kube-system -o wide

@@ -19,6 +19,10 @@ matching Kube-OVN GitHub release, verify its SHA256, and put the extracted
 built independently. Do not copy a Linux pod binary to a macOS or Windows
 workstation. The Kubernetes nodes and remote OVN/OVS tools remain Linux-based.
 
+The cluster installation script fetches its CLI from the independent agent
+after the agent DaemonSet rollout completes, selecting the `agent` container
+explicitly. It does not copy the CLI from a CNI or OVS/OVN component Pod.
+
 On Windows, use the ZIP matching the workstation architecture. Verify its
 SHA256 with `Get-FileHash`, extract it with `Expand-Archive`, and place
 `kubectl-ko.exe` in a directory on PATH alongside the existing `kubectl.exe`
