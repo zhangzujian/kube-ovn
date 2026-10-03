@@ -31,8 +31,10 @@ import (
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
 
-type executionConfig struct{ EnableArpDetectIPConflict bool }
-type executionHandler struct{ Config *executionConfig }
+type (
+	executionConfig  struct{ EnableArpDetectIPConflict bool }
+	executionHandler struct{ Config *executionConfig }
+)
 
 var pciAddrRegexp = regexp.MustCompile(`\b([0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}.\d{1}\S*)`)
 
@@ -58,7 +60,7 @@ func TurnOffNicTxChecksum(nicName string) error {
 	return nil
 }
 
-func (csh executionHandler) checkGatewayReady(_ string, _ string, gwCheckMode int, intr, ipAddr, gateway string, verbose bool) error {
+func (csh executionHandler) checkGatewayReady(_, _ string, gwCheckMode int, intr, ipAddr, gateway string, verbose bool) error {
 	if gwCheckMode == gatewayCheckModeArpingNotConcerned || gwCheckMode == gatewayCheckModePingNotConcerned {
 		_ = waitNetworkReady(intr, ipAddr, gateway, true, verbose, 1, nil)
 		return nil
@@ -126,7 +128,6 @@ func (csh executionHandler) configureContainerNic(podName, podNamespace, nicName
 		}
 
 		if isDefaultRoute {
-
 			for _, gw := range util.SplitTrimmed(containerGw, ",") {
 				if err = netlink.RouteReplace(&netlink.Route{
 					LinkIndex: containerLink.Attrs().Index,
@@ -177,7 +178,6 @@ func (csh executionHandler) configureContainerNic(podName, podNamespace, nicName
 			}
 			if r.Dst != nil && r.Dst.IP.IsLinkLocalUnicast() {
 				if _, bits := r.Dst.Mask.Size(); bits == net.IPv6len*8 {
-
 					continue
 				}
 			}
@@ -325,7 +325,6 @@ func configureNic(link, ip string, macAddr net.HardwareAddr, mtu int, detectIPv4
 	isIPv6LinkLocalExist := false
 	for _, ipAddr := range ipAddrs {
 		if ipAddr.IP.IsLinkLocalUnicast() {
-
 			if util.CheckProtocol(ipAddr.IP.String()) == kubeovnv1.ProtocolIPv6 {
 				isIPv6LinkLocalExist = true
 			}
@@ -349,7 +348,6 @@ func configureNic(link, ip string, macAddr net.HardwareAddr, mtu int, detectIPv4
 		}
 
 		for ipStr := range strings.SplitSeq(ip, ",") {
-
 			if _, ok := ipDelMap[ipStr]; ok {
 				delete(ipDelMap, ipStr)
 				continue
@@ -384,7 +382,6 @@ func configureNic(link, ip string, macAddr net.HardwareAddr, mtu int, detectIPv4
 					return fmt.Errorf("IP address %s has already been used by host with MAC %s", ip, mac)
 				}
 			} else {
-
 				if err := util.AnnounceArpAddress(link, addr.IP.String(), macAddr, 1, 1*time.Second); err != nil {
 					klog.Warningf("failed to broadcast free arp with err %v", err)
 				}
@@ -406,7 +403,6 @@ func configureNic(link, ip string, macAddr net.HardwareAddr, mtu int, detectIPv4
 	}
 
 	if setUfoOff {
-
 		probe, probeErr := exec.Command("ethtool", "-k", link).CombinedOutput()
 		if probeErr != nil {
 			klog.Warningf("failed to query offload features of device %s, skip disabling ufo: %v, %s", link, probeErr, probe)
@@ -430,7 +426,7 @@ func configureNic(link, ip string, macAddr net.HardwareAddr, mtu int, detectIPv4
 	return nil
 }
 
-func (csh executionHandler) configureNic(podName, podNamespace, provider, netns, containerID, vfDriver, ifName, mac string, mtu int, ip, gateway string, isDefaultRoute, vmMigration bool, routes []request.Route, _, _ []string, ingress, egress, ingressBurst, egressBurst, deviceID, latency, limit, loss, jitter string, gwCheckMode int, u2oInterconnectionIP, oldPodName, encapIP, localnetSubnet string, appendIfName, routedSubnet bool, execution *request.CNIExecutionResult) ([]request.Route, error) {
+func (csh executionHandler) configureNic(podName, podNamespace, provider, netns, containerID, vfDriver, ifName, mac string, mtu int, ip, gateway string, isDefaultRoute, vmMigration bool, routes []request.Route, _, _ []string, ingress, egress, ingressBurst, egressBurst, deviceID, latency, limit, loss, jitter string, gwCheckMode int, u2oInterconnectionIP, _, encapIP, localnetSubnet string, appendIfName, routedSubnet bool, execution *request.CNIExecutionResult) ([]request.Route, error) {
 	var err error
 	var hostNicName, containerNicName, pfPci string
 	var vfID int
@@ -456,7 +452,6 @@ func (csh executionHandler) configureNic(podName, podNamespace, provider, netns,
 		}
 		defer func() {
 			if err != nil {
-
 				if link, linkErr := netlink.LinkByName(hostNicName); linkErr == nil {
 					if linkErr = netlink.LinkSetUp(link); linkErr != nil {
 						klog.Errorf("failed to bring %s back up during rollback: %v", hostNicName, linkErr)
@@ -502,7 +497,6 @@ func (csh executionHandler) configureNic(podName, podNamespace, provider, netns,
 			return nil, fmt.Errorf("add nic to ovs failed %w: %q", err, output)
 		}
 	} else {
-
 		args := []string{
 			ovs.MayExist, "add-port", "br-int", hostNicName, "--",
 			"set", "interface", hostNicName, "external_ids:iface-id=" + ifaceID,
@@ -570,7 +564,6 @@ func (csh executionHandler) configureNic(podName, podNamespace, provider, netns,
 		return nil, err
 	}
 	if isUserspaceDP {
-
 		if err = TurnOffNicTxChecksum(containerNicName); err != nil {
 			klog.Error(err)
 			return nil, err
@@ -701,7 +694,6 @@ func (csh executionHandler) deleteNic(podName, podNamespace, containerID, netns,
 	if deviceID == "" {
 		hostLink, err := netlink.LinkByName(nicName)
 		if err != nil {
-
 			if _, ok := err.(netlink.LinkNotFoundError); ok {
 				return nil
 			}
@@ -716,7 +708,6 @@ func (csh executionHandler) deleteNic(podName, podNamespace, containerID, netns,
 			}
 		}
 	} else if pciAddrRegexp.MatchString(deviceID) && !yusur.IsYusurSmartNic(deviceID) {
-
 		vfIndex, err := sriovnet.GetVfIndexByPciAddress(deviceID)
 		if err != nil {
 			klog.Errorf("failed to get vf %s index, %v", deviceID, err)
@@ -763,7 +754,6 @@ func macToLinkLocalIPv6(mac net.HardwareAddr) (net.IP, error) {
 }
 
 func (csh executionHandler) releaseVf(podName, podNamespace, podNetns, ifName, nicType, deviceID string) error {
-
 	if nicType != util.OffloadType || deviceID == "" {
 		return nil
 	}
@@ -782,7 +772,6 @@ func (csh executionHandler) releaseVf(podName, podNamespace, podNetns, ifName, n
 	defer hostNS.Close()
 
 	err = netns.Do(func(_ ns.NetNS) error {
-
 		link, err := netlink.LinkByName(ifName)
 		if err != nil {
 			return fmt.Errorf("failed to get container interface %s %s: %w", ifName, podDesc, err)
@@ -855,7 +844,6 @@ func renameLink(curName, newName string) error {
 func rollBackVethPair(nicName string) error {
 	hostLink, err := netlink.LinkByName(nicName)
 	if err != nil {
-
 		if _, ok := err.(netlink.LinkNotFoundError); ok {
 			return nil
 		}
@@ -956,7 +944,6 @@ func setupSriovInterface(containerID, deviceID, vfDriver, ifName, mac string) (s
 
 	var vfNetdevice string
 	if !isVfioPciDriver {
-
 		vfNetdevices, err := sriovnet.GetNetDevicesFromPci(deviceID)
 		if err != nil {
 			klog.Errorf("failed to get vf netdevice %s, %v", deviceID, err)
@@ -970,7 +957,6 @@ func setupSriovInterface(containerID, deviceID, vfDriver, ifName, mac string) (s
 	}
 
 	if yusur.IsYusurSmartNic(deviceID) {
-
 		pfPci, err := yusur.GetYusurNicPfPciFromVfPci(deviceID)
 		if err != nil {
 			return "", "", "", -1, err
@@ -1075,7 +1061,6 @@ func waitIPv6AddressPreferred(interfaceName string, maxRetry int, retryInterval 
 
 		addrsFlags := make(map[string]int, len(addrs))
 		for _, addr := range addrs {
-
 			if addr.IP.To4() != nil {
 				continue
 			}

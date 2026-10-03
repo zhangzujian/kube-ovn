@@ -86,7 +86,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 	if response.Plan == nil {
 		return types.NewError(types.ErrTryAgainLater, "RPC failed", "daemon returned no CNI plan")
 	}
-	executor := cniexec.NewCNIExecutor(cniexec.CNIExecutorConfig{EnableArpDetectIPConflict: response.Plan.EnableArpDetectIPConflict})
+	executor := cniexec.NewExecutor(cniexec.ExecutorConfig{EnableArpDetectIPConflict: response.Plan.EnableArpDetectIPConflict})
 	execution, err := executor.Add(response.Plan)
 	if err != nil {
 		return types.NewError(types.ErrTryAgainLater, "CNI execution failed", err.Error())
@@ -95,7 +95,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return types.NewError(types.ErrTryAgainLater, "CNI commit failed", err.Error())
 	}
 
-	result, err := cniexec.CNIResultFromPlan(response.Plan, execution)
+	result, err := cniexec.ResultFromPlan(response.Plan, execution)
 	if err != nil {
 		return err
 	}
@@ -140,7 +140,7 @@ func cmdDel(args *skel.CmdArgs) error {
 	if response.Plan == nil {
 		return types.NewError(types.ErrTryAgainLater, "RPC failed", "daemon returned no CNI delete plan")
 	}
-	executor := cniexec.NewCNIExecutor(cniexec.CNIExecutorConfig{EnableArpDetectIPConflict: response.Plan.EnableArpDetectIPConflict})
+	executor := cniexec.NewExecutor(cniexec.ExecutorConfig{EnableArpDetectIPConflict: response.Plan.EnableArpDetectIPConflict})
 	if err = executor.Delete(response.Plan); err != nil {
 		return types.NewError(types.ErrTryAgainLater, "CNI deletion failed", err.Error())
 	}

@@ -11,51 +11,6 @@ import (
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
 
-func newCNIPlan(req request.CniRequest, nicType, shortSharedDir, mac, ip, ipAddr, cidr, gateway string, mtu int, isDefaultRoute, vmMigration, routedSubnet, ipamOnly bool, gatewayCheckMode int, u2oIP, oldPodName, encapIP, localnetSubnet string, appendIfName bool, routes []request.Route, ingress, egress, ingressBurst, egressBurst, latency, limit, loss, jitter string) *request.CNIPlan {
-	return &request.CNIPlan{
-		CniType:                    req.CniType,
-		PodName:                    req.PodName,
-		PodNamespace:               req.PodNamespace,
-		ContainerID:                req.ContainerID,
-		NetNs:                      req.NetNs,
-		IfName:                     req.IfName,
-		Provider:                   req.Provider,
-		Routes:                     routes,
-		DNS:                        req.DNS,
-		VfDriver:                   req.VfDriver,
-		DeviceID:                   req.DeviceID,
-		VhostUserSocketVolumeName:  req.VhostUserSocketVolumeName,
-		VhostUserSocketName:        req.VhostUserSocketName,
-		VhostUserSocketConsumption: req.VhostUserSocketConsumption,
-		ShortSharedDir:             shortSharedDir,
-		MacAddress:                 mac,
-		IP:                         ip,
-		IPAddr:                     ipAddr,
-		CIDR:                       cidr,
-		Gateway:                    gateway,
-		MTU:                        mtu,
-		IsDefaultRoute:             isDefaultRoute,
-		VMMigration:                vmMigration,
-		RoutedSubnet:               routedSubnet,
-		IPAMOnly:                   ipamOnly,
-		GatewayCheckMode:           gatewayCheckMode,
-		U2OInterconnectionIP:       u2oIP,
-		OldPodName:                 oldPodName,
-		EncapIP:                    encapIP,
-		LocalnetSubnet:             localnetSubnet,
-		AppendIfName:               appendIfName,
-		Ingress:                    ingress,
-		Egress:                     egress,
-		IngressBurst:               ingressBurst,
-		EgressBurst:                egressBurst,
-		Latency:                    latency,
-		Limit:                      limit,
-		Loss:                       loss,
-		Jitter:                     jitter,
-		NicType:                    nicType,
-	}
-}
-
 func cniResponseForPlan(plan *request.CNIPlan) request.CniResponse {
 	response := request.CniResponse{
 		MacAddress: plan.MacAddress,
@@ -94,8 +49,8 @@ func cniResponseForPlan(plan *request.CNIPlan) request.CniResponse {
 	return response
 }
 
-// CNIResultFromPlan converts the observed execution result into the CNI result.
-func CNIResultFromPlan(plan *request.CNIPlan, execution *request.CNIExecutionResult) (current.Result, error) {
+// ResultFromPlan converts the observed execution result into the CNI result.
+func ResultFromPlan(plan *request.CNIPlan, execution *request.CNIExecutionResult) (current.Result, error) {
 	response := cniResponseForPlan(plan)
 	if execution != nil && len(execution.Routes) > 0 {
 		response.Routes = execution.Routes

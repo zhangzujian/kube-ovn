@@ -9,18 +9,18 @@ import (
 
 // CNIExecutorConfig is kept as a source-compatible alias for consumers that
 // used the executor before it moved out of the daemon package.
-type CNIExecutorConfig = cniexec.CNIExecutorConfig
+type CNIExecutorConfig = cniexec.ExecutorConfig
 
 // CNIExecutor is kept as a source-compatible alias for the standalone CNI
 // executor implementation.
-type CNIExecutor = cniexec.CNIExecutor
+type CNIExecutor = cniexec.Executor
 
 // NewCNIExecutor forwards to the standalone CNI executor package.
 func NewCNIExecutor(config CNIExecutorConfig) *CNIExecutor {
-	return cniexec.NewCNIExecutor(config)
+	return cniexec.NewExecutor(config)
 }
 
 // CNIResultFromPlan forwards to the standalone CNI result conversion helper.
 func CNIResultFromPlan(plan *request.CNIPlan, execution *request.CNIExecutionResult) (current.Result, error) {
-	return cniexec.CNIResultFromPlan(plan, execution)
+	return cniexec.ResultFromPlan(plan, execution)
 }

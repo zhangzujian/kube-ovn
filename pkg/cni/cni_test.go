@@ -6,13 +6,13 @@ import (
 	"github.com/kubeovn/kube-ovn/pkg/request"
 )
 
-func TestCNIExecutorRejectsIncompletePlan(t *testing.T) {
-	if _, err := NewCNIExecutor(CNIExecutorConfig{}).Add(&request.CNIPlan{}); err == nil {
+func TestExecutorRejectsIncompletePlan(t *testing.T) {
+	if _, err := NewExecutor(ExecutorConfig{}).Add(&request.CNIPlan{}); err == nil {
 		t.Fatal("expected incomplete CNI plan to be rejected")
 	}
 }
 
-func TestCNIExecutorRejectsInvalidMAC(t *testing.T) {
+func TestExecutorRejectsInvalidMAC(t *testing.T) {
 	plan := &request.CNIPlan{
 		PodName:      "pod",
 		PodNamespace: "namespace",
@@ -22,7 +22,7 @@ func TestCNIExecutorRejectsInvalidMAC(t *testing.T) {
 		MacAddress:   "not-a-mac",
 	}
 
-	if _, err := NewCNIExecutor(CNIExecutorConfig{}).Add(plan); err == nil {
+	if _, err := NewExecutor(ExecutorConfig{}).Add(plan); err == nil {
 		t.Fatal("expected invalid MAC to be rejected")
 	}
 }

@@ -10,7 +10,6 @@ import (
 
 	"github.com/moby/sys/mountinfo"
 	"golang.org/x/sys/unix"
-	"k8s.io/klog/v2"
 
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
@@ -61,5 +60,3 @@ func removeShortSharedDirAt(sharedDir, socketConsumption string) (err error) {
 	}
 	return os.Remove(sharedDir)
 }
-
-var _ = klog.V

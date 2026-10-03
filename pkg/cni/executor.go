@@ -11,24 +11,24 @@ import (
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
 
-// CNIExecutorConfig contains only execution-time policy. It intentionally has
+// ExecutorConfig contains only execution-time policy. It intentionally has
 // no Kubernetes client or informer dependencies so the executor can run in the
 // CNI process after the daemon has returned a validated plan.
-type CNIExecutorConfig struct {
+type ExecutorConfig struct {
 	EnableArpDetectIPConflict bool
 }
 
-// CNIExecutor applies Pod network plans in the process that the runtime starts.
-type CNIExecutor struct {
+// Executor applies Pod network plans in the process that the runtime starts.
+type Executor struct {
 	handler executionHandler
 }
 
-func NewCNIExecutor(config CNIExecutorConfig) *CNIExecutor {
-	return &CNIExecutor{handler: executionHandler{Config: &executionConfig{EnableArpDetectIPConflict: config.EnableArpDetectIPConflict}}}
+func NewExecutor(config ExecutorConfig) *Executor {
+	return &Executor{handler: executionHandler{Config: &executionConfig{EnableArpDetectIPConflict: config.EnableArpDetectIPConflict}}}
 }
 
 // Add applies a prepared plan and returns facts observed after configuration.
-func (e *CNIExecutor) Add(plan *request.CNIPlan) (*request.CNIExecutionResult, error) {
+func (e *Executor) Add(plan *request.CNIPlan) (*request.CNIExecutionResult, error) {
 	if err := validateCNIPlan(plan); err != nil {
 		return nil, err
 	}
@@ -66,7 +66,7 @@ func (e *CNIExecutor) Add(plan *request.CNIPlan) (*request.CNIExecutionResult, e
 }
 
 // Delete removes only resources identified by the prepared plan.
-func (e *CNIExecutor) Delete(plan *request.CNIPlan) error {
+func (e *Executor) Delete(plan *request.CNIPlan) error {
 	if err := validateCNIPlan(plan); err != nil {
 		return err
 	}
