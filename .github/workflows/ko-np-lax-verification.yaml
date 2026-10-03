@@ -1,0 +1,149 @@
+name: Actual lax NetworkPolicy comparison
+
+on:
+  push:
+    branches: [ko-np-lax-verification-100a]
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.14.0
+          args: --help
+      - run: make lint
+        env:
+          CI: true
+
+  comparison:
+    name: Actual NP mode (${{ matrix.source.name }}, ${{ matrix.layout.family }}, ${{ matrix.layout.enforcement }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        source:
+          - name: legacy
+            sha: c95e5a3f98aad9a5d33431d75636309589045750
+            run: 36947728303
+            artifact: 11203123430
+          - name: candidate
+            sha: 100a48deaf2de5ac17b2a64ac1443b7a0416bbaf
+            run: 37131618946
+            artifact: 11277552742
+        layout:
+          - family: dual
+            enforcement: lax
+            seed: 1791044874
+            originalJob: 111231733400
+    env:
+      CI: true
+      E2E_BRANCH: master
+      E2E_IP_FAMILY: ${{ matrix.layout.family }}
+      VERSION: v1.17.0-debug
+      DEBUG_WRAPPER: valgrind
+      NP_ENFORCEMENT: ${{ matrix.layout.enforcement }}
+    steps:
+      - uses: jlumbroso/free-disk-space@v2.0.0
+        with:
+          android: true
+          dotnet: true
+          haskell: true
+          docker-images: false
+          large-packages: false
+          tool-cache: false
+          swap-storage: false
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ matrix.source.sha }}
+          persist-credentials: false
+      - name: Remove DNS search domain
+        run: |
+          sudo sed -i '/^search/d' /etc/resolv.conf
+          sudo systemctl restart docker
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: helm/kind-action@v1.15.0
+        with:
+          version: v0.33.0
+          install_only: true
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ matrix.source.artifact }}
+          run-id: ${{ matrix.source.run }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/np-comparison-images
+          merge-multiple: true
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: 11276728041
+          run-id: 37131618946
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/np-comparison-images
+          merge-multiple: true
+      - name: Verify immutable source and original images
+        env:
+          EXPECTED_SOURCE: ${{ matrix.source.sha }}
+          NP_IMAGE_DIRECTORY: ${{ runner.temp }}/np-comparison-images
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
+          test -z "$(git status --porcelain)"
+          mkdir comparison-results
+          git rev-parse HEAD 'HEAD^{tree}' > comparison-results/source.txt
+          sha256sum "$NP_IMAGE_DIRECTORY"/*.tar > comparison-results/images.sha256
+          docker load --input "$NP_IMAGE_DIRECTORY/kube-ovn.tar"
+          docker load --input "$NP_IMAGE_DIRECTORY/kind-node-v1.37.0.tar"
+          docker run --rm --entrypoint /kube-ovn/kube-ovn-controller kubeovn/kube-ovn:v1.17.0-debug --help > comparison-results/controller-version.txt 2>&1
+          grep -F "git-${EXPECTED_SOURCE:0:7}" comparison-results/controller-version.txt
+      - name: Create original layout and install the selected source
+        env:
+          IP_FAMILY: ${{ matrix.layout.family }}
+        run: |
+          pipx install jinjanator
+          make "kind-init-$IP_FAMILY"
+          make "kind-install-$IP_FAMILY"
+      - name: Record effective NetworkPolicy mode and comparison boundaries
+        env:
+          EXPECTED_SOURCE: ${{ matrix.source.sha }}
+          FIXED_SEED: ${{ matrix.layout.seed }}
+          NOMINAL_ENFORCEMENT: ${{ matrix.layout.enforcement }}
+          ORIGINAL_JOB: ${{ matrix.layout.originalJob }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+
+          result = subprocess.run(["kubectl", "-n", "kube-system", "get", "deployment", "kube-ovn-controller", "-o", "json"], check=True, capture_output=True)
+          deployment = json.loads(result.stdout)
+          containers = deployment["spec"]["template"]["spec"]["containers"]
+          selected = [{"name": c["name"], "image": c["image"], "npArguments": [arg for arg in c.get("args", []) if arg.startswith("--np-enforcement=")]} for c in containers]
+          assert any("--np-enforcement=lax" in c["npArguments"] for c in selected), "Requested lax mode was not installed"
+          Path("comparison-results/configuration.json").write_text(json.dumps({"source": os.environ["EXPECTED_SOURCE"], "seed": int(os.environ["FIXED_SEED"]), "nominalEnforcement": os.environ["NOMINAL_ENFORCEMENT"], "originalJob": int(os.environ["ORIGINAL_JOB"]), "version": os.environ["VERSION"], "debugWrapper": os.environ["DEBUG_WRAPPER"], "controller": selected, "boundary": "Original assertions/retries/timeouts retained; seed pins spec order only. NP_ENFORCEMENT is now job-scoped to exercise actual lax mode, verified from installed controller arguments. This differs from the preceding nominal-lax replay that actually used standard mode. No concurrent collector. Runtime source, installer and suite come from each immutable revision; results do not establish deep causality."}, indent=2) + "\n")
+          PY
+      - name: Run original suite with original seed and verdict
+        env:
+          FIXED_SEED: ${{ matrix.layout.seed }}
+        run: |
+          make k8s-netpol-e2e "GINKGO_E2E_RUN=go tool github.com/onsi/ginkgo/v2/ginkgo run --github-output --silence-skips --randomize-all -v --seed=$FIXED_SEED" 2>&1 | tee comparison-results/e2e.log
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: actual-np-lax-${{ matrix.source.name }}
+          path: comparison-results/
+          if-no-files-found: error
