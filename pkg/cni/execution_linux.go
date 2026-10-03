@@ -759,8 +759,17 @@ func (csh executionHandler) releaseVf(podName, podNamespace, podNetns, ifName, n
 	}
 	podDesc := fmt.Sprintf("for pod %s/%s", podNamespace, podName)
 	klog.Infof("Tear down interface %s", podDesc)
+	if podNetns == "" {
+		klog.Infof("skip releasing VF interface %s: pod network namespace is empty", podDesc)
+		return nil
+	}
 	netns, err := ns.GetNS(podNetns)
 	if err != nil {
+		var nsPathNotExistErr ns.NSPathNotExistErr
+		if os.IsNotExist(err) || errors.As(err, &nsPathNotExistErr) {
+			klog.Infof("skip releasing VF interface %s: pod network namespace %q no longer exists", podDesc, podNetns)
+			return nil
+		}
 		return fmt.Errorf("failed to get container namespace %s: %w", podDesc, err)
 	}
 	defer netns.Close()

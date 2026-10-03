@@ -918,6 +918,10 @@ func (csh cniServerHandler) handleCommit(req *restful.Request, resp *restful.Res
 		}
 	}
 
+	if !plan.Delete && plan.LocalnetSubnet != "" && podRequest.Execution != nil {
+		csh.Controller.enqueueServicesForUnderlaySubnet(plan.LocalnetSubnet)
+	}
+
 	if pod != nil {
 		reason := "PodNetworkConfigured"
 		message := fmt.Sprintf("subnet=%s ip=%s mac=%s", plan.Subnet, plan.IP, plan.MacAddress)

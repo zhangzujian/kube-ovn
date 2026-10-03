@@ -166,6 +166,34 @@ func TestHandleCommitRecordsSuccessEvent(t *testing.T) {
 	require.Contains(t, event.message, "ip=10.0.0.2")
 }
 
+func TestHandleCommitEnqueuesUnderlayServicesAfterExecution(t *testing.T) {
+	pod := &v1.Pod{Name: "pod", Namespace: "ns", UID: types.UID("real-uid")}
+	handler := cniEventTestHandler(t, pod, nil, &cniEventRecorder{})
+	serviceIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	matching := &v1.Service{
+		Namespace: "ns",
+		Name:      "underlay-service",
+		Annotations: map[string]string{
+			util.ServiceExternalIPFromSubnetAnnotation: "underlay",
+		},
+	}
+	require.NoError(t, serviceIndexer.Add(matching))
+	handler.Controller.servicesLister = listerv1.NewServiceLister(serviceIndexer)
+	handler.Controller.serviceQueue = newTypedRateLimitingQueue[*serviceEvent]("Service", nil)
+
+	response := serveCNIRequest(t, handler, "/api/v1/commit", request.CniRequest{
+		Plan: &request.CNIPlan{
+			PodName:        pod.Name,
+			PodNamespace:   pod.Namespace,
+			Provider:       "underlay.default",
+			LocalnetSubnet: "underlay",
+		},
+		Execution: &request.CNIExecutionResult{},
+	})
+	require.Equal(t, http.StatusNoContent, response.Code)
+	require.Equal(t, 1, handler.Controller.serviceQueue.Len())
+}
+
 func TestHandleAddFailureEvent(t *testing.T) {
 	recorder := &cniEventRecorder{}
 	handler := cniEventTestHandler(t, nil, nil, recorder)
