@@ -2624,7 +2624,7 @@ jobs:
           if test -f kubectl-ko-log.tar.gz; then
             mv kubectl-ko-log.tar.gz bgp-speaker-e2e-${{ matrix.ip-family }}-ko-log.tar.gz
           else
-            echo "kubectl ko log was unavailable because the BGP test cluster did not become usable." > bgp-speaker-e2e-ko-log-unavailable.txt
+            echo "kubectl ko logs was unavailable because the BGP test cluster did not become usable." > bgp-speaker-e2e-ko-log-unavailable.txt
             tar zcf bgp-speaker-e2e-${{ matrix.ip-family }}-ko-log.tar.gz bgp-speaker-e2e-ko-log-unavailable.txt
           fi
 
