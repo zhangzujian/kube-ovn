@@ -2,6 +2,7 @@ package ko
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -104,6 +105,35 @@ func (c *Client) nodeTarget(ctx context.Context, node, component string) (Target
 
 func (c *Client) agentTarget(ctx context.Context, node string) (Target, error) {
 	return c.uniqueTarget(ctx, "app=kubectl-ko-node-agent", node, "agent")
+}
+
+// linuxTargets retains usable nodes even if another node has no unique agent.
+func (c *Client) linuxTargets(ctx context.Context) ([]Target, error) {
+	if !c.ComponentFree {
+		return c.targets(ctx, "app=kube-ovn-cni", "", "cni-server", false)
+	}
+	nodes, err := c.Kubernetes.CoreV1().Nodes().List(ctx, metav1.ListOptions{LabelSelector: corev1.LabelOSStable + "=linux"})
+	if err != nil {
+		return nil, fmt.Errorf("list Linux nodes: %w", err)
+	}
+	slices.SortFunc(nodes.Items, func(a, b corev1.Node) int { return strings.Compare(a.Name, b.Name) })
+	var result []Target
+	var failures []error
+	for _, node := range nodes.Items {
+		if node.DeletionTimestamp != nil {
+			continue
+		}
+		target, err := c.agentTarget(ctx, node.Name)
+		if err != nil {
+			failures = append(failures, err)
+			continue
+		}
+		result = append(result, target)
+	}
+	if len(result) == 0 && len(failures) == 0 {
+		return nil, errors.New("no Linux nodes found")
+	}
+	return result, errors.Join(failures...)
 }
 
 func (c *Client) replaceWithAgents(ctx context.Context, targets []Target) ([]Target, error) {

@@ -149,6 +149,14 @@ func (c *Client) collectionTasks(ctx context.Context, component string, options 
 		if component != "all" && component != group.component {
 			continue
 		}
+		if c.ComponentFree && group.component == "linux" {
+			linuxTasks, err := c.linuxCollectionTasks(ctx, options)
+			tasks = append(tasks, linuxTasks...)
+			if err != nil {
+				failures = append(failures, err)
+			}
+			continue
+		}
 		targets, err := c.targets(ctx, group.selector, "", group.container, false)
 		if err != nil {
 			failures = append(failures, err)
@@ -169,9 +177,6 @@ func (c *Client) collectionTasks(ctx context.Context, component string, options 
 			directory := filepath.Join(options.output, target.Node, group.directory)
 			if group.component == "linux" {
 				tasks = append(tasks, c.linuxTasks(target, directory, options.maxBytes)...)
-				if c.ComponentFree {
-					tasks = append(tasks, c.ipsecTask(target, source, directory, options.maxBytes))
-				}
 				continue
 			}
 			// Central and OVS may share a node and /var/log/ovn. Give central its own
@@ -193,6 +198,29 @@ func (c *Client) collectionTasks(ctx context.Context, component string, options 
 		}
 	}
 	return tasks, errors.Join(failures...)
+}
+
+func (c *Client) linuxCollectionTasks(ctx context.Context, options collectionOptions) ([]collectionTask, error) {
+	targets, discoveryErr := c.linuxTargets(ctx)
+	var tasks []collectionTask
+	for _, target := range targets {
+		directory := filepath.Join(options.output, target.Node, "linux")
+		tasks = append(tasks, c.linuxTasks(target, directory, options.maxBytes)...)
+		sources, err := c.targets(ctx, "app=kube-ovn-cni", target.Node, "cni-server", false)
+		if err == nil && len(sources) != 1 {
+			err = fmt.Errorf("expected one running CNI container, found %d", len(sources))
+		}
+		if err != nil {
+			sourceErr := fmt.Errorf("resolve IPsec source on node %q: %w", target.Node, err)
+			tasks = append(tasks, collectionTask{
+				Target: target, Name: "ipsec", Path: filepath.Join(directory, "ipsec.log"),
+				collect: func(context.Context) error { return sourceErr },
+			})
+			continue
+		}
+		tasks = append(tasks, c.ipsecTask(target, sources[0], directory, options.maxBytes))
+	}
+	return tasks, discoveryErr
 }
 
 func (c *Client) collectPodLogs(ctx context.Context, target Target, destination string, limit int64) error {

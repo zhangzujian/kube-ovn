@@ -312,26 +312,14 @@ var _ = framework.Describe("[group:kubectl-ko]", func() {
 		}
 	})
 
-	framework.ConformanceIt(`should check every running CNI environment`, func() {
+	framework.ConformanceIt(`should check every Linux environment with and without CNI Pods`, func() {
 		f.SkipVersionPriorTo(1, 17, "The structured environment command was introduced in v1.17")
-		pods, err := cs.CoreV1().Pods(framework.KubeOvnNamespace).List(context.Background(), metav1.ListOptions{LabelSelector: "app=kube-ovn-cni"})
+		nodes, err := cs.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{LabelSelector: corev1.LabelOSStable + "=linux"})
 		framework.ExpectNoError(err)
+		framework.ExpectNotEmpty(nodes.Items)
 		output := e2ekubectl.NewKubectlCommand("", "ko", "diagnose", "environment").ExecOrDie("")
-		checked := 0
-		for _, pod := range pods.Items {
-			if pod.Status.Phase != corev1.PodRunning || pod.DeletionTimestamp != nil {
-				continue
-			}
-			framework.ExpectContainSubstring(output, "Environment check on "+pod.Spec.NodeName+"\n")
-			checked++
-		}
-		if checked == 0 {
-			framework.Failf("no running CNI pod was available for the environment check")
-		}
-		framework.ExpectEqual(strings.Count(output, "Environment check on "), checked)
-		for _, step := range []string{"check cni configuration", "check system ipv4 config", "check checksum value", "check dns config", "check firewall config", "check geneve 6081 connection"} {
-			framework.ExpectEqual(strings.Count(output, step), checked, "every CNI must run the complete image checker")
-		}
+		checkEnvironmentOutput(output, nodes.Items)
+		checkAgentOnlyEnvironment(f, nodes.Items)
 	})
 
 	framework.ConformanceIt(`should resolve NB and SB member removal without executing it`, func() {

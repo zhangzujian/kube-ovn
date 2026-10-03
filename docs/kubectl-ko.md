@@ -107,7 +107,7 @@ kubectl ko
 | `diagnose node NODE` | Perform configuration checks and restrict the independent active probes to one node. |
 | `diagnose subnet SUBNET` | Check the subnet, create an isolated temporary DaemonSet and NodePort Service, and check peer TCP/UDP, node ICMP and NodePort connectivity from those subnet Pods. Does not require optional CNI node TCP/UDP listeners. |
 | `diagnose connectivity` | Check configuration and probe explicit TCP/UDP IP endpoints using independent temporary Pods in the existing pinger network namespaces. Does not create NodePort Services or subnet DaemonSets. |
-| `diagnose environment` | Run the environment checker through one independent node agent per node; it does not enter CNI containers. |
+| `diagnose environment` | Discover Linux nodes from the Kubernetes API and run the environment checker through one independent agent per node, including nodes without CNI Pods. |
 | `logs` | Collect component files, container logs and Linux node state in parallel; limit each item and record partial failures in a manifest. |
 | `restart` | Restart and wait for central, OVS, controller, CNI, pinger and monitor in dependency order. |
 | `perf run` | Create isolated probe Pods/Service; measure Pod, host, Service and multicast performance. Temporarily configure an OVN LB and multicast membership, then clean up owned changes. Does not delete central leaders. |
@@ -213,13 +213,17 @@ collection root. On Unix, extracted files use private permissions. On Windows,
 use a destination directory protected by your user ACL; Unix permission bits
 do not configure Windows ACLs. Backup destinations must support hard links
 (for example, NTFS) for atomic publication without overwriting existing files.
+Linux state collection and environment checks discover nonterminating Linux
+nodes independently of CNI Pods. A missing, unready or duplicate agent is an
+explicit discovery failure; other nodes continue to be checked or collected.
 XFRM state is collected with
 `nokeys`. Treat database and network diagnostics as sensitive local artifacts.
 IPsec collection locates the CNI Pod's live charon process by Pod UID, pins its
 root directory and uses the independent agent's strongSwan client to query its
 control socket. It collects the active `ipsec.conf`, certificate metadata and
 status, without executing a tool in the CNI container or exporting keys.
-Disabled IPsec or an unavailable daemon remains a partial failure in the manifest.
+Missing or ambiguous source Pods, disabled IPsec and unavailable daemons remain
+individual IPsec failures in the manifest; other Linux state is still collected.
 
 `db nb restore` preserves the old operation meaning: reconstruct from a database
 already on a node, not import an arbitrary local backup. It requires an explicit
@@ -320,7 +324,10 @@ make lint
 The dedicated workflow tests real exec streams, builds all six workstation
 platforms and runs file/streaming tests natively on Windows amd64 and arm64.
 Existing `[group:kubectl-ko]` E2E exercises trace, capture, logs,
-diagnostics and backup against a cluster. The Kind-only serial `[group:ha]`
+diagnostics and backup against a cluster. Environment coverage also installs
+credential-free agents in a namespace without CNI Pods and verifies every Linux
+node's environment and interface logs, plus explicit IPsec source failures.
+The Kind-only serial `[group:ha]`
 suite checks restart and leader recovery against NB data and internal
 connectivity, and database reconstruction against its recovery record,
 retained originals, NB data and connectivity. It repeats the traffic benchmark

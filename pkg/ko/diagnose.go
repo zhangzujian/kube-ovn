@@ -137,18 +137,14 @@ func diagnosticTargets(targets []string) (string, error) {
 }
 
 func (a *Application) environmentCheck(ctx context.Context, client *Client, _ []string) error {
-	targets, err := client.targets(ctx, "app=kube-ovn-cni", "", "cni-server", false)
-	if err != nil {
-		return err
+	targets, discoveryErr := client.linuxTargets(ctx)
+	var failures []error
+	if discoveryErr != nil {
+		failures = append(failures, discoveryErr)
 	}
 	if len(targets) == 0 {
-		return errors.New("no running CNI containers")
+		return errors.Join(errors.New("no environment check targets found"), discoveryErr)
 	}
-	targets, err = client.replaceWithAgents(ctx, targets)
-	if err != nil {
-		return err
-	}
-	var failures []error
 	for _, target := range targets {
 		if _, err := fmt.Fprintf(a.streams.Out, "Environment check on %s\n", target.Node); err != nil {
 			return err
@@ -461,28 +457,32 @@ func (c *Client) checkKubeProxy(ctx context.Context) error {
 	if !apierrors.IsNotFound(err) {
 		return err
 	}
-	targets, err := c.targets(ctx, "app=kube-ovn-cni", "", "cni-server", true)
-	if err != nil {
-		return err
+	var targets []Target
+	var discoveryErr error
+	if c.ComponentFree {
+		targets, discoveryErr = c.linuxTargets(ctx)
+	} else {
+		targets, discoveryErr = c.targets(ctx, "app=kube-ovn-cni", "", "cni-server", true)
 	}
 	if len(targets) == 0 {
-		return errors.New("no CNI containers available to probe embedded kube-proxy")
+		return errors.Join(errors.New("no targets available to probe embedded kube-proxy"), discoveryErr)
 	}
-	targets, err = c.replaceWithAgents(ctx, targets)
-	if err != nil {
-		return err
+	var failures []error
+	if discoveryErr != nil {
+		failures = append(failures, discoveryErr)
 	}
 	for _, target := range targets {
 		pod, err := c.Kubernetes.CoreV1().Pods(c.Namespace).Get(ctx, target.Pod, metav1.GetOptions{})
 		if err != nil {
-			return err
+			failures = append(failures, err)
+			continue
 		}
 		address := "http://" + net.JoinHostPort(pod.Status.PodIP, "10256") + "/healthz"
 		if _, err := c.capture(ctx, target, "curl", "--globoff", "--fail", "--silent", "--show-error", "--max-time", "3", address); err != nil {
-			return err
+			failures = append(failures, fmt.Errorf("embedded kube-proxy on %s: %w", target.Node, err))
 		}
 	}
-	return nil
+	return errors.Join(failures...)
 }
 
 func (c *Client) configurationChecks(ctx context.Context) []diagnosticCheck {

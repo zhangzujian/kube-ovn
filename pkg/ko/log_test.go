@@ -166,3 +166,47 @@ func TestIPsecCollectionExecutesOnlyIndependentAgent(t *testing.T) {
 	require.ErrorContains(t, task.collect(t.Context()), "terminating")
 	require.Len(t, executor.calls, 1, "an invalid source must not issue another agent request")
 }
+
+func TestLinuxCollectionWithoutCNIPreservesNodeStateAndSourceFailure(t *testing.T) {
+	app, executor, _, _ := testApplication(t,
+		&corev1.Node{Name: "worker", Labels: map[string]string{corev1.LabelOSStable: "linux"}},
+		&corev1.Node{Name: "missing", Labels: map[string]string{corev1.LabelOSStable: "linux"}},
+		&corev1.Node{Name: "windows", Labels: map[string]string{corev1.LabelOSStable: "windows"}},
+		readyPod("agent", "worker", "agent", map[string]string{"app": "kubectl-ko-node-agent"}),
+	)
+	client, err := app.newClient()
+	require.NoError(t, err)
+	client.ComponentFree = true
+	executor.run = func(_ context.Context, target Target, argv []string, streams Streams) error {
+		require.Equal(t, "agent", target.Container)
+		require.Equal(t, "worker", target.Node)
+		require.NotContains(t, argv, "ipsec", "a missing source must never query another daemon")
+		_, err := io.WriteString(streams.Out, "node state\n")
+		return err
+	}
+	dir := t.TempDir()
+	err = app.Execute(t.Context(), []string{"logs", "--component", "linux", "--output-dir", dir, "--concurrency", "1", "--strict"})
+	require.ErrorContains(t, err, `node "missing"`)
+	require.ErrorContains(t, err, "IPsec source")
+	data, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+	require.NoError(t, err)
+	var manifest struct {
+		Items          []collectionTask `json:"items"`
+		DiscoveryError string           `json:"discoveryError"`
+	}
+	require.NoError(t, json.Unmarshal(data, &manifest))
+	require.ErrorContains(t, errors.New(manifest.DiscoveryError), `node "missing"`)
+	require.NotEmpty(t, manifest.Items)
+	for _, item := range manifest.Items {
+		require.Equal(t, "worker", item.Target.Node)
+		if item.Name == "ipsec" {
+			require.Contains(t, item.Error, "IPsec source")
+		} else {
+			require.Empty(t, item.Error)
+		}
+	}
+	data, err = os.ReadFile(filepath.Join(dir, "worker", "linux", "addr.log"))
+	require.NoError(t, err)
+	require.Contains(t, string(data), `"ip" "-s" "addr" "show"`)
+	require.Contains(t, string(data), "node state")
+}

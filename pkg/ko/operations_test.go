@@ -132,6 +132,57 @@ func TestEnvironmentChecksAllRunningCNIsAndPreservesFailures(t *testing.T) {
 	require.Len(t, executor.calls, 2)
 }
 
+func TestEnvironmentChecksLinuxNodesWithoutCNI(t *testing.T) {
+	app, executor, out, _ := testApplication(t,
+		&corev1.Node{Name: "a", Labels: map[string]string{corev1.LabelOSStable: "linux"}},
+		&corev1.Node{Name: "b", Labels: map[string]string{corev1.LabelOSStable: "linux"}},
+		&corev1.Node{Name: "missing", Labels: map[string]string{corev1.LabelOSStable: "linux"}},
+		&corev1.Node{Name: "duplicate", Labels: map[string]string{corev1.LabelOSStable: "linux"}},
+		&corev1.Node{Name: "windows", Labels: map[string]string{corev1.LabelOSStable: "windows"}},
+		readyPod("agent-a", "a", "agent", map[string]string{"app": "kubectl-ko-node-agent"}),
+		readyPod("agent-b", "b", "agent", map[string]string{"app": "kubectl-ko-node-agent"}),
+		readyPod("agent-duplicate-1", "duplicate", "agent", map[string]string{"app": "kubectl-ko-node-agent"}),
+		readyPod("agent-duplicate-2", "duplicate", "agent", map[string]string{"app": "kubectl-ko-node-agent"}),
+	)
+	client, err := app.newClient()
+	require.NoError(t, err)
+	client.ComponentFree = true
+	failure := errors.New("checker failed")
+	executor.run = func(_ context.Context, target Target, argv []string, _ Streams) error {
+		require.Equal(t, "agent", target.Container)
+		require.Equal(t, []string{"bash", "/kube-ovn/env-check.sh"}, argv)
+		if target.Node == "a" {
+			return failure
+		}
+		return nil
+	}
+	err = app.Execute(t.Context(), []string{"diagnose", "environment"})
+	require.ErrorIs(t, err, failure)
+	require.ErrorContains(t, err, `node "missing"`)
+	require.ErrorContains(t, err, `node "duplicate"`)
+	require.Len(t, executor.calls, 2)
+	for _, node := range []string{"a", "b"} {
+		require.Contains(t, out.String(), "Environment check on "+node+"\n")
+	}
+	require.NotContains(t, out.String(), "windows")
+}
+
+func TestEmbeddedKubeProxyChecksAgentsWithoutCNI(t *testing.T) {
+	agent := readyPod("agent", "worker", "agent", map[string]string{"app": "kubectl-ko-node-agent"})
+	agent.Spec.HostNetwork = true
+	agent.Status.PodIP = "2001:db8::1"
+	app, executor, _, _ := testApplication(t, agent,
+		&corev1.Node{Name: "worker", Labels: map[string]string{corev1.LabelOSStable: "linux"}},
+	)
+	client, err := app.newClient()
+	require.NoError(t, err)
+	client.ComponentFree = true
+	require.NoError(t, client.checkKubeProxy(t.Context()))
+	require.Len(t, executor.calls, 1)
+	require.Equal(t, "agent", executor.calls[0].target.Container)
+	require.Equal(t, []string{"curl", "--globoff", "--fail", "--silent", "--show-error", "--max-time", "3", "http://[2001:db8::1]:10256/healthz"}, executor.calls[0].argv)
+}
+
 func TestDiagnosticProbeReportsConnectivityFailures(t *testing.T) {
 	podA := readyPod("subnet-a", "a", "probe", nil)
 	podA.Status.PodIPs = []corev1.PodIP{{IP: "192.0.2.2"}, {IP: "2001:db8::2"}}
