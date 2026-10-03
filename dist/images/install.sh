@@ -124,8 +124,7 @@ fi
 
 CNI_SERVER_CAPABILITIES="                - NET_ADMIN
                 - NET_BIND_SERVICE
-                - NET_RAW
-                - SYS_NICE"
+                - NET_RAW"
 
 KUBELET_DIR=${KUBELET_DIR:-/var/lib/kubelet}
 LOG_DIR=${LOG_DIR:-/var/log}
