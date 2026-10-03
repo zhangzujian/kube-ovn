@@ -52,6 +52,56 @@ func TestDatabaseKickUsesTheRequestedLeaderAndPreservesFailure(t *testing.T) {
 	}
 }
 
+func TestComponentFreeDatabaseKickDryRunDoesNotRequireAgent(t *testing.T) {
+	for _, role := range []string{"nb", "sb"} {
+		t.Run(role, func(t *testing.T) {
+			app, executor, out, _ := testApplication(t,
+				readyPod("nb-leader", "a", "ovn-central", map[string]string{"ovn-nb-leader": "true"}),
+				readyPod("sb-leader", "b", "ovn-central", map[string]string{"ovn-sb-leader": "true"}),
+			)
+			client, err := app.newClient()
+			require.NoError(t, err)
+			client.ComponentFree = true
+			require.NoError(t, app.Execute(t.Context(), []string{"db", role, "kick", "ffffffff", "--dry-run"}))
+			database := "OVN_Northbound"
+			if role == "sb" {
+				database = "OVN_Southbound"
+			}
+			argv := []string{"ovn-appctl", "-t", "/var/run/ovn/ovn" + role + "_db.ctl", "cluster/kick", database, "ffffffff"}
+			require.Equal(t, fmt.Sprintf("ovn-system/%s-leader: %q\n", role, argv), out.String())
+			require.Empty(t, executor.calls, "planning must not execute member removal")
+		})
+	}
+}
+
+func TestComponentFreeDatabaseKickExecutesOnLeaderNodeAgent(t *testing.T) {
+	for _, role := range []string{"nb", "sb"} {
+		t.Run(role, func(t *testing.T) {
+			app, executor, _, _ := testApplication(t,
+				readyPod("nb-leader", "a", "ovn-central", map[string]string{"ovn-nb-leader": "true"}),
+				readyPod("sb-leader", "b", "ovn-central", map[string]string{"ovn-sb-leader": "true"}),
+				readyPod("agent-a", "a", "agent", map[string]string{"app": "kubectl-ko-node-agent"}),
+				readyPod("agent-b", "b", "agent", map[string]string{"app": "kubectl-ko-node-agent"}),
+			)
+			client, err := app.newClient()
+			require.NoError(t, err)
+			client.ComponentFree = true
+			failure := utilexec.CodeExitError{Err: errors.New("member removal failed"), Code: 42}
+			executor.run = func(_ context.Context, _ Target, _ []string, _ Streams) error { return failure }
+			err = app.Execute(t.Context(), []string{"db", role, "kick", "ffffffff"})
+			require.ErrorIs(t, err, failure)
+			require.Equal(t, 42, ExitCode(err))
+			require.Len(t, executor.calls, 1, "failed member removal must not be replayed")
+			node, database := "a", "OVN_Northbound"
+			if role == "sb" {
+				node, database = "b", "OVN_Southbound"
+			}
+			require.Equal(t, Target{Namespace: "ovn-system", Pod: "agent-" + node, Container: "agent", Node: node}, executor.calls[0].target)
+			require.Equal(t, []string{"ovn-appctl", "-t", "/var/run/ovn/ovn" + role + "_db.ctl", "cluster/kick", database, "ffffffff"}, executor.calls[0].argv)
+		})
+	}
+}
+
 func TestEnvironmentChecksAllRunningCNIsAndPreservesFailures(t *testing.T) {
 	pending := readyPod("pending", "c", "cni-server", map[string]string{"app": "kube-ovn-cni"})
 	pending.Status.Phase = corev1.PodPending

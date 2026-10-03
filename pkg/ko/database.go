@@ -94,7 +94,11 @@ func (a *Application) addKickCommand(parent *cobra.Command, role string) {
 	command := &cobra.Command{Use: "kick SERVER_ID", Short: "Remove a stale database cluster member", Args: cobra.ExactArgs(1)}
 	command.Flags().BoolVar(&dryRun, "dry-run", false, "Resolve and print the target without changing the database")
 	command.RunE = a.run(func(ctx context.Context, client *Client, args []string) error {
-		target, err := client.leader(ctx, role)
+		resolve := client.leader
+		if dryRun {
+			resolve = client.leaderPod
+		}
+		target, err := resolve(ctx, role)
 		if err != nil {
 			return err
 		}

@@ -72,12 +72,16 @@ func (c *Client) uniqueTarget(ctx context.Context, selector, node, container str
 	return result, nil
 }
 
-func (c *Client) leader(ctx context.Context, role string) (Target, error) {
+func (c *Client) leaderPod(ctx context.Context, role string) (Target, error) {
 	container := "ovn-central"
 	if strings.HasPrefix(role, "ic-") {
 		container = "ovn-ic-server"
 	}
-	target, err := c.uniqueTarget(ctx, "ovn-"+role+"-leader=true", "", container)
+	return c.uniqueTarget(ctx, "ovn-"+role+"-leader=true", "", container)
+}
+
+func (c *Client) leader(ctx context.Context, role string) (Target, error) {
+	target, err := c.leaderPod(ctx, role)
 	if err != nil || !c.ComponentFree {
 		return target, err
 	}
