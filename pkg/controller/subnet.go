@@ -639,33 +639,34 @@ func (c *Controller) getSubnetMTU(subnet *kubeovnv1.Subnet) (int, error) {
 }
 
 func (c *Controller) updateSubnetDHCPOption(ctx context.Context, subnet *kubeovnv1.Subnet, needRouter bool) error {
-	mtu, err := c.getSubnetMTU(subnet)
-	if err != nil {
-		return err
-	}
-
-	vpc, err := c.vpcsLister.Get(subnet.Spec.Vpc)
-	if err != nil {
-		klog.Errorf("failed to get subnet's vpc '%s', %v", subnet.Spec.Vpc, err)
-		return err
-	}
-
 	var routerPortNames []string
-	if needRouter {
-		routerPortNames = append(routerPortNames, fmt.Sprintf("%s-%s", vpc.Status.Router, subnet.Name))
+	var vpc *kubeovnv1.Vpc
+	var err error
+	if c.ownsGlobalState() {
+		vpc, err = c.vpcsLister.Get(subnet.Spec.Vpc)
+		if err != nil {
+			klog.Errorf("failed to get subnet's vpc '%s', %v", subnet.Spec.Vpc, err)
+			return err
+		}
+		if needRouter {
+			routerPortNames = append(routerPortNames, fmt.Sprintf("%s-%s", vpc.Status.Router, subnet.Name))
+		}
 	}
-	dhcpOptionsUUIDs, err := c.OVNNbClient.UpdateDHCPOptions(subnet, mtu, routerPortNames...)
+	dhcpOptionsUUIDs, err := c.reconcileSubnetDHCPRows(subnet, routerPortNames...)
 	if err != nil {
-		klog.Errorf("failed to update DHCP and RA options for switch %s: %v", subnet.Name, err)
+		klog.Errorf("failed to update dhcp options for switch %s, %v", subnet.Name, err)
 		return err
 	}
-	if c.config.EnableDistributedSharedSubnet {
-		c.distributedDHCPOptionsMu.Lock()
-		if c.distributedDHCPOptions == nil {
-			c.distributedDHCPOptions = make(map[string]ovs.DHCPOptionsUUIDs)
+	if !c.ownsGlobalState() {
+		return nil
+	}
+
+	if needRouter {
+		lrpName := fmt.Sprintf("%s-%s", vpc.Status.Router, subnet.Name)
+		if err := c.OVNNbClient.UpdateLogicalRouterPortRA(lrpName, subnet.Spec.IPv6RAConfigs, subnet.Spec.EnableIPv6RA); err != nil {
+			klog.Errorf("update ipv6 ra configs for logical router port %s, %v", lrpName, err)
+			return err
 		}
-		c.distributedDHCPOptions[subnet.Name] = *dhcpOptionsUUIDs
-		c.distributedDHCPOptionsMu.Unlock()
 	}
 
 	if subnet.Status.DHCPv4OptionsUUID != dhcpOptionsUUIDs.DHCPv4OptionsUUID || subnet.Status.DHCPv6OptionsUUID != dhcpOptionsUUIDs.DHCPv6OptionsUUID {
@@ -696,6 +697,9 @@ func (c *Controller) handleAddOrUpdateSubnet(key string) error {
 		}
 		klog.Error(err)
 		return c.recordSubnetKeyError(key, "GetSubnetFailed", err)
+	}
+	if !c.ownsGlobalState() {
+		return c.reconcileDistributedFollowerSubnet(cachedSubnet.DeepCopy())
 	}
 	return c.reconcileSubnetObject(context.Background(), cachedSubnet)
 }
@@ -829,6 +833,9 @@ func (c *Controller) RecoverSubnetRuntime(ctx context.Context, _ *kubeovnv1.Subn
 func (c *Controller) reconcileSubnetObject(ctx context.Context, cachedSubnet *kubeovnv1.Subnet) error {
 	if err := c.checkSubnetRuntimeFence(ctx); err != nil {
 		return err
+	}
+	if !c.ownsGlobalState() {
+		return c.reconcileDistributedFollowerSubnet(cachedSubnet.DeepCopy())
 	}
 	klog.V(3).Infof("handle add or update subnet %s", cachedSubnet.Name)
 	subnet, err := c.formatSubnetWithContext(ctx, cachedSubnet)
@@ -1087,10 +1094,6 @@ func (c *Controller) distributedPlan(subnet *kubeovnv1.Subnet, vpc *kubeovnv1.Vp
 		if item.Spec.Vpc != subnet.Spec.Vpc || item.Spec.Vlan != "" || !isOvnSubnet(item) || item.Spec.CIDRBlock == "" {
 			continue
 		}
-		cidr, gateway, err := distributedAddress(item.Spec.CIDRBlock, item.Spec.Gateway)
-		if err != nil {
-			return distributed.Plan{}, fmt.Errorf("subnet %s is not supported by distributed mode: %w", item.Name, err)
-		}
 		itemUID := string(item.UID)
 		if itemUID == "" {
 			itemUID = item.Name
@@ -1099,8 +1102,8 @@ func (c *Controller) distributedPlan(subnet *kubeovnv1.Subnet, vpc *kubeovnv1.Vp
 			Name:       item.Name,
 			VPCUID:     vpcUID,
 			SubnetUID:  itemUID,
-			CIDR:       cidr,
-			GatewayIP:  gateway,
+			CIDR:       item.Spec.CIDRBlock,
+			GatewayIP:  item.Spec.Gateway,
 			GatewayMAC: gatewayMACForSubnet(item),
 		})
 	}
@@ -1109,15 +1112,6 @@ func (c *Controller) distributedPlan(subnet *kubeovnv1.Subnet, vpc *kubeovnv1.Vp
 		return distributed.Plan{}, err
 	}
 	return plan, nil
-}
-
-func distributedAddress(cidrBlock, gateway string) (string, string, error) {
-	cidrs := strings.Split(cidrBlock, ",")
-	gateways := strings.Split(gateway, ",")
-	if len(cidrs) != len(gateways) || len(cidrs) == 0 {
-		return "", "", errors.New("distributed subnet requires one gateway per CIDR")
-	}
-	return strings.Join(cidrs, ","), strings.Join(gateways, ","), nil
 }
 
 func gatewayMACForSubnet(subnet *kubeovnv1.Subnet) string {
@@ -1223,6 +1217,9 @@ func (c *Controller) reconcileSubnetBaseACLsWithContext(ctx context.Context, sub
 	}
 	switch {
 	case subnet.Spec.Routed:
+		if !c.ownsGlobalState() {
+			return nil
+		}
 		gateway := subnet.Spec.Gateway
 		if subnet.Status.U2OInterconnectionIP != "" && subnet.Spec.U2OInterconnection {
 			gateway = subnet.Status.U2OInterconnectionIP
@@ -1326,6 +1323,9 @@ func (c *Controller) handleDeleteLogicalSwitchWithContext(ctx context.Context, k
 }
 
 func (c *Controller) handleDeleteSubnet(subnet *kubeovnv1.Subnet) (err error) {
+	if !c.ownsGlobalState() {
+		return c.handleDeleteLogicalSwitch(subnet.Name)
+	}
 	return c.handleDeleteSubnetWithContext(context.Background(), subnet)
 }
 
@@ -1484,6 +1484,12 @@ func (c *Controller) updateVlanStatusForSubnetDeletionWithContext(ctx context.Co
 func (c *Controller) reconcileSubnetWithContext(ctx context.Context, subnet *kubeovnv1.Subnet) error {
 	if err := c.checkSubnetRuntimeFence(ctx); err != nil {
 		return err
+	}
+	if c.config.EnableDistributedSharedSubnet {
+		if c.ownsGlobalState() {
+			return c.reconcileNamespaces(subnet)
+		}
+		return nil
 	}
 	if err := c.reconcileNamespaces(subnet); err != nil {
 		klog.Errorf("reconcile namespaces for subnet %s failed, %v", subnet.Name, err)

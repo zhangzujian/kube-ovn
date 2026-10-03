@@ -19,6 +19,9 @@ import (
 )
 
 func (c *Controller) updateNatOutgoingPolicyRulesStatus(subnet *kubeovnv1.Subnet) error {
+	if !c.ownsGlobalState() {
+		return nil
+	}
 	if subnet.Spec.NatOutgoing {
 		subnet.Status.NatOutgoingPolicyRules = make([]kubeovnv1.NatOutgoingPolicyRuleStatus, len(subnet.Spec.NatOutgoingPolicyRules))
 		for index, rule := range subnet.Spec.NatOutgoingPolicyRules {
@@ -45,9 +48,19 @@ func (c *Controller) updateNatOutgoingPolicyRulesStatus(subnet *kubeovnv1.Subnet
 	return nil
 }
 
+func (c *Controller) patchSubnetStatus(subnet *kubeovnv1.Subnet, reason, errStr string) error {
+	if !c.ownsGlobalState() {
+		return nil
+	}
+	return c.patchSubnetStatusWithContext(context.Background(), subnet, reason, errStr)
+}
+
 func (c *Controller) patchSubnetStatusWithContext(ctx context.Context, subnet *kubeovnv1.Subnet, reason, errStr string) error {
 	if err := c.checkSubnetRuntimeFence(ctx); err != nil {
 		return err
+	}
+	if !c.ownsGlobalState() {
+		return nil
 	}
 	if errStr != "" {
 		subnet.Status.SetError(reason, errStr)
@@ -130,6 +143,9 @@ func (c *Controller) recordSubnetGatewayMACWithContext(ctx context.Context, subn
 }
 
 func (c *Controller) handleUpdateSubnetStatus(key string) error {
+	if !c.ownsGlobalState() {
+		return nil
+	}
 	c.subnetKeyMutex.LockKey(key)
 	defer func() { _ = c.subnetKeyMutex.UnlockKey(key) }()
 

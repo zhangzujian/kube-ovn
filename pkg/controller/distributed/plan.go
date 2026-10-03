@@ -88,7 +88,7 @@ func BuildPlan(request Request) (Plan, error) {
 		return Plan{}, fmt.Errorf("%w: at least one subnet and zone are required", ErrInvalidRequest)
 	}
 
-	zones := append([]string(nil), request.Zones...)
+	zones := slices.Clone(request.Zones)
 	slices.Sort(zones)
 	for i := 1; i < len(zones); i++ {
 		if zones[i] == zones[i-1] || zones[i] == "" {
@@ -99,7 +99,7 @@ func BuildPlan(request Request) (Plan, error) {
 		return Plan{}, fmt.Errorf("invalid zone identity %q", zones[0])
 	}
 
-	subnets := append([]Subnet(nil), request.Subnets...)
+	subnets := slices.Clone(request.Subnets)
 	slices.SortFunc(subnets, func(a, b Subnet) int {
 		return cmp.Compare(a.SubnetUID, b.SubnetUID)
 	})
@@ -114,36 +114,11 @@ func BuildPlan(request Request) (Plan, error) {
 			return Plan{}, fmt.Errorf("duplicate subnet %q", subnet.SubnetUID)
 		}
 		seen[subnet.SubnetUID] = struct{}{}
-		cidrs := strings.Split(subnet.CIDR, ",")
-		gateways := strings.Split(subnet.GatewayIP, ",")
-		if len(cidrs) != len(gateways) || len(cidrs) == 0 {
-			return Plan{}, fmt.Errorf("subnet %q must have one gateway per CIDR", subnet.SubnetUID)
+		addresses, err := planSubnetAddresses(subnet, prefixes)
+		if err != nil {
+			return Plan{}, err
 		}
-		canonicalCIDRs := make([]string, 0, len(cidrs))
-		gatewayNetworks := make([]string, 0, len(gateways))
-		canonicalGateways := make([]string, 0, len(gateways))
-		for i, cidr := range cidrs {
-			prefix, err := netip.ParsePrefix(strings.TrimSpace(cidr))
-			if err != nil {
-				return Plan{}, fmt.Errorf("parse subnet %q CIDR %q: %w", subnet.SubnetUID, cidr, err)
-			}
-			prefix = prefix.Masked()
-			for _, other := range prefixes {
-				if prefix.Overlaps(other) {
-					return Plan{}, fmt.Errorf("%w: %q overlaps %q", ErrOverlappingCIDR, prefix, other)
-				}
-			}
-			gateway, err := netip.ParseAddr(strings.TrimSpace(gateways[i]))
-			if err != nil || !prefix.Contains(gateway) {
-				return Plan{}, fmt.Errorf("gateway %q is outside subnet %q", gateways[i], prefix)
-			}
-			prefixes = append(prefixes, prefix)
-			canonicalCIDRs = append(canonicalCIDRs, prefix.String())
-			canonicalGateways = append(canonicalGateways, gateway.String())
-			gatewayNetworks = append(gatewayNetworks, gateway.String()+"/"+strconv.Itoa(prefix.Bits()))
-		}
-		canonicalCIDR := strings.Join(canonicalCIDRs, ",")
-		canonicalGateway := strings.Join(canonicalGateways, ",")
+		prefixes = addresses.prefixes
 		key := stableKey(request.VPCUID, subnet.SubnetUID)
 		leafSwitchName := "dist-ls-" + key
 		if subnet.Name != "" {
@@ -152,7 +127,7 @@ func BuildPlan(request Request) (Plan, error) {
 			// while each zone still owns a separate database row.
 			leafSwitchName = subnet.Name
 		}
-		transitSwitchName := "dist-ts-" + key
+		transitSwitchName := TransitSwitchName(request.VPCUID, subnet.SubnetUID)
 		zonePlans := make([]ZoneSubnetPlan, 0, len(zones))
 		for _, zone := range zones {
 			zonePlans = append(zonePlans, ZoneSubnetPlan{
@@ -165,11 +140,11 @@ func BuildPlan(request Request) (Plan, error) {
 		}
 		planned = append(planned, SubnetPlan{
 			SubnetUID:         subnet.SubnetUID,
-			CIDR:              canonicalCIDR,
+			CIDR:              addresses.cidr,
 			TransitSwitchName: transitSwitchName,
 			RouterPortName:    request.RouterName + "-" + leafSwitchName,
-			RouterPortNetwork: strings.Join(gatewayNetworks, ","),
-			GatewayIP:         canonicalGateway,
+			RouterPortNetwork: addresses.routerNetworks,
+			GatewayIP:         addresses.gateway,
 			GatewayMAC:        subnet.GatewayMAC,
 			Zones:             zonePlans,
 		})
@@ -184,7 +159,54 @@ func BuildPlan(request Request) (Plan, error) {
 	}, nil
 }
 
+type subnetAddresses struct {
+	cidr           string
+	gateway        string
+	routerNetworks string
+	prefixes       []netip.Prefix
+}
+
+func planSubnetAddresses(subnet Subnet, prefixes []netip.Prefix) (subnetAddresses, error) {
+	cidrs := strings.Split(subnet.CIDR, ",")
+	gateways := strings.Split(subnet.GatewayIP, ",")
+	if len(cidrs) != len(gateways) {
+		return subnetAddresses{}, fmt.Errorf("subnet %q must have one gateway per CIDR", subnet.SubnetUID)
+	}
+	canonicalCIDRs := make([]string, 0, len(cidrs))
+	gatewayNetworks := make([]string, 0, len(gateways))
+	canonicalGateways := make([]string, 0, len(gateways))
+	for i, cidr := range cidrs {
+		prefix, err := netip.ParsePrefix(strings.TrimSpace(cidr))
+		if err != nil {
+			return subnetAddresses{}, fmt.Errorf("parse subnet %q CIDR %q: %w", subnet.SubnetUID, cidr, err)
+		}
+		prefix = prefix.Masked()
+		for _, other := range prefixes {
+			if prefix.Overlaps(other) {
+				return subnetAddresses{}, fmt.Errorf("%w: %q overlaps %q", ErrOverlappingCIDR, prefix, other)
+			}
+		}
+		gateway, err := netip.ParseAddr(strings.TrimSpace(gateways[i]))
+		if err != nil || !prefix.Contains(gateway) {
+			return subnetAddresses{}, fmt.Errorf("gateway %q is outside subnet %q", gateways[i], prefix)
+		}
+		prefixes = append(prefixes, prefix)
+		canonicalCIDRs = append(canonicalCIDRs, prefix.String())
+		canonicalGateways = append(canonicalGateways, gateway.String())
+		gatewayNetworks = append(gatewayNetworks, gateway.String()+"/"+strconv.Itoa(prefix.Bits()))
+	}
+	return subnetAddresses{
+		cidr: strings.Join(canonicalCIDRs, ","), gateway: strings.Join(canonicalGateways, ","),
+		routerNetworks: strings.Join(gatewayNetworks, ","), prefixes: prefixes,
+	}, nil
+}
+
 func stableKey(values ...string) string {
 	digest := sha256.Sum256([]byte(strings.Join(values, "\x00")))
 	return hex.EncodeToString(digest[:])[:16]
+}
+
+// TransitSwitchName identifies the IC-owned switch for one live subnet.
+func TransitSwitchName(vpcUID, subnetUID string) string {
+	return "dist-ts-" + stableKey(vpcUID, subnetUID)
 }

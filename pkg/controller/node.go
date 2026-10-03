@@ -174,6 +174,10 @@ func (c *Controller) enqueueUpdateNode(oldObj, newObj any) {
 	nodeLabelsChanged := !maps.Equal(oldNode.Labels, newNode.Labels)
 
 	key := cache.MetaObjectToName(newNode).String()
+	if c.config.EnableDistributedSharedSubnet && c.isLocalNode(newNode.Name) && kubeOvnAnnotationsChanged(oldNode.Annotations, newNode.Annotations) {
+		c.addNodeQueue.Add(key)
+	}
+
 	if nodeReadyChanged || kubeOvnAnnotationsChanged(oldNode.Annotations, newNode.Annotations) {
 		if len(newNode.Annotations) == 0 || newNode.Annotations[util.AllocatedAnnotation] != "true" {
 			klog.V(3).Infof("enqueue add node %s", key)
@@ -279,11 +283,16 @@ func (c *Controller) handleAddNode(key string) (err error) {
 	if joinNetwork, err = c.ensureNodeJoinNetwork(node); err != nil {
 		return err
 	}
-	if err = c.addNodeJoinPolicyRoutes(node, joinNetwork); err != nil {
-		return err
+	if c.ownsGlobalState() {
+		if err = c.patchNodeJoinNetwork(node, joinNetwork); err != nil {
+			return err
+		}
+		if err = c.addNodeJoinPolicyRoutes(node, joinNetwork); err != nil {
+			return err
+		}
 	}
-	if err = c.patchNodeJoinNetwork(node, joinNetwork); err != nil {
-		return err
+	if !c.isLocalNode(node.Name) {
+		return nil
 	}
 	if err = c.ensureNodePortGroups(node, subnets, joinNetwork); err != nil {
 		return err
@@ -328,12 +337,15 @@ func (c *Controller) ensureNodeJoinNetwork(node *v1.Node) (*nodeJoinNetwork, err
 
 	portName := util.NodeLspName(node.Name)
 	var v4IP, v6IP, mac string
-	if node.Annotations[util.AllocatedAnnotation] == "true" && node.Annotations[util.IPAddressAnnotation] != "" && node.Annotations[util.MacAddressAnnotation] != "" {
+	if node.Annotations[util.AllocatedAnnotation] == "true" && node.Annotations[util.IPAddressAnnotation] != "" && node.Annotations[util.MacAddressAnnotation] != "" && node.Annotations[util.LogicalSwitchAnnotation] == c.config.NodeSwitch {
 		macStr := node.Annotations[util.MacAddressAnnotation]
 		v4IP, v6IP, mac, err = c.ipam.GetStaticAddress(portName, portName, node.Annotations[util.IPAddressAnnotation], &macStr, node.Annotations[util.LogicalSwitchAnnotation], true)
 	} else {
+		if !c.ownsGlobalState() {
+			return nil, fmt.Errorf("waiting for gateway owner to allocate join network for node %s", node.Name)
+		}
 		v4IP, v6IP, mac, err = c.ipam.GetRandomAddress(portName, portName, nil, c.config.NodeSwitch, "", nil, true)
-		if err == nil {
+		if err == nil && c.isLocalNode(node.Name) {
 			err = c.deleteLogicalSwitchPort(portName)
 			if err == nil {
 				klog.Infof("deleted stale logical switch port %s", portName)
@@ -346,6 +358,9 @@ func (c *Controller) ensureNodeJoinNetwork(node *v1.Node) (*nodeJoinNetwork, err
 	}
 
 	ipStr := util.GetStringIP(v4IP, v6IP)
+	if !c.isLocalNode(node.Name) {
+		return &nodeJoinNetwork{subnet: subnet, portName: portName, ip: ipStr, mac: mac}, nil
+	}
 	if err = c.createBareLogicalSwitchPort(c.config.NodeSwitch, portName, ipStr, mac); err != nil {
 		klog.Errorf("failed to create logical switch port %s: %v", portName, err)
 		return nil, err
@@ -354,6 +369,9 @@ func (c *Controller) ensureNodeJoinNetwork(node *v1.Node) (*nodeJoinNetwork, err
 }
 
 func (c *Controller) addNodeJoinPolicyRoutes(node *v1.Node, joinNetwork *nodeJoinNetwork) error {
+	if !c.ownsGlobalState() {
+		return nil
+	}
 	nodeIPv4, nodeIPv6 := util.GetNodeInternalIP(*node)
 	for ip := range strings.SplitSeq(joinNetwork.ip, ",") {
 		if ip == "" {
@@ -392,6 +410,9 @@ func (c *Controller) addNodeJoinPolicyRoutes(node *v1.Node, joinNetwork *nodeJoi
 }
 
 func (c *Controller) patchNodeJoinNetwork(node *v1.Node, joinNetwork *nodeJoinNetwork) error {
+	if !c.ownsGlobalState() {
+		return nil
+	}
 	patch := util.KVPatch{
 		util.IPAddressAnnotation:     joinNetwork.ip,
 		util.MacAddressAnnotation:    joinNetwork.mac,
@@ -428,6 +449,9 @@ func (c *Controller) ensureNodePortGroups(node *v1.Node, subnets []*kubeovnv1.Su
 	if err := c.createPortGroup(pgName, map[string]string{"node": node.Name, networkPolicyKey: "node" + "/" + node.Name}); err != nil {
 		klog.Errorf("create port group %s for node %s: %v", pgName, node.Name, err)
 		return err
+	}
+	if !c.ownsGlobalState() {
+		return nil
 	}
 	if err := c.addPolicyRouteForCentralizedSubnetOnNode(node, joinNetwork.ip); err != nil {
 		klog.Errorf("failed to add policy route for node %s, %v", node.Name, err)
@@ -554,6 +578,17 @@ func (c *Controller) handleDeleteNode(key string) (err error) {
 }
 
 func (c *Controller) deleteNode(key string) error {
+	if c.config.EnableDistributedSharedSubnet && c.ownsGlobalState() && !c.isLocalNode(key) {
+		return c.deleteGlobalNodeState(key)
+	}
+
+	if !c.ownsGlobalState() {
+		if c.isLocalNode(key) {
+			return c.OVNNbClient.DeleteLogicalSwitchPort(util.NodeLspName(key))
+		}
+		return nil
+	}
+
 	portName := util.NodeLspName(key)
 	klog.Infof("delete logical switch port %s", portName)
 	if err := c.deleteLogicalSwitchPort(portName); err != nil {
@@ -593,6 +628,11 @@ func (c *Controller) deleteNode(key string) error {
 		return err
 	}
 
+	return c.deleteGlobalNodeState(key)
+}
+
+func (c *Controller) deleteGlobalNodeState(key string) error {
+	portName := util.NodeLspName(key)
 	klog.Infof("release node port %s", portName)
 	c.ipam.ReleaseAddressByPod(portName, c.config.NodeSwitch)
 
@@ -686,6 +726,9 @@ func (c *Controller) handleUpdateNode(key string) (err error) {
 		klog.Errorf("failed to get node %s: %v", key, err)
 		return err
 	}
+	if !c.isLocalNode(node.Name) {
+		return nil
+	}
 	defer func() { c.recordNodeReconcileFailure(node, "UpdateNodeFailed", err) }()
 
 	if err = c.handleNodeAnnotationsForProviderNetworks(node); err != nil {
@@ -749,6 +792,9 @@ func (c *Controller) handleUpdateNode(key string) (err error) {
 }
 
 func (c *Controller) syncDistributedSubnetRoutes() {
+	if c.config.EnableDistributedSharedSubnet {
+		return
+	}
 	if !c.distributedSubnetNeedSync.Swap(false) {
 		return
 	}
@@ -1013,6 +1059,9 @@ func (c *Controller) checkAndUpdateNodePortGroup() error {
 	}
 
 	for _, node := range nodes {
+		if !c.isLocalNode(node.Name) {
+			continue
+		}
 		// The port-group should already created when add node
 		pgName := strings.ReplaceAll(node.Annotations[util.PortNameAnnotation], "-", ".")
 		if pgName == "" {

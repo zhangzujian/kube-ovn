@@ -165,6 +165,9 @@ func (c *Controller) enqueueDelIP(obj any) {
 }
 
 func (c *Controller) handleAddReservedIP(key string) (err error) {
+	if !c.ownsGlobalState() {
+		return nil
+	}
 	ip, err := c.ipsLister.Get(key)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
@@ -272,6 +275,9 @@ func (c *Controller) handleAddReservedIP(key string) (err error) {
 }
 
 func (c *Controller) handleUpdateIP(key string) (err error) {
+	if !c.ownsGlobalState() {
+		return nil
+	}
 	cachedIP, err := c.ipsLister.Get(key)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
@@ -306,7 +312,7 @@ func (c *Controller) handleUpdateIP(key string) (err error) {
 			}
 		}
 		portName := cachedIP.Name
-		if isOvnSubnet(subnet) {
+		if isOvnSubnet(subnet) && c.isLocalNode(cachedIP.Spec.NodeName) {
 			port, err := c.getLogicalSwitchPort(portName, true)
 			if err != nil {
 				klog.Errorf("failed to get logical switch port %s: %v", portName, err)
@@ -349,6 +355,9 @@ func (c *Controller) handleUpdateIP(key string) (err error) {
 }
 
 func (c *Controller) handleDelIP(ip *kubeovnv1.IP) error {
+	if !c.ownsGlobalState() {
+		return nil
+	}
 	klog.Infof("deleting ip %s enqueue update status subnet %s", ip.Name, ip.Spec.Subnet)
 	c.enqueueSubnetStatus(ip.Spec.Subnet, "IP")
 	for _, as := range ip.Spec.AttachSubnets {
@@ -370,6 +379,9 @@ func (c *Controller) syncIPFinalizer(cl client.Client) error {
 }
 
 func (c *Controller) handleDelIPFinalizer(cachedIP *kubeovnv1.IP) error {
+	if !c.ownsGlobalState() {
+		return nil
+	}
 	if len(cachedIP.GetFinalizers()) == 0 {
 		return nil
 	}
@@ -447,6 +459,9 @@ func (c *Controller) createOrUpdateIPCR(ipCRName, podName, ip, mac, subnetName, 
 func (c *Controller) createOrUpdateIPCRWithContext(ctx context.Context, ipCRName, podName, ip, mac, subnetName, ns, nodeName, podType string) error {
 	if err := c.checkSubnetRuntimeFence(ctx); err != nil {
 		return err
+	}
+	if !c.ownsGlobalState() {
+		return nil
 	}
 	// `ipCRName`: pod or vm IP name must set ip CR name when creating ip CR
 	var key, ipName string

@@ -26,7 +26,7 @@ pod-a -> leaf LS-a -> TS-a -> subnet-a LRP -> VPC LR
       -> subnet-b LRP -> TS-b -> leaf LS-b -> pod-b
 ```
 
-The same route intent is rendered into every local NB/SB zone. The gateway
+The leaf topology is rendered into every local NB/SB zone. The gateway
 owner is explicit in the first implementation, so only one zone owns the
 VPC router gateway state at a time. Internal interconnect `/31` addresses are
 transport addresses and are not taken from a user subnet CIDR.
@@ -47,6 +47,37 @@ gateway, and provide local `distributed.nbEndpoint`/
 `distributed.sbEndpoint` plus the shared `distributed.icNbEndpoint`. The
 controller creates the per-subnet `Transit_Switch` in the IC NB and then
 creates reciprocal `type=switch` ports in the local NB.
+
+This is an experimental per-node topology. `distributed.zone` must remain
+empty; arbitrary zone-to-node mappings are unsupported. Every controller's
+zone and the local `NB_Global.name` must equal its Kubernetes node name.
+The controller validates this identity before its first NB write and refuses
+to rename a shared central NB.
+
+Set `distributed.externalInterconnect=true` only after provisioning independent
+NB/SB databases, `ovn-northd`, and `ovn-ic` on every node, plus the shared IC
+NB/SB databases and their interconnect connectivity. This chart does not
+provision that infrastructure. Local endpoints must resolve to the database
+of the current node (for example a loopback address), never a shared Service.
+All NB/SB/IC NB endpoints and the gateway owner are required. The legacy
+central `ovn-ic-controller` is omitted in distributed mode.
+
+Distributed transit switches carry a dedicated vendor and `distributed-cidr`
+marker instead of the gateway transport `subnet` field. The legacy IC gateway
+renderer cannot allocate transport addresses from the user's Pod CIDR.
+Garbage collection preserves transit switches derived from live VPC/Subnet
+identities.
+
+The owner allocates all Pod and node join addresses and writes shared
+annotations and IP CRs. Each zone materializes only ports for its own node;
+remote endpoints remain managed by OVN-IC. Fully allocated local Pods are
+reconciled again after restart to rebuild lost local NB ports. DHCP rows are
+always resolved in the local NB; followers never publish their UUIDs into
+shared Subnet status. Router ports, RA and routed subnet ACLs run only on the
+owner; followers reconcile their local switches, DHCP and ordinary ACLs.
+Per-pod legacy centralized routing is bypassed in favor of connected VPC
+routes. Hotplug and custom per-Pod north gateways are not supported in this
+experimental topology.
 
 IP allocation remains global. A per-zone controller must never independently
 allocate from the same pool, or two pods can receive the same address. Service

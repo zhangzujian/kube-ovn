@@ -306,6 +306,9 @@ func (c *Controller) handleDeleteIPPoolObject(ippool *kubeovnv1.IPPool) (err err
 }
 
 func (c *Controller) handleUpdateIPPoolStatus(key string) error {
+	if !c.ownsGlobalState() {
+		return nil
+	}
 	c.ippoolKeyMutex.LockKey(key)
 	defer func() { _ = c.ippoolKeyMutex.UnlockKey(key) }()
 
@@ -343,6 +346,9 @@ func (c *Controller) patchIPPoolStatistics(ippool *kubeovnv1.IPPool) error {
 }
 
 func (c *Controller) patchIPPoolStatusCondition(ippool *kubeovnv1.IPPool, reason, errMsg string) error {
+	if !c.ownsGlobalState() {
+		return nil
+	}
 	if errMsg != "" {
 		ippool.Status.SetError(reason, errMsg)
 		ippool.Status.NotReady(reason, errMsg)
@@ -393,6 +399,9 @@ func (c *Controller) patchIPPoolIPs(ippool *kubeovnv1.IPPool, ips []string) erro
 }
 
 func (c *Controller) patchIPPoolStatus(ippool *kubeovnv1.IPPool) error {
+	if !c.ownsGlobalState() {
+		return nil
+	}
 	if c.ipPoolWriter != nil {
 		return c.ipPoolWriter.PatchStatus(ippool)
 	}
@@ -422,6 +431,9 @@ func (c *Controller) syncIPPoolFinalizer(cl client.Client) error {
 }
 
 func (c *Controller) handleAddIPPoolFinalizer(ippool *kubeovnv1.IPPool) error {
+	if !c.ownsGlobalState() {
+		return nil
+	}
 	if c.ipPoolWriter != nil {
 		return c.ipPoolWriter.AddFinalizer(ippool)
 	}
@@ -451,6 +463,9 @@ func (c *Controller) handleAddIPPoolFinalizer(ippool *kubeovnv1.IPPool) error {
 }
 
 func (c *Controller) handleDelIPPoolFinalizer(ippool *kubeovnv1.IPPool) error {
+	if !c.ownsGlobalState() {
+		return nil
+	}
 	if ippool == nil || len(ippool.GetFinalizers()) == 0 {
 		return nil
 	}

@@ -32,6 +32,9 @@ import (
 // and is migrated on the next start instead of holding up the whole controller. Every
 // failure is reported so it stays visible.
 func (c *Controller) syncNatUIDLabels() error {
+	if !c.ownsGlobalState() {
+		return nil
+	}
 	ctx := context.Background()
 	qos, err := c.config.KubeOvnClient.KubeovnV1().QoSPolicies().List(ctx, metav1.ListOptions{})
 	if err != nil {
@@ -210,6 +213,9 @@ func (c *Controller) InitOVN() error {
 		return err
 	}
 
+	if !c.ownsGlobalState() {
+		return nil
+	}
 	if err = c.InitDefaultVpc(); err != nil {
 		klog.Errorf("init default vpc failed: %v", err)
 		return err
@@ -472,7 +478,9 @@ func (c *Controller) InitIPAM() error {
 	for _, ip := range ips {
 		if !ip.DeletionTimestamp.IsZero() {
 			klog.Infof("enqueue update for removing finalizer to delete ip %s", ip.Name)
-			c.updateIPQueue.Add(ip.Name)
+			if c.ownsGlobalState() {
+				c.updateIPQueue.Add(ip.Name)
+			}
 			continue
 		}
 		// recover sts and kubevirt vm ip, other ip recover in later pod loop
@@ -607,7 +615,7 @@ func (c *Controller) InitIPAM() error {
 			}
 			if v4IP != "" && v6IP != "" {
 				ipStr := util.GetStringIP(v4IP, v6IP)
-				if ipStr != node.Annotations[util.IPAddressAnnotation] {
+				if c.ownsGlobalState() && ipStr != node.Annotations[util.IPAddressAnnotation] {
 					patch := util.KVPatch{util.IPAddressAnnotation: ipStr}
 					if err = util.PatchAnnotations(c.config.KubeClient.CoreV1().Nodes(), node.Name, patch); err != nil {
 						klog.Errorf("failed to patch node %s IP annotation: %v", node.Name, err)
@@ -737,6 +745,9 @@ func (c *Controller) initDefaultVlan() error {
 }
 
 func (c *Controller) syncIPCR() error {
+	if !c.ownsGlobalState() {
+		return nil
+	}
 	klog.Info("start to sync ips")
 	ips, err := c.ipsLister.List(labels.Everything())
 	if err != nil {
@@ -756,7 +767,9 @@ func (c *Controller) syncIPCR() error {
 	for _, ip := range ips {
 		if !ip.DeletionTimestamp.IsZero() {
 			klog.Infof("enqueue update for removing finalizer to delete ip %s", ip.Name)
-			c.updateIPQueue.Add(ip.Name)
+			if c.ownsGlobalState() {
+				c.updateIPQueue.Add(ip.Name)
+			}
 			continue
 		}
 		changed := false
@@ -783,6 +796,9 @@ func (c *Controller) syncIPCR() error {
 }
 
 func (c *Controller) syncSubnetCR() error {
+	if !c.ownsGlobalState() {
+		return nil
+	}
 	klog.Info("start to sync subnets")
 	subnets, err := c.subnetsLister.List(labels.Everything())
 	if err != nil {
@@ -870,6 +886,9 @@ func (c *Controller) syncVpcNatGatewayCR() error {
 }
 
 func (c *Controller) syncVlanCR() error {
+	if !c.ownsGlobalState() {
+		return nil
+	}
 	klog.Info("start to sync vlans")
 	vlans, err := c.vlansLister.List(labels.Everything())
 	if err != nil {
@@ -983,6 +1002,9 @@ func buildNodeRoute(af int, nodeName, nexthop, ip string, addPolicies, delPolici
 }
 
 func (c *Controller) syncNodeRoutes() error {
+	if !c.ownsGlobalState() {
+		return nil
+	}
 	nodes, err := c.nodesLister.List(labels.Everything())
 	if err != nil {
 		klog.Errorf("failed to list nodes: %v", err)
@@ -1004,6 +1026,9 @@ func (c *Controller) initNodeChassis() error {
 		return err
 	}
 	for _, node := range nodes {
+		if !c.isLocalNode(node.Name) {
+			continue
+		}
 		if err := c.UpdateChassisTag(node); err != nil {
 			klog.Error(err)
 			if _, ok := err.(*ErrChassisNotFound); !ok {
@@ -1062,6 +1087,9 @@ func migrateFinalizers(c client.Client, list client.ObjectList, getObjectItem fu
 }
 
 func (c *Controller) syncFinalizers() error {
+	if !c.ownsGlobalState() {
+		return nil
+	}
 	cl, err := client.New(config.GetConfigOrDie(), client.Options{})
 	if err != nil {
 		klog.Errorf("failed to create client: %v", err)

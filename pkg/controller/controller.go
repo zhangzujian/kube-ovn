@@ -90,11 +90,8 @@ type Controller struct {
 	OVNNbTables table.Provider
 	OVNSbTables table.Provider
 
-	// distributedDHCPOptions stores the DHCP_Options UUIDs from this zone's
-	// NB. UUIDs are database-local, so Subnet.status cannot be the source of
-	// truth when each zone has an independent NB database.
-	distributedDHCPOptionsMu sync.RWMutex
-	distributedDHCPOptions   map[string]ovs.DHCPOptionsUUIDs
+	// Serialize subnet-scoped DHCP row lookup/create/update in this local NB.
+	distributedDHCPOptionsMu sync.Mutex
 
 	// ExternalGatewayType define external gateway type, centralized
 	ExternalGatewayType string
@@ -822,6 +819,9 @@ func run(ctx context.Context, config *Configuration, startRuntime RuntimeStarter
 	}
 	controller.OVNSbClient = sbClient
 	controller.OVNSbTables = sbClient
+	if err := controller.validateDistributedNB(); err != nil {
+		util.LogFatalAndExit(err, "invalid distributed NB identity")
+	}
 	if config.EnableDistributedSharedSubnet {
 		controller.distributedICClient = ovs.NewLegacyClient(config.OvnTimeout)
 		controller.distributedICClient.OvnICNbAddress = config.OvnICNbAddr
