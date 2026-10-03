@@ -79,7 +79,7 @@ func checkAgentOnlyLogs(namespace string, nodes []corev1.Node) {
 		DiscoveryError string `json:"discoveryError"`
 		Items          []struct {
 			Target struct {
-				Node string `json:"node"`
+				Node string `json:"Node"`
 			} `json:"target"`
 			Name  string `json:"name"`
 			Error string `json:"error"`
