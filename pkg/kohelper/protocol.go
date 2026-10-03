@@ -1,5 +1,5 @@
 // Package kohelper implements the private, versioned helper protocol. A gRPC
-// connection is carried over Kubernetes attach, never a listening node port.
+// connection is carried over isolated helper stdin/stdout, never a listening node port.
 package kohelper
 
 import (
@@ -50,7 +50,7 @@ func (e *ExitError) ExitStatus() int { return e.Code }
 func (e *ExitError) Exited() bool    { return true }
 func (e *ExitError) String() string  { return e.Error() }
 
-// StreamConn adapts attach's byte pipes to the single gRPC connection. The
+// StreamConn adapts helper byte pipes to the single gRPC connection. The
 // transport callback must close both pipes on cancellation or stream failure.
 type StreamConn struct {
 	Reader io.ReadCloser
@@ -206,7 +206,7 @@ func (w *channelWriter) Write(p []byte) (int, error) {
 	return total, nil
 }
 
-// Serve accepts exactly one attach connection; closing it ends the helper.
+// Serve accepts exactly one connection; closing it ends the helper process.
 func Serve(ctx context.Context, connection net.Conn, runner Runner) error {
 	srv := grpc.NewServer(grpc.MaxRecvMsgSize(64<<10), grpc.MaxConcurrentStreams(16))
 	srv.RegisterService(&grpc.ServiceDesc{ServiceName: "kubeovn.ko.Helper", HandlerType: (*service)(nil), Streams: []grpc.StreamDesc{{StreamName: "Run", ServerStreams: true, Handler: func(s any, stream grpc.ServerStream) error { return s.(service).serve(stream) }}}}, &server{runner})

@@ -1,5 +1,5 @@
 // Command ko-helper is the process installed in the independent node-agent
-// Pod. It receives one request over attach stdin/stdout and never needs a
+// Pod. Each --stdio process receives a request over its own stdin/stdout and never needs a
 // kube-ovn-cni or ovs-ovn container.
 package main
 
@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"os/signal"
 	"syscall"
 	"time"
 
@@ -38,7 +39,7 @@ func (runner) Run(ctx context.Context, request kohelper.Request, stdout, stderr 
 	if len(request.Argv) == 0 || request.Argv[0] == "" {
 		return kohelper.Result{Code: 2, Error: "helper request has no command"}
 	}
-	// Remote argv execution is intentional: pods/attach authorizes access to this
+	// Remote argv execution is intentional: pods/exec authorizes access to this
 	// privileged tool runner. Arguments are passed directly, without a shell.
 	command := exec.CommandContext(ctx, request.Argv[0], request.Argv[1:]...) // #nosec G204 -- Kubernetes-authorized remote tool execution.
 	command.Stdout = stdout
@@ -57,7 +58,22 @@ func (runner) Run(ctx context.Context, request kohelper.Request, stdout, stderr 
 }
 
 func main() {
-	if err := kohelper.Serve(context.Background(), stdioConn{}, runner{}); err != nil && !errors.Is(err, io.EOF) {
-		os.Exit(1)
+	os.Exit(runHelper())
+}
+
+func runHelper() int {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if len(os.Args) == 1 {
+		// The DaemonSet stays idle; Kubernetes exec starts isolated RPC processes.
+		<-ctx.Done()
+		return 0
 	}
+	if len(os.Args) != 2 || os.Args[1] != "--stdio" {
+		return 2
+	}
+	if err := kohelper.Serve(ctx, stdioConn{}, runner{}); err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, net.ErrClosed) {
+		return 1
+	}
+	return 0
 }

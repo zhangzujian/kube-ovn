@@ -38,8 +38,10 @@ spec:
               mountPath: /var/run/ovn
             - name: host-run-ovs
               mountPath: /var/run/openvswitch
+              mountPropagation: HostToContainer
             - name: host-netns
               mountPath: /var/run/netns
+              mountPropagation: HostToContainer
             - name: host-etc-ovn
               mountPath: /etc/ovn
             - name: host-logs-ovn

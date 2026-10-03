@@ -124,7 +124,7 @@ func (a *Application) connect() (*Client, error) {
 	}
 	return &Client{
 		Kubernetes: client, Dynamic: dynamicClient,
-		Executor:  &helperExecutor{client: client, config: config, legacy: &remoteExecutor{client: client, config: config}},
+		Executor:  &helperExecutor{client: client, legacy: &remoteExecutor{client: client, config: config}},
 		Namespace: a.namespace, WorkloadNamespace: namespace, DiscoveryTimeout: a.discoveryTimeout,
 		ComponentFree: true,
 	}, nil

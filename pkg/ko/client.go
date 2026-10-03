@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -24,40 +25,34 @@ import (
 
 type helperExecutor struct {
 	client kubernetes.Interface
-	config *rest.Config
 	legacy *remoteExecutor
 }
 
-// Exec attaches to the independent node-agent container and carries the
-// structured helper protocol over its stdin/stdout streams. The operation is
-// never replayed after an attach or helper failure because argv may mutate DB
-// state.
+// Exec starts an isolated helper in the independent node-agent container.
+// Each call has its own protocol streams; concurrent requests never share a
+// container's main-process stdin/stdout. Component containers are forbidden.
 func (r *helperExecutor) Exec(ctx context.Context, target Target, argv []string, streams Streams) error {
+	pod, err := r.client.CoreV1().Pods(target.Namespace).Get(ctx, target.Pod, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	if slices.Contains([]string{"kube-ovn-cni", "ovs", "ovs-ovn", "ovs-dpdk", "openvswitch", "ovn-central", "ovn-ic-server"}, pod.Labels["app"]) {
+		return fmt.Errorf("component exec is disabled for %s/%s (deploy ko-node-agent and retry)", pod.Namespace, pod.Name)
+	}
 	if target.Container != "agent" {
-		pod, err := r.client.CoreV1().Pods(target.Namespace).Get(ctx, target.Pod, metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
-		if labels := pod.Labels; labels["app"] == "kube-ovn-cni" || labels["app"] == "ovs" || labels["app"] == "ovs-ovn" || labels["app"] == "ovn-central" {
-			return fmt.Errorf("component exec is disabled for %s/%s (deploy ko-node-agent and retry)", pod.Namespace, pod.Name)
-		}
 		return r.legacy.Exec(ctx, target, argv, streams)
 	}
-	request := r.client.CoreV1().RESTClient().Post().Namespace(target.Namespace).
-		Resource("pods").Name(target.Pod).SubResource("attach").
-		VersionedParams(&corev1.PodAttachOptions{Container: target.Container, Stdin: true, Stdout: true, Stderr: false}, scheme.ParameterCodec)
-	cfg := rest.CopyConfig(r.config)
-	cfg.Timeout = 0
-	executor, err := remotecommand.NewSPDYExecutor(cfg, http.MethodPost, request.URL())
-	if err != nil {
-		return fmt.Errorf("create node-agent attach executor: %w", err)
+	if pod.Labels["app"] != "kubectl-ko-node-agent" {
+		return errors.New("helper target is not an independent node agent")
 	}
+	streamContext, cancel := context.WithCancel(ctx)
+	defer cancel()
 	inputReader, inputWriter := io.Pipe()
 	outputReader, outputWriter := io.Pipe()
 	streamErr := make(chan error, 1)
 	go func() {
-		streamErr <- executor.StreamWithContext(ctx, remotecommand.StreamOptions{
-			Stdin: inputReader, Stdout: outputWriter,
+		streamErr <- r.legacy.Exec(streamContext, target, []string{"/kube-ovn/kubectl-ko-node-agent", "--stdio"}, Streams{
+			In: inputReader, Out: outputWriter,
 		})
 		_ = outputWriter.Close()
 		_ = inputReader.Close()
@@ -69,11 +64,15 @@ func (r *helperExecutor) Exec(ctx context.Context, target Target, argv []string,
 		_ = grpcConn.Close()
 	}
 	_ = conn.Close()
-	attachErr := <-streamErr
+	cancel()
+	transportErr := <-streamErr
 	if err != nil {
 		return err
 	}
-	return attachErr
+	if errors.Is(transportErr, context.Canceled) {
+		return nil // The final protocol status was received before cleanup.
+	}
+	return transportErr
 }
 
 // Target identifies a container, not the default container selected by kubectl.

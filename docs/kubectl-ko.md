@@ -176,8 +176,10 @@ example `diagnose cluster --external-address 1.1.1.1 --external-address
 or when a probe Pod has no matching IP family.
 No public Internet endpoint is required for the default cluster health check.
 
-The node agent uses Kubernetes `pods/attach` to carry a versioned gRPC stream
-over stdin/stdout. It does not use `pods/exec` against Kube-OVN component Pods.
+Each node operation uses Kubernetes `pods/exec` to start an isolated helper
+process in the independent agent. A versioned gRPC stream runs over that
+process's stdin/stdout. Concurrent operations have separate streams and do not
+restart the agent. It does not execute in Kube-OVN component Pods.
 `network inspect` resolves the Pod netns from OVSDB through the agent, then
 reads Pod and host links with `ip -j`; it reports the host-side veth peer by
 ifindex and resolves `macvlan`/`ipvlan` parent NICs by link name or ifindex,
@@ -242,7 +244,7 @@ image tools determine feature availability. The independent node agent is
 required for node sockets, namespaces, captures and host diagnostics; it is
 deployed by the chart and does not share a component Pod. Existing kubeconfig
 authorization applies:
-resource discovery requires get/list, node-agent access needs `pods/attach`,
+resource discovery requires get/list, node-agent access needs `pods/exec`,
 logs need pods/log, probes need create/delete, and
 rollout/recovery need workload patch/scale permissions. Exec access is not a
 read-only database permission.
