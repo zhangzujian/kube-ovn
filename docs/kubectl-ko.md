@@ -98,7 +98,7 @@ kubectl ko
 | `db nb status`, `db sb status` | Show RAFT cluster and storage status for the selected leader. |
 | `db health` | Check both NB and SB storage on every running central container, without requiring a healthy leader. Report unhealthy storage as failure. |
 | `db nb backup`, `db sb backup` | Convert and download a standalone database, verify DB name and SHA256, and publish without overwriting an existing file. Write a JSON provenance sidecar; remove the temporary remote backup. |
-| `db nb kick SERVER_ID`, `db sb kick SERVER_ID` | Remove a stale cluster member. `--dry-run` prints the selected target and exact command without applying the change. |
+| `db nb kick SERVER_ID`, `db sb kick SERVER_ID` | Remove a stale cluster member. `--dry-run` prints the database leader Pod and exact command without requiring an agent or applying the change; actual removal runs through the agent on that leader's node. |
 | `db nb restore` | Reconstruct the central NB/SB cluster from the NB database already present on the explicit bootstrap node. Verify the shared hostPath, use temporary per-node helpers when OVS does not mount the databases, stop central, preserve originals and RAFT headers, rebuild, verify storage and restart OVS. Helpers use the central image and security context and are cleaned up by UID. This is not local-file import; SB-only restore is not supported. |
 | `trace` | Resolve Pod/Node addresses, MACs and logical ports, trace through OVN, then OVS. Supports IPv4/IPv6, ICMP/TCP/UDP, IPv4 ARP request/reply, explicit destination MAC, hostNetwork, Underlay/U2O and VM logical ports. `--engine ovn` runs only OVN trace. |
 | `capture` | Execute tcpdump in a Pod's network namespace, including hostNetwork and internal-port paths. A remote `-w PATH` stays remote; `-w -` streams the original pcap bytes locally. |
@@ -190,8 +190,10 @@ short-lived test process. Exec uses WebSocket with SPDY fallback only for
 supported handshake failures.
 Remote exit codes propagate; failed commands are never replayed. Streams have
 no TTY transformations or stdout banners. Invalid arguments fail before client
-creation. Closing exec does not promise to kill independently backgrounded
-remote processes.
+creation. Cancelling an agent request terminates its Linux command process
+group, including children such as those started by `nsenter`, and returns exit
+130. Processes that deliberately detach into a different session are outside
+that group.
 
 ## Logs and recovery
 

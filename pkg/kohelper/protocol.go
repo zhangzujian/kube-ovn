@@ -145,8 +145,8 @@ func Run(ctx context.Context, conn *grpc.ClientConn, request Request, stdout, st
 	}
 }
 
-// Runner receives only validated helper requests; it must stop descendants when
-// the RPC context is cancelled, and keep stderr separate from binary stdout.
+// Runner receives only validated helper requests; it must terminate the command
+// process group when the RPC context is cancelled, and keep stderr separate from binary stdout.
 type Runner interface {
 	Run(context.Context, Request, io.Writer, io.Writer) Result
 }
