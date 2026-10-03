@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestIPLinksExposeAddressesAndHostVethPeer(t *testing.T) {
@@ -92,9 +91,9 @@ func TestWritePodNetworkIncludesNetnsAndPeer(t *testing.T) {
 }
 
 func TestNetworkInspectReadsPodAndHostLinks(t *testing.T) {
-	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "web", Namespace: "app"}, Spec: corev1.PodSpec{NodeName: "worker-a"}}
+	pod := &corev1.Pod{Name: "web", Namespace: "app", Spec: corev1.PodSpec{NodeName: "worker-a"}}
 	ovs := readyPod("ovs-a", "worker-a", "openvswitch", map[string]string{"app": "ovs"})
-	app, executor, out, _ := testApplication(t, pod, ovs, &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker-a"}})
+	app, executor, out, _ := testApplication(t, pod, ovs, &corev1.Node{Name: "worker-a"})
 	executor.run = func(_ context.Context, _ Target, argv []string, streams Streams) error {
 		switch argv[0] {
 		case "ovs-vsctl":
