@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -12,6 +13,10 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/fake"
+	ktesting "k8s.io/client-go/testing"
 	utilexec "k8s.io/client-go/util/exec"
 )
 
@@ -146,6 +151,165 @@ func TestDiagnosticProbeReportsConnectivityFailures(t *testing.T) {
 	require.ErrorContains(t, err, "probe on a")
 	require.ErrorContains(t, err, "probe on b")
 	require.Len(t, executor.calls, 2, "one failed node must not hide other nodes")
+}
+
+func TestComponentFreeDiagnosticsUseIndependentProbeInPingerNetNS(t *testing.T) {
+	for _, mode := range []string{"all", "node", "IPPorts"} {
+		for _, hostNetwork := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/hostNetwork=%t", mode, hostNetwork), func(t *testing.T) {
+				pod := readyPod("pinger", "worker", "pinger", map[string]string{"app": "kube-ovn-pinger"})
+				pod.UID = "pinger-uid"
+				pod.Spec.HostNetwork = hostNetwork
+				pod.Status.PodIP = "192.0.2.2"
+				pod.Status.HostIP = "192.0.2.1"
+				pod.Spec.ServiceAccountName = "kube-ovn-app"
+				pod.Spec.Containers[0].Image = "registry.example/kube-ovn:test"
+				pod.Spec.Containers[0].VolumeMounts = []corev1.VolumeMount{{Name: "log", MountPath: "/var/log/kube-ovn"}}
+				pod.Spec.Volumes = []corev1.Volume{{Name: "log", HostPath: &corev1.HostPathVolumeSource{Path: "/var/log/kube-ovn"}}}
+				app, executor, _, _ := testApplication(t, pod,
+					readyPod("agent-worker", "worker", "agent", map[string]string{"app": "kubectl-ko-node-agent"}))
+				client, err := app.newClient()
+				require.NoError(t, err)
+				client.ComponentFree = true
+				cs := client.Kubernetes.(*fake.Clientset)
+				cs.PrependReactor("create", "pods", func(action ktesting.Action) (bool, runtime.Object, error) {
+					probe := action.(ktesting.CreateAction).GetObject().(*corev1.Pod).DeepCopy()
+					require.Equal(t, "kubectl-ko-probe", probe.Labels["app"])
+					require.Equal(t, pod.Spec.ServiceAccountName, probe.Spec.ServiceAccountName)
+					require.True(t, probe.Spec.HostPID)
+					require.Equal(t, pod.Spec.Containers[0].Image, probe.Spec.Containers[0].Image)
+					logMount := slices.IndexFunc(probe.Spec.Containers[0].VolumeMounts, func(mount corev1.VolumeMount) bool { return mount.MountPath == "/var/log/kube-ovn" })
+					require.GreaterOrEqual(t, logMount, 0)
+					logVolume := slices.IndexFunc(probe.Spec.Volumes, func(volume corev1.Volume) bool {
+						return volume.Name == probe.Spec.Containers[0].VolumeMounts[logMount].Name
+					})
+					require.GreaterOrEqual(t, logVolume, 0)
+					require.NotNil(t, probe.Spec.Volumes[logVolume].EmptyDir, "the probe must not write the component's log directory")
+					probe.Namespace = action.GetNamespace()
+					probe.UID = "probe-uid"
+					probe.Status.Conditions = []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}
+					require.NoError(t, cs.Tracker().Add(probe))
+					return true, probe, nil
+				})
+				failure := utilexec.CodeExitError{Err: errors.New("connectivity failure"), Code: 42}
+				probes := 0
+				executor.run = func(_ context.Context, target Target, argv []string, streams Streams) error {
+					require.NotEqual(t, "pinger", target.Pod, "diagnostics must never exec in the pinger component")
+					if argv[0] == "nsenter" {
+						require.Equal(t, "probe", target.Container)
+						require.True(t, strings.HasPrefix(target.Pod, "ko-diagnostic-"))
+					} else {
+						require.Equal(t, "agent-worker", target.Pod)
+						require.Equal(t, "agent", target.Container)
+					}
+					if argv[0] == "ovs-vsctl" && slices.Contains(argv, "Interface") {
+						_, err := io.WriteString(streams.Out, `{"headings":["name","external_ids","ofport"],"data":[]}`)
+						return err
+					}
+					if argv[0] == "/kube-ovn/kubectl-ko-node-agent" {
+						require.Equal(t, []string{argv[0], "netns", "pinger-uid"}, argv)
+						_, err := io.WriteString(streams.Out, "/proc/321/ns/net\n")
+						return err
+					}
+					if argv[0] != "nsenter" {
+						return nil
+					}
+					probes++
+					netns := "/proc/321/ns/net"
+					if hostNetwork {
+						netns = "/proc/1/ns/net"
+					}
+					require.Equal(t, []string{"nsenter", "--net=" + netns, "--", "env"}, argv[:4])
+					for _, value := range []string{"POD_NAME=pinger", "POD_NAMESPACE=ovn-system", "POD_IP=192.0.2.2", "HOST_IP=192.0.2.1", "NODE_NAME=worker", "/kube-ovn/kube-ovn-pinger", "--exit-code=1", "--target-ip-ports=tcp-192.0.2.9-30000"} {
+						require.Contains(t, argv, value)
+					}
+					return failure
+				}
+				err = app.runDiagnosticProbes(t.Context(), client, []Target{{Namespace: pod.Namespace, Pod: pod.Name, Container: "pinger", Node: "worker"}}, mode, "tcp-192.0.2.9-30000", diagnosticOptions{})
+				require.ErrorIs(t, err, failure)
+				require.Equal(t, 42, ExitCode(err))
+				require.Equal(t, 1, probes, "a failed probe must not be replayed")
+				deletions := 0
+				for _, action := range cs.Actions() {
+					if action.Matches("delete", "pods") {
+						deletions++
+						require.Equal(t, types.UID("probe-uid"), *action.(ktesting.DeleteAction).GetDeleteOptions().Preconditions.UID)
+					}
+				}
+				require.Equal(t, 1, deletions)
+				original, err := cs.CoreV1().Pods(pod.Namespace).Get(t.Context(), pod.Name, metav1.GetOptions{})
+				require.NoError(t, err)
+				require.Equal(t, pod.Spec, original.Spec, "the source component must remain unchanged")
+			})
+		}
+	}
+}
+
+func TestDiagnosticProbeRejectsReplacedSourceAndCleansUp(t *testing.T) {
+	pod := readyPod("pinger", "worker", "pinger", map[string]string{"app": "kube-ovn-pinger"})
+	pod.UID, pod.Status.PodIP, pod.Spec.HostNetwork = "source-uid", "192.0.2.2", true
+	app, executor, _, _ := testApplication(t, pod, readyPod("agent-worker", "worker", "agent", map[string]string{"app": "kubectl-ko-node-agent"}))
+	client, err := app.newClient()
+	require.NoError(t, err)
+	client.ComponentFree = true
+	cs := client.Kubernetes.(*fake.Clientset)
+	cs.PrependReactor("create", "pods", func(action ktesting.Action) (bool, runtime.Object, error) {
+		probe := action.(ktesting.CreateAction).GetObject().(*corev1.Pod).DeepCopy()
+		probe.Namespace, probe.UID = action.GetNamespace(), "probe-uid"
+		probe.Status.Conditions = []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}
+		require.NoError(t, cs.Tracker().Add(probe))
+		return true, probe, nil
+	})
+	reads := 0
+	cs.PrependReactor("get", "pods", func(action ktesting.Action) (bool, runtime.Object, error) {
+		if action.(ktesting.GetAction).GetName() != pod.Name {
+			return false, nil, nil
+		}
+		reads++
+		current := pod.DeepCopy()
+		if reads > 1 {
+			current.UID = "replacement-uid"
+		}
+		return true, current, nil
+	})
+	err = app.runDiagnosticProbes(t.Context(), client, []Target{{Namespace: pod.Namespace, Pod: pod.Name, Container: "pinger", Node: "worker"}}, "IPPorts", "tcp-192.0.2.9-30000", diagnosticOptions{})
+	require.ErrorContains(t, err, "network identity changed")
+	require.Empty(t, executor.calls, "a replaced source must not be probed")
+	deletions := 0
+	for _, action := range cs.Actions() {
+		if action.Matches("delete", "pods") {
+			deletions++
+			require.Equal(t, types.UID("probe-uid"), *action.(ktesting.DeleteAction).GetDeleteOptions().Preconditions.UID)
+		}
+	}
+	require.Equal(t, 1, deletions)
+}
+
+func TestDiagnosticProbePodRemovesComponentLifecycle(t *testing.T) {
+	pod := readyPod("pinger", "worker", "pinger", map[string]string{"app": "kube-ovn-pinger"})
+	pod.Spec.ServiceAccountName = "existing-pinger-account"
+	pod.Spec.AutomountServiceAccountToken = new(true)
+	pod.Spec.ReadinessGates = []corev1.PodReadinessGate{{ConditionType: "example.com/component-ready"}}
+	pod.Spec.Containers[0].Lifecycle = &corev1.Lifecycle{PostStart: &corev1.LifecycleHandler{Exec: &corev1.ExecAction{Command: []string{"component-hook"}}}}
+	pod.Spec.Containers[0].SecurityContext = &corev1.SecurityContext{RunAsNonRoot: new(true), ReadOnlyRootFilesystem: new(true), Capabilities: &corev1.Capabilities{Add: []corev1.Capability{"NET_RAW"}}}
+	pod.Spec.Volumes = []corev1.Volume{{Name: "unused-component-log", HostPath: &corev1.HostPathVolumeSource{Path: "/var/log/kube-ovn"}}}
+	original := pod.DeepCopy()
+	probe, err := diagnosticProbePod(pod, "independent-probe", map[string]string{"app": "kubectl-ko-probe"})
+	require.NoError(t, err)
+	require.Equal(t, original, pod)
+	require.Equal(t, pod.Spec.ServiceAccountName, probe.Spec.ServiceAccountName)
+	require.Equal(t, pod.Spec.AutomountServiceAccountToken, probe.Spec.AutomountServiceAccountToken)
+	require.Nil(t, probe.Spec.ReadinessGates)
+	require.Nil(t, probe.Spec.Containers[0].Lifecycle)
+	require.False(t, *probe.Spec.Containers[0].SecurityContext.RunAsNonRoot)
+	require.True(t, *probe.Spec.Containers[0].SecurityContext.ReadOnlyRootFilesystem)
+	require.Contains(t, probe.Spec.Containers[0].SecurityContext.Capabilities.Add, corev1.Capability("NET_RAW"))
+	require.Contains(t, probe.Spec.Containers[0].SecurityContext.Capabilities.Add, corev1.Capability("SYS_ADMIN"))
+	require.True(t, slices.ContainsFunc(probe.Spec.Volumes, func(volume corev1.Volume) bool { return volume.Name == "ko-probe-log" && volume.EmptyDir != nil }))
+	require.False(t, slices.ContainsFunc(probe.Spec.Volumes, func(volume corev1.Volume) bool { return volume.Name == "unused-component-log" }))
+	pod.Spec.Containers = nil
+	_, err = diagnosticProbePod(pod, "independent-probe", nil)
+	require.ErrorContains(t, err, "no pinger container")
 }
 
 func TestDiagnosticExternalPingIsExplicitAndPropagatesFailure(t *testing.T) {

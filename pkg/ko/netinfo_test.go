@@ -241,8 +241,8 @@ func TestNetworkStatisticsPreserveCounters(t *testing.T) {
 
 func TestNetworkInspectResolvesParentNamespace(t *testing.T) {
 	for _, kind := range []string{"macvlan", "ipvlan"} {
-		for _, fixture := range []struct{ external, hostPresent bool }{{false, true}, {true, true}, {true, false}} {
-			t.Run(kind+"/external="+strconv.FormatBool(fixture.external)+"/host="+strconv.FormatBool(fixture.hostPresent), func(t *testing.T) {
+		for _, fixture := range []struct{ external, hostPresent, nameOnly bool }{{false, true, false}, {true, true, false}, {true, false, false}, {false, true, true}} {
+			t.Run(kind+"/external="+strconv.FormatBool(fixture.external)+"/host="+strconv.FormatBool(fixture.hostPresent)+"/nameOnly="+strconv.FormatBool(fixture.nameOnly), func(t *testing.T) {
 				pod := &corev1.Pod{Name: "web", Namespace: "app", Spec: corev1.PodSpec{NodeName: "worker-a"}}
 				agent := readyPod("agent-a", "worker-a", "agent", map[string]string{"app": "kubectl-ko-node-agent"})
 				app, executor, out, _ := testApplication(t, pod, agent, &corev1.Node{Name: "worker-a"})
@@ -257,6 +257,10 @@ func TestNetworkInspectResolvesParentNamespace(t *testing.T) {
 						return err
 					case "nsenter":
 						link := ipJSONLink{Index: 5, Name: "net1", LinkIndex: 2, LinkName: "eth0", LinkInfo: ipJSONLinkInfo{InfoKind: kind}}
+						if fixture.nameOnly {
+							link.LinkIndex = 0
+							return json.MarshalWrite(streams.Out, []ipJSONLink{{Index: 133, Name: "eth0", Address: "02:00:00:00:00:02", LinkInfo: ipJSONLinkInfo{InfoKind: "veth"}}, link})
+						}
 						if fixture.external {
 							link.LinkNetNSID = new(0)
 						}

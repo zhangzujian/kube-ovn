@@ -247,11 +247,18 @@ func (link ipJSONLink) isMacvlanOrIPVLAN() bool {
 }
 
 func (link ipJSONLink) parentLink(byName map[string]networkLink, byIndex, localByIndex map[int]networkLink) (networkLink, bool) {
-	if link.LinkNetNSID == nil && link.LinkIndex != 0 {
+	if link.LinkNetNSID == nil {
 		// With no external netns ID, the lower interface belongs to the
 		// inspected namespace. Host names and indexes can identify other NICs.
 		if parent, ok := localByIndex[link.LinkIndex]; ok && parent.Index != link.Index {
 			return parent, true
+		}
+		// iproute2 can emit only the local lower device's name, without
+		// link_index. Resolve it here before considering host names.
+		for _, parent := range localByIndex {
+			if link.LinkName != "" && parent.Name == link.LinkName && parent.Index != link.Index {
+				return parent, true
+			}
 		}
 	}
 	if link.LinkName != "" {

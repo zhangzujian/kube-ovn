@@ -103,10 +103,10 @@ kubectl ko
 | `trace` | Resolve Pod/Node addresses, MACs and logical ports, trace through OVN, then OVS. Supports IPv4/IPv6, ICMP/TCP/UDP, IPv4 ARP request/reply, explicit destination MAC, hostNetwork, Underlay/U2O and VM logical ports. `--engine ovn` runs only OVN trace. |
 | `capture` | Execute tcpdump in a Pod's network namespace, including hostNetwork and internal-port paths. A remote `-w PATH` stays remote; `-w -` streams the original pcap bytes locally. |
 | `network inspect` | Show the Pod network namespace path, every interface's index, kind, MAC, MTU, state and addresses, plus the host-side veth peer when one exists. For `macvlan`/`ipvlan`, also show the parent host NIC with its link details. `--output=json` emits machine-readable data. Host-network Pods use the host namespace and expose peer indexes for host links. |
-| `diagnose cluster` | Check cluster configuration, component rollout and leaders; create a unique temporary NodePort Service and run active pinger checks. |
-| `diagnose node NODE` | Perform configuration checks and restrict the active pinger probes to one node. |
+| `diagnose cluster` | Check cluster configuration, component rollout and leaders; create a unique temporary NodePort Service and run active checks from independent temporary probe Pods in the original pinger network namespaces. |
+| `diagnose node NODE` | Perform configuration checks and restrict the independent active probes to one node. |
 | `diagnose subnet SUBNET` | Check the subnet, create an isolated temporary DaemonSet and NodePort Service, and check peer TCP/UDP, node ICMP and NodePort connectivity from those subnet Pods. Does not require optional CNI node TCP/UDP listeners. |
-| `diagnose connectivity` | Check configuration and probe explicit TCP/UDP IP endpoints using existing pinger Pods. Does not create the NodePort/Subnet probe resources. |
+| `diagnose connectivity` | Check configuration and probe explicit TCP/UDP IP endpoints using independent temporary Pods in the existing pinger network namespaces. Does not create NodePort Services or subnet DaemonSets. |
 | `diagnose environment` | Run the environment checker through one independent node agent per node; it does not enter CNI containers. |
 | `logs` | Collect component files, container logs and Linux node state in parallel; limit each item and record partial failures in a manifest. |
 | `restart` | Restart and wait for central, OVS, controller, CNI, pinger and monitor in dependency order. |
@@ -235,8 +235,14 @@ file-permission glob cannot remove their directory traversal permissions.
 
 Probe resources have unique names and a run identity. Cleanup uses saved UIDs,
 not broad label deletion. A cleanup failure reports the exact remaining object
-without hiding the original error. Subnet pinger Pods mount a private temporary
-log directory. If their DaemonSet fails to become ready, the command collects
+without hiding the original error. Diagnostic probe Pods mount a private temporary
+log directory. Cluster/node/connectivity probes reuse the existing pinger image,
+service account, tool mounts and network namespace, while executing in a separate
+short-lived Pod. They retain the original pinger name/IP environment for its
+Kubernetes checks, revalidate its UID and readiness before execution, and use
+host PID access plus `SYS_ADMIN` to enter its network namespace. The independent
+node agent does not mount a service-account token. No component Pod is an exec
+target. If the subnet probe DaemonSet fails to become ready, the command collects
 status and limited container logs from at most eight Pods owned by that
 DaemonSet before cleanup. Log collection has a five-second deadline and retains
 the original readiness error. `restart`, raw OVN/OVS commands, recovery and

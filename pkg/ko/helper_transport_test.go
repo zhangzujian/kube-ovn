@@ -118,7 +118,7 @@ func TestHelperUsesIsolatedAgentProcesses(t *testing.T) {
 }
 
 func TestHelperRejectsComponentTargets(t *testing.T) {
-	for _, label := range []string{"kube-ovn-cni", "ovs", "ovs-ovn", "ovs-dpdk", "openvswitch", "ovn-central", "ovn-ic-server"} {
+	for _, label := range []string{"kube-ovn-cni", "ovs", "ovs-ovn", "ovs-dpdk", "openvswitch", "ovn-central", "ovn-ic-server", "kube-ovn-pinger", "kube-ovn-controller", "kube-ovn-monitor"} {
 		t.Run(label, func(t *testing.T) {
 			client := fake.NewClientset(&corev1.Pod{Name: "component", Namespace: "ovn-system", Labels: map[string]string{"app": label}})
 			// Even a container named agent must not bypass component protection.

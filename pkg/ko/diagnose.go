@@ -60,7 +60,7 @@ func (a *Application) addDiagnosticMode(parent *cobra.Command, mode string) {
 	}
 	var targets []string
 	if mode == "connectivity" {
-		command.Short = "Probe explicit TCP/UDP IP endpoints from the pinger pods"
+		command.Short = "Probe explicit TCP/UDP IP endpoints from independent probe pods"
 		flags.StringArrayVar(&targets, "target", nil, "Responding endpoint such as tcp://192.0.2.1:8100 or udp://[2001:db8::1]:8101 (repeatable)")
 	}
 	var probeTargets string
@@ -208,7 +208,9 @@ func (a *Application) diagnose(ctx context.Context, client *Client, mode, value 
 	return errors.Join(configurationErr, a.runDiagnosticProbes(ctx, client, pingers, mode, targets, options))
 }
 
-func (a *Application) runDiagnosticProbes(ctx context.Context, client *Client, pingers []Target, mode, targets string, options diagnosticOptions) error {
+func (a *Application) runDiagnosticProbes(ctx context.Context, client *Client, pingers []Target, mode, targets string, options diagnosticOptions) (resultErr error) {
+	run := &resourceRun{client: client, id: runID()}
+	defer func() { resultErr = errors.Join(resultErr, run.cleanup(ctx)) }()
 	if mode == "subnet" {
 		peers, err := client.subnetProbeTargets(ctx, pingers, options)
 		if err != nil {
@@ -226,6 +228,19 @@ func (a *Application) runDiagnosticProbes(ctx context.Context, client *Client, p
 			continue
 		}
 		execTarget := target
+		probeTarget := target
+		var prefix []string
+		if client.ComponentFree && mode != "subnet" {
+			var err error
+			execTarget, err = client.agentTarget(ctx, target.Node)
+			if err == nil {
+				probeTarget, prefix, err = run.diagnosticProbe(ctx, target, execTarget)
+			}
+			if err != nil {
+				failures = append(failures, fmt.Errorf("probe on %s: %w", target.Node, err))
+				continue
+			}
+		}
 		if mode == "all" || mode == "node" {
 			for _, argv := range [][]string{{"tail", "/var/log/ovn/ovn-controller.log"}, {"tail", "/var/log/openvswitch/ovs-vswitchd.log"}, {"ovs-vsctl", "show"}} {
 				if err := client.Executor.Exec(ctx, execTarget, argv, a.outputStreams()); err != nil {
@@ -242,11 +257,105 @@ func (a *Application) runDiagnosticProbes(ctx context.Context, client *Client, p
 			// are optional. Probe peers explicitly and retain ICMP node checks.
 			argv = append(argv, "--network-mode=diagnostic")
 		}
-		if err := client.Executor.Exec(ctx, execTarget, argv, a.outputStreams()); err != nil {
+		if err := client.Executor.Exec(ctx, probeTarget, append(prefix, argv...), a.outputStreams()); err != nil {
 			failures = append(failures, fmt.Errorf("probe on %s: %w", target.Node, err))
 		}
 	}
 	return errors.Join(failures...)
+}
+
+func (r *resourceRun) diagnosticProbe(ctx context.Context, source, agent Target) (Target, []string, error) {
+	c := r.client
+	pod, err := c.Kubernetes.CoreV1().Pods(source.Namespace).Get(ctx, source.Pod, metav1.GetOptions{})
+	if err != nil {
+		return Target{}, nil, err
+	}
+	if pod.Spec.NodeName != source.Node {
+		return Target{}, nil, errors.New("pinger Pod moved to another node")
+	}
+	if _, ready := podTarget(pod, "pinger", true); !ready || pod.UID == "" || pod.Status.PodIP == "" {
+		return Target{}, nil, errors.New("pinger Pod is no longer ready with a live network identity")
+	}
+	netns := "/proc/1/ns/net"
+	if !pod.Spec.HostNetwork {
+		netns, err = c.podNetNS(ctx, agent, pod)
+		if err != nil {
+			return Target{}, nil, err
+		}
+	}
+	probe, err := diagnosticProbePod(pod, "ko-diagnostic-"+r.id+"-"+strconv.Itoa(len(r.resources)), r.labels())
+	if err != nil {
+		return Target{}, nil, err
+	}
+	created, err := r.createPod(ctx, probe)
+	if err != nil {
+		return Target{}, nil, err
+	}
+	if _, err := c.waitPod(ctx, created.Name); err != nil {
+		return Target{}, nil, err
+	}
+	current, err := c.Kubernetes.CoreV1().Pods(source.Namespace).Get(ctx, source.Pod, metav1.GetOptions{})
+	if err != nil {
+		return Target{}, nil, err
+	}
+	if current.UID != pod.UID || current.Status.PodIP != pod.Status.PodIP || current.Spec.NodeName != source.Node {
+		return Target{}, nil, errors.New("pinger Pod network identity changed while preparing the probe")
+	}
+	if _, ready := podTarget(current, "pinger", true); !ready {
+		return Target{}, nil, errors.New("pinger Pod is no longer ready")
+	}
+	// The independent probe uses the existing pinger service account and its
+	// original network identity; the node agent remains credential-free.
+	prefix := namespaceCommand(netns, "env",
+		"POD_NAME="+pod.Name, "POD_NAMESPACE="+pod.Namespace,
+		"POD_IP="+pod.Status.PodIP, "HOST_IP="+pod.Status.HostIP,
+		"NODE_NAME="+pod.Spec.NodeName)
+	return Target{Namespace: c.Namespace, Pod: created.Name, Container: "probe", Node: source.Node}, prefix, nil
+}
+
+func diagnosticProbePod(pod *corev1.Pod, name string, runLabels map[string]string) (*corev1.Pod, error) {
+	probe := &corev1.Pod{Name: name, Namespace: pod.Namespace, Labels: runLabels, Spec: *pod.Spec.DeepCopy()}
+	index := slices.IndexFunc(probe.Spec.Containers, func(container corev1.Container) bool { return container.Name == "pinger" })
+	if index < 0 {
+		return nil, errors.New("pinger Pod has no pinger container")
+	}
+	container := probe.Spec.Containers[index]
+	container.Name, container.Command, container.Args = "probe", []string{"sleep", "600"}, nil
+	container.LivenessProbe, container.ReadinessProbe, container.StartupProbe = nil, nil, nil
+	container.Lifecycle, container.Ports = nil, nil
+	container.SecurityContext = container.SecurityContext.DeepCopy()
+	if container.SecurityContext == nil {
+		container.SecurityContext = &corev1.SecurityContext{}
+	}
+	container.SecurityContext.RunAsUser = new(int64(0))
+	container.SecurityContext.RunAsNonRoot = new(false)
+	if container.SecurityContext.Capabilities == nil {
+		container.SecurityContext.Capabilities = &corev1.Capabilities{}
+	}
+	if !slices.Contains(container.SecurityContext.Capabilities.Add, corev1.Capability("SYS_ADMIN")) {
+		container.SecurityContext.Capabilities.Add = append(container.SecurityContext.Capabilities.Add, "SYS_ADMIN")
+	}
+	container.VolumeMounts = slices.DeleteFunc(container.VolumeMounts, func(mount corev1.VolumeMount) bool {
+		return mount.MountPath == "/var/log/kube-ovn" || mount.Name == "ko-probe-log"
+	})
+	probe.Spec.Volumes = slices.DeleteFunc(probe.Spec.Volumes, func(volume corev1.Volume) bool { return volume.Name == "ko-probe-log" })
+	container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{Name: "ko-probe-log", MountPath: "/var/log/kube-ovn"})
+	probe.Spec.Volumes = append(probe.Spec.Volumes, corev1.Volume{Name: "ko-probe-log", EmptyDir: &corev1.EmptyDirVolumeSource{}})
+	if !slices.ContainsFunc(container.VolumeMounts, func(mount corev1.VolumeMount) bool { return mount.MountPath == "/var/run/netns" }) {
+		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{Name: "ko-probe-netns", MountPath: "/var/run/netns", MountPropagation: new(corev1.MountPropagationHostToContainer)})
+		probe.Spec.Volumes = slices.DeleteFunc(probe.Spec.Volumes, func(volume corev1.Volume) bool { return volume.Name == "ko-probe-netns" })
+		probe.Spec.Volumes = append(probe.Spec.Volumes, corev1.Volume{Name: "ko-probe-netns", HostPath: &corev1.HostPathVolumeSource{Path: "/var/run/netns", Type: new(corev1.HostPathDirectory)}})
+	}
+	probe.Spec.HostNetwork, probe.Spec.HostPID = true, true
+	probe.Spec.DNSPolicy = corev1.DNSClusterFirstWithHostNet
+	probe.Spec.ShareProcessNamespace, probe.Spec.InitContainers, probe.Spec.EphemeralContainers = nil, nil, nil
+	probe.Spec.ReadinessGates, probe.Spec.SchedulingGates, probe.Spec.HostUsers = nil, nil, nil
+	probe.Spec.RestartPolicy, probe.Spec.ActiveDeadlineSeconds = corev1.RestartPolicyNever, new(int64(600))
+	probe.Spec.Containers = []corev1.Container{container}
+	probe.Spec.Volumes = slices.DeleteFunc(probe.Spec.Volumes, func(volume corev1.Volume) bool {
+		return !slices.ContainsFunc(container.VolumeMounts, func(mount corev1.VolumeMount) bool { return mount.Name == volume.Name })
+	})
+	return probe, nil
 }
 
 func (c *Client) validateExternalProbeFamilies(ctx context.Context, target Target, addresses []string) error {

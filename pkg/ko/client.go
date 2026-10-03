@@ -36,7 +36,7 @@ func (r *helperExecutor) Exec(ctx context.Context, target Target, argv []string,
 	if err != nil {
 		return err
 	}
-	if slices.Contains([]string{"kube-ovn-cni", "ovs", "ovs-ovn", "ovs-dpdk", "openvswitch", "ovn-central", "ovn-ic-server"}, pod.Labels["app"]) {
+	if slices.Contains([]string{"kube-ovn-cni", "ovs", "ovs-ovn", "ovs-dpdk", "openvswitch", "ovn-central", "ovn-ic-server", "kube-ovn-pinger", "kube-ovn-controller", "kube-ovn-monitor"}, pod.Labels["app"]) {
 		return fmt.Errorf("component exec is disabled for %s/%s (deploy ko-node-agent and retry)", pod.Namespace, pod.Name)
 	}
 	if target.Container != "agent" {
