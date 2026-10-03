@@ -1,0 +1,98 @@
+name: Fixed candidate ko Kubernetes runtime proof
+
+on:
+  push:
+    branches: [ko-runtime-proof-5e26]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  runtime-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.14.0
+          args: --help
+      - name: Repository lint including the integration harness
+        run: make lint
+        env:
+          CI: true
+      - uses: actions/checkout@v4
+        with:
+          ref: 5e26a1cabf6f6223d9dd8b844803ec27d3d22565
+          path: candidate
+          persist-credentials: false
+      - name: Build immutable candidate agent
+        working-directory: candidate
+        env:
+          CGO_ENABLED: 0
+        run: |
+          test "$(git rev-parse HEAD)" = 5e26a1cabf6f6223d9dd8b844803ec27d3d22565
+          test -z "$(git status --porcelain)"
+          mkdir -p ../runtime-proof-results
+          git rev-parse HEAD HEAD^{tree} > ../runtime-proof-results/source.txt
+          go build -o ../runtime-proof-agent ./cmd/ko-helper
+          sha256sum ../runtime-proof-agent > ../runtime-proof-results/agent.sha256
+          go version -m ../runtime-proof-agent > ../runtime-proof-results/agent-build.txt
+      - uses: helm/kind-action@v1.15.0
+        with:
+          cluster_name: ko-runtime-proof
+          node_image: kindest/node:v1.35.0
+          version: v0.33.0
+      - name: Install credential-free candidate agent in isolated Pod
+        run: |
+          docker exec ko-runtime-proof-control-plane mkdir -p /opt/ko-runtime-proof
+          docker cp runtime-proof-agent ko-runtime-proof-control-plane:/opt/ko-runtime-proof/kubectl-ko-node-agent
+          kubectl apply -f - <<'EOF'
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: ko-runtime-proof
+            labels:
+              app: kubectl-ko-node-agent
+          spec:
+            automountServiceAccountToken: false
+            containers:
+              - name: agent
+                image: alpine:3.23
+                command: [/kube-ovn/kubectl-ko-node-agent]
+                resources:
+                  requests: {cpu: 50m, memory: 32Mi}
+                  limits: {memory: 128Mi}
+                volumeMounts:
+                  - name: candidate
+                    mountPath: /kube-ovn
+                    readOnly: true
+            volumes:
+              - name: candidate
+                hostPath:
+                  path: /opt/ko-runtime-proof
+                  type: Directory
+          EOF
+          kubectl wait --for=condition=Ready pod/ko-runtime-proof --timeout=120s
+      - name: Verify real exec binary streams, statuses and process cancellation
+        run: |
+          cp pkg/ko/kubernetes_runtime_proof_test.go candidate/pkg/ko/
+          export KO_RUNTIME_KUBECONFIG="$HOME/.kube/config"
+          cd candidate
+          go test -race -count=1 -timeout=3m -run '^TestKubernetesAgentRequestCancellation$' -v ./pkg/ko | tee ../runtime-proof-results/runtime.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ko-runtime-proof-5e26
+          path: runtime-proof-results/
+          if-no-files-found: error
