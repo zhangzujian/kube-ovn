@@ -43,9 +43,14 @@ func (runner) Run(ctx context.Context, request kohelper.Request, stdout, stderr 
 	// Remote argv execution is intentional: pods/exec authorizes access to this
 	// privileged tool runner. Arguments are passed directly, without a shell.
 	command := exec.CommandContext(ctx, request.Argv[0], request.Argv[1:]...) // #nosec G204 -- Kubernetes-authorized remote tool execution.
+	configureProcessGroup(command)
+	command.WaitDelay = 5 * time.Second
 	command.Stdout = stdout
 	command.Stderr = stderr
 	err := command.Run()
+	if ctx.Err() != nil {
+		return kohelper.Result{Code: 130, Error: ctx.Err().Error()}
+	}
 	if err == nil {
 		return kohelper.Result{}
 	}
