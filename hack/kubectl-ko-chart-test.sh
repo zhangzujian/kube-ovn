@@ -25,6 +25,22 @@ EOF
   printf 'KO_CHART_TAG=%s\n' "$ko_tag" >> "${GITHUB_ENV:?}"
 }
 
+verify_bootstrap() (
+  set -euo pipefail
+  ko_bootstrap_results=$1
+  ko_bootstrap_directory=$(mktemp -d)
+  trap 'rm -rf "$ko_bootstrap_directory"' EXIT
+  printf '#!/usr/bin/env bash\nset -euo pipefail\n' > "$ko_bootstrap_directory/install-cli.sh"
+  # Execute the actual installer phase, changing only its local destination.
+  sed -n '/^echo "\[Step 6\/6\] Run network diagnose"$/,/^chmod +x \/usr\/local\/bin\/kubectl-ko$/p' dist/images/install.sh |
+    sed "s|/usr/local/bin/kubectl-ko|${ko_bootstrap_directory}/kubectl-ko|g" >> "$ko_bootstrap_directory/install-cli.sh"
+  bash -x "$ko_bootstrap_directory/install-cli.sh" 2>&1 | tee "$ko_bootstrap_results/bootstrap.log"
+  grep -F '+ kubectl cp -c agent kube-system/kubectl-ko-node-agent-' "$ko_bootstrap_results/bootstrap.log"
+  cmp dist/images/kubectl-ko "$ko_bootstrap_directory/kubectl-ko"
+  sha256sum "$ko_bootstrap_directory/kubectl-ko" |
+    sed "s|${ko_bootstrap_directory}/|bootstrap/|" | tee -a "$ko_bootstrap_results/bootstrap.log"
+)
+
 verify_agent() {
   local ko_namespace=kube-system
   local ko_directory=kubectl-ko-chart-results
@@ -44,6 +60,7 @@ verify_agent() {
   ko_node_count=$(kubectl get nodes -l kubernetes.io/os=linux -o json | jq '.items | length')
   ko_ready_count=$(jq '.status.numberReady' "$ko_directory/agent.json")
   [[ "$ko_node_count" -gt 0 && "$ko_ready_count" -eq "$ko_node_count" ]]
+  verify_bootstrap "$ko_directory"
   dist/images/kubectl-ko --timeout=2m --kube-ovn-namespace "$ko_namespace" diagnose environment | tee "$ko_directory/environment.log"
   [[ $(grep -c '^Environment check on ' "$ko_directory/environment.log") -eq "$ko_node_count" ]]
   local ko_step

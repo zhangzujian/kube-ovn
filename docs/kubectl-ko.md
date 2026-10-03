@@ -333,7 +333,10 @@ platforms and runs file/streaming tests natively on Windows amd64 and arm64.
 Chart CI overlays the current Go client, node agent and environment checker
 onto the published component image, loads it into Kind and installs the v2
 chart with that image. It checks credential-free agent readiness on every
-Linux node, environment output and actual Pod interface statistics.
+Linux node, environment output and actual Pod interface statistics. It also
+executes the installer's CLI bootstrap phase with a temporary local destination,
+verifies the copy uses the `agent` container, and compares the copied binary
+with the current build.
 Existing `[group:kubectl-ko]` E2E exercises trace, capture, logs,
 diagnostics and backup against a cluster. Environment coverage also installs
 credential-free agents in a namespace without CNI Pods and verifies every Linux
