@@ -69,7 +69,7 @@ jobs:
 
           memory = int(next(line.split()[1] for line in Path("/proc/meminfo").read_text().splitlines() if line.startswith("MemTotal:")))
           device = Path("/dev/kvm")
-          result = {"memoryKiB": memory, "cpuCount": os.cpu_count(), "freeDiskBytes": shutil.disk_usage(".").free, "kvmCharacterDevice": device.exists() and stat.S_ISCHR(device.stat().st_mode), "requiredVMs": 2, "memoryKiBPerVM": 3145728, "vcpuPerVM": 4, "boundary": "Standard hosted runner changes execution capacity only; original source, two-VM topology, assertions and 30-minute budget retained. Original queued matrix remains unchanged."}
+          result = {"memoryKiB": memory, "cpuCount": os.cpu_count(), "freeDiskBytes": shutil.disk_usage(".").free, "kvmCharacterDevice": device.exists() and stat.S_ISCHR(device.stat().st_mode), "requiredVMs": 2, "memoryKiBPerVM": 3145728, "vcpuPerVM": 4, "boundary": "Hosted runner and isolated verification setup differ; original runtime source, two-VM topology, assertions and 30-minute budget retained. Original queued matrix remains unchanged."}
           Path("talos-verification-results/runner.json").write_text(json.dumps(result, indent=2) + "\n")
           print(json.dumps(result))
           assert result["kvmCharacterDevice"], "No KVM device; no installation verdict"
@@ -81,6 +81,7 @@ jobs:
           curl --fail --location --retry 3 "https://github.com/siderolabs/talos/releases/download/$TALOS_VERSION/talosctl-linux-amd64" --output "$RUNNER_TEMP/talosctl"
           chmod 755 "$RUNNER_TEMP/talosctl"
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          mkdir -p "$HOME/.talos"
           sudo apt-get update
           sudo apt-get install -y qemu-kvm libvirt-daemon-system
       - uses: actions/download-artifact@v8
