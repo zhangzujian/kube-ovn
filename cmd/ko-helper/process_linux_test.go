@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"strconv"
@@ -52,7 +53,8 @@ func TestRunnerCancellationStopsDescendants(t *testing.T) {
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		data, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
-		if os.IsNotExist(err) {
+		// procfs may return ESRCH when the process is reaped during a read.
+		if os.IsNotExist(err) || errors.Is(err, syscall.ESRCH) {
 			return
 		}
 		if err != nil {

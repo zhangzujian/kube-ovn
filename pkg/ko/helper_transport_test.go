@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -126,6 +127,66 @@ func TestHelperRejectsComponentTargets(t *testing.T) {
 				err := executor.Exec(t.Context(), Target{Namespace: "ovn-system", Pod: "component", Container: container}, []string{"show"}, Streams{})
 				require.ErrorContains(t, err, "component exec is disabled")
 			}
+		})
+	}
+}
+
+func TestHelperWaitsForProcessStatus(t *testing.T) {
+	for _, code := range []int{0, 29} {
+		t.Run(strconv.Itoa(code), func(t *testing.T) {
+			finished := make(chan struct{})
+			release := make(chan struct{})
+			unblock := sync.OnceFunc(func() { close(release) })
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/api/v1/namespaces/ovn-system/pods/agent-a" {
+					w.Header().Set("Content-Type", "application/json")
+					_ = json.MarshalWrite(w, &corev1.Pod{Name: "agent-a", Namespace: "ovn-system", Labels: map[string]string{"app": "kubectl-ko-node-agent"}})
+					return
+				}
+				calls.Add(1)
+				conn := wsstream.NewConn(map[string]wsstream.ChannelProtocolConfig{
+					remotecommand.StreamProtocolV5Name: {Binary: true, Channels: []wsstream.ChannelType{wsstream.ReadChannel, wsstream.WriteChannel, wsstream.IgnoreChannel, wsstream.WriteChannel, wsstream.IgnoreChannel}},
+				})
+				_, streams, err := conn.Open(w, r)
+				if err != nil {
+					t.Errorf("upgrade: %v", err)
+					return
+				}
+				defer conn.Close()
+				_ = kohelper.Serve(t.Context(), &kohelper.StreamConn{Reader: streams[0], Writer: streams[1]}, echoHelperRunner{})
+				close(finished)
+				<-release
+				status := metav1.Status{Status: metav1.StatusSuccess}
+				if code != 0 {
+					status = metav1.Status{Status: metav1.StatusFailure, Reason: remotecommand.NonZeroExitCodeReason, Details: &metav1.StatusDetails{Causes: []metav1.StatusCause{{Type: remotecommand.ExitCodeCauseType, Message: strconv.Itoa(code)}}}}
+				}
+				_ = json.MarshalWrite(streams[3], status)
+			}))
+			t.Cleanup(func() { unblock(); server.Close() })
+			cfg := &rest.Config{Host: server.URL}
+			client, err := kubernetes.NewForConfig(cfg)
+			require.NoError(t, err)
+			executor := &helperExecutor{client: client, legacy: &remoteExecutor{client: client, config: cfg}}
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			done := make(chan error, 1)
+			go func() {
+				done <- executor.Exec(ctx, Target{Namespace: "ovn-system", Pod: "agent-a", Container: "agent"}, []string{"success"}, Streams{Out: io.Discard})
+			}()
+			select {
+			case <-finished:
+			case <-ctx.Done():
+				t.Fatal("helper did not finish")
+			}
+			select {
+			case err := <-done:
+				t.Fatalf("returned before process status: %v", err)
+			case <-time.After(100 * time.Millisecond):
+			}
+			unblock()
+			require.Equal(t, code, ExitCode(<-done))
+			require.EqualValues(t, 1, calls.Load(), "process failure must not replay the request")
 		})
 	}
 }

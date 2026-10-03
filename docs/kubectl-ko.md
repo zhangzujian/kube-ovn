@@ -188,8 +188,10 @@ without entering `kube-ovn-cni` or `ovs-ovn`.
 Probe Pods may use the normal Kubernetes streaming path for their own
 short-lived test process. Exec uses WebSocket with SPDY fallback only for
 supported handshake failures.
-Remote exit codes propagate; failed commands are never replayed. Streams have
-no TTY transformations or stdout banners. Invalid arguments fail before client
+Completed requests close helper stdin and wait for the outer exec process
+status before returning; a successful tool result does not hide a helper
+process failure. Remote exit codes propagate; failed commands are never
+replayed. Streams have no TTY transformations or stdout banners. Invalid arguments fail before client
 creation. Cancelling an agent request terminates its Linux command process
 group, including children such as those started by `nsenter`, and returns exit
 130. Processes that deliberately detach into a different session are outside

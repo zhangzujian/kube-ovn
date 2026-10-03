@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"testing"
@@ -51,7 +52,7 @@ func TestHelperStdioProcess(t *testing.T) {
 	if err = process.Start(); err != nil {
 		t.Fatal(err)
 	}
-	connection := &kohelper.StreamConn{Reader: stdout, Writer: stdin}
+	connection := &kohelper.StreamConn{Reader: io.NopCloser(stdout), Writer: stdin}
 	client, err := kohelper.Dial(connection)
 	if err != nil {
 		_ = connection.Close()
@@ -62,6 +63,8 @@ func TestHelperStdioProcess(t *testing.T) {
 	err = kohelper.Run(ctx, client, kohelper.Request{Version: kohelper.Version, Argv: []string{executable, "-test.run=^TestRemoteTool$"}}, &output, &stderr)
 	_ = client.Close()
 	_ = connection.Close()
+	// Keep stdout open until the helper exits after receiving stdin EOF.
+	_, _ = io.Copy(io.Discard, stdout)
 	if exit, ok := errors.AsType[*kohelper.ExitError](err); !ok || exit.Code != 17 {
 		t.Errorf("remote status = %v, want exit 17", err)
 	}

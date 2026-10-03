@@ -49,6 +49,7 @@ func (r *helperExecutor) Exec(ctx context.Context, target Target, argv []string,
 	defer cancel()
 	inputReader, inputWriter := io.Pipe()
 	outputReader, outputWriter := io.Pipe()
+	defer outputReader.Close()
 	streamErr := make(chan error, 1)
 	go func() {
 		streamErr <- r.legacy.Exec(streamContext, target, []string{"/kube-ovn/kubectl-ko-node-agent", "--stdio"}, Streams{
@@ -57,25 +58,28 @@ func (r *helperExecutor) Exec(ctx context.Context, target Target, argv []string,
 		_ = outputWriter.Close()
 		_ = inputReader.Close()
 	}()
-	conn := &kohelper.StreamConn{Reader: outputReader, Writer: inputWriter}
+	// Closing gRPC must send stdin EOF without closing stdout before the
+	// exec transport has received the helper process's final exit status.
+	conn := &kohelper.StreamConn{Reader: io.NopCloser(outputReader), Writer: inputWriter}
 	grpcConn, err := kohelper.Dial(conn)
 	if err == nil {
 		err = kohelper.Run(ctx, grpcConn, kohelper.Request{Version: kohelper.Version, Argv: argv}, streams.Out, streams.ErrOut)
 		_ = grpcConn.Close()
 	}
 	_ = conn.Close()
-	cancel()
+	if _, toolExit := errors.AsType[*kohelper.ExitError](err); err != nil && !toolExit {
+		cancel()
+		_ = outputReader.Close()
+	} else {
+		// gRPC has finished consuming frames; drain any remaining transport
+		// bytes so the exec stdout copier can reach EOF before returning.
+		go func() { _, _ = io.Copy(io.Discard, outputReader) }()
+	}
 	transportErr := <-streamErr
-	if err != nil {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		return err
+	if ctx.Err() != nil {
+		return ctx.Err()
 	}
-	if errors.Is(transportErr, context.Canceled) {
-		return nil // The final protocol status was received before cleanup.
-	}
-	return transportErr
+	return errors.Join(err, transportErr)
 }
 
 // Target identifies a container, not the default container selected by kubectl.
