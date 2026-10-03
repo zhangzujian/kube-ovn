@@ -141,3 +141,28 @@ func TestCollectDirectoryDrainsTarRecordPadding(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "remote log\n", string(contents))
 }
+
+func TestIPsecCollectionExecutesOnlyIndependentAgent(t *testing.T) {
+	pod := readyPod("cni", "worker", "cni-server", map[string]string{"app": "kube-ovn-cni"})
+	agent := readyPod("agent", "worker", "agent", map[string]string{"app": "kubectl-ko-node-agent"})
+	app, executor, _, _ := testApplication(t, pod, agent)
+	client, err := app.newClient()
+	require.NoError(t, err)
+	client.ComponentFree = true
+	executor.run = func(_ context.Context, target Target, argv []string, streams Streams) error {
+		require.Equal(t, "agent", target.Pod)
+		require.Equal(t, []string{"/kube-ovn/kubectl-ko-node-agent", "ipsec", string(pod.UID)}, argv)
+		_, err := io.WriteString(streams.Out, "actual Pod charon status\n")
+		return err
+	}
+	task := client.ipsecTask(Target{Namespace: agent.Namespace, Pod: agent.Name, Container: "agent", Node: "worker"}, Target{Namespace: pod.Namespace, Pod: pod.Name}, t.TempDir(), 1024)
+	require.NoError(t, task.collect(t.Context()))
+	data, err := os.ReadFile(task.Path)
+	require.NoError(t, err)
+	require.Contains(t, string(data), "actual Pod charon status")
+	pod.DeletionTimestamp = new(metav1.Now())
+	_, err = client.Kubernetes.CoreV1().Pods(pod.Namespace).Update(t.Context(), pod, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	require.ErrorContains(t, task.collect(t.Context()), "terminating")
+	require.Len(t, executor.calls, 1, "an invalid source must not issue another agent request")
+}

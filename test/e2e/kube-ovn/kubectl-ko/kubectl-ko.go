@@ -610,6 +610,9 @@ var _ = framework.Describe("[group:kubectl-ko]", func() {
 		for _, component := range components {
 			execOrDie("ko log " + component)
 		}
+		if !f.VersionPriorTo(1, 17) {
+			checkIndependentIPsecCollection(f, podClient, namespaceName, podName)
+		}
 	})
 
 	// Cluster health checks must not overlap other specs' IPAM failure injection

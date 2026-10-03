@@ -215,6 +215,11 @@ do not configure Windows ACLs. Backup destinations must support hard links
 (for example, NTFS) for atomic publication without overwriting existing files.
 XFRM state is collected with
 `nokeys`. Treat database and network diagnostics as sensitive local artifacts.
+IPsec collection locates the CNI Pod's live charon process by Pod UID, pins its
+root directory and uses the independent agent's strongSwan client to query its
+control socket. It collects the active `ipsec.conf`, certificate metadata and
+status, without executing a tool in the CNI container or exporting keys.
+Disabled IPsec or an unavailable daemon remains a partial failure in the manifest.
 
 `db nb restore` preserves the old operation meaning: reconstruct from a database
 already on a node, not import an arbitrary local backup. It requires an explicit

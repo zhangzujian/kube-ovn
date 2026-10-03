@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type collectionOptions struct {
@@ -168,6 +169,9 @@ func (c *Client) collectionTasks(ctx context.Context, component string, options 
 			directory := filepath.Join(options.output, target.Node, group.directory)
 			if group.component == "linux" {
 				tasks = append(tasks, c.linuxTasks(target, directory, options.maxBytes)...)
+				if c.ComponentFree {
+					tasks = append(tasks, c.ipsecTask(target, source, directory, options.maxBytes))
+				}
 				continue
 			}
 			// Central and OVS may share a node and /var/log/ovn. Give central its own
@@ -233,6 +237,9 @@ func (c *Client) linuxTasks(target Target, directory string, limit int64) []coll
 		"tcp": {{"cat", "/proc/net/sockstat"}}, "ipsec": {{"cat", "/etc/ipsec.conf"}, {"ipsec", "statusall"}},
 		"xfrm": {{"ip", "xfrm", "policy"}, {"ip", "xfrm", "state", "list", "nokeys"}},
 	}
+	if c.ComponentFree {
+		delete(commands, "ipsec")
+	}
 	for _, backend := range []string{"legacy", "nft"} {
 		for _, binary := range []string{"iptables-", "ip6tables-"} {
 			for _, table := range []string{"filter", "nat"} {
@@ -269,6 +276,23 @@ func (c *Client) linuxTasks(target Target, directory string, limit int64) []coll
 		return 0
 	})
 	return tasks
+}
+
+func (c *Client) ipsecTask(target, source Target, directory string, limit int64) collectionTask {
+	destination := filepath.Join(directory, "ipsec.log")
+	return collectionTask{Target: target, Name: "ipsec", Path: destination, collect: func(ctx context.Context) error {
+		return writeCollectionFile(destination, func(writer io.Writer) error {
+			pod, err := c.Kubernetes.CoreV1().Pods(source.Namespace).Get(ctx, source.Pod, metav1.GetOptions{})
+			if err != nil {
+				return err
+			}
+			if pod.UID == "" || pod.Spec.NodeName != target.Node || pod.DeletionTimestamp != nil {
+				return errors.New("IPsec source Pod is missing its UID, moved nodes or terminating")
+			}
+			limited := &limitedWriter{writer: writer, remaining: limit}
+			return c.Executor.Exec(ctx, target, []string{"/kube-ovn/kubectl-ko-node-agent", "ipsec", string(pod.UID)}, Streams{Out: limited, ErrOut: limited})
+		})
+	}}
 }
 
 type limitedWriter struct {
