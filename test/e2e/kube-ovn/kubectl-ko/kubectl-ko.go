@@ -612,7 +612,9 @@ var _ = framework.Describe("[group:kubectl-ko]", func() {
 		}
 	})
 
-	framework.ConformanceIt(`should support "kubectl ko diagnose subnet IPPorts <IPPorts>"`, func() {
+	// Cluster health checks must not overlap other specs' IPAM failure injection
+	// or Pod teardown. Keep the diagnostic checks intact and run after cleanup.
+	framework.ConformanceIt(`should support "kubectl ko diagnose subnet IPPorts <IPPorts>"`, k8sframework.WithSerial(), func() {
 		f.SkipVersionPriorTo(1, 12, "This feature was introduced in v1.12")
 		execOrDie("ko diagnose subnet ovn-default")
 		if f.VersionPriorTo(1, 17) {
