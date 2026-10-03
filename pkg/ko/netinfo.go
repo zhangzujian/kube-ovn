@@ -51,17 +51,18 @@ type networkLink struct {
 }
 
 type ipJSONLink struct {
-	Index     int            `json:"ifindex"`
-	Name      string         `json:"ifname"`
-	LinkIndex int            `json:"link_index"`
-	MTU       int            `json:"mtu"`
-	OperState string         `json:"operstate"`
-	Address   string         `json:"address"`
-	LinkName  string         `json:"link"`
-	Flags     []string       `json:"flags"`
-	LinkType  string         `json:"link_type"`
-	LinkInfo  ipJSONLinkInfo `json:"linkinfo"`
-	AddrInfo  []ipJSONAddr   `json:"addr_info"`
+	Index       int            `json:"ifindex"`
+	Name        string         `json:"ifname"`
+	LinkIndex   int            `json:"link_index"`
+	LinkNetNSID *int           `json:"link_netnsid"`
+	MTU         int            `json:"mtu"`
+	OperState   string         `json:"operstate"`
+	Address     string         `json:"address"`
+	LinkName    string         `json:"link"`
+	Flags       []string       `json:"flags"`
+	LinkType    string         `json:"link_type"`
+	LinkInfo    ipJSONLinkInfo `json:"linkinfo"`
+	AddrInfo    []ipJSONAddr   `json:"addr_info"`
 }
 
 type ipJSONLinkInfo struct {
@@ -123,16 +124,19 @@ func (c *Client) podNetwork(ctx context.Context, reference string) (*podNetworkI
 	}
 	for _, link := range podLinks {
 		item := link.podNetworkInterface()
-		if link.isMacvlanOrIPVLAN() {
-			if parent, ok := link.parentLink(hostByName, hostByIndex, podByIndex); ok && parent.Index != link.Index {
+		switch {
+		case link.isMacvlanOrIPVLAN():
+			if parent, ok := link.parentLink(hostByName, hostByIndex, podByIndex); ok && (!pod.Spec.HostNetwork || parent.Index != link.Index) {
 				item.Parent = new(parent)
 			}
-		} else if pod.Spec.HostNetwork {
+		case pod.Spec.HostNetwork && link.LinkNetNSID == nil && link.kind() == "veth":
 			if peer, ok := hostByIndex[link.LinkIndex]; ok && peer.Index != link.Index {
 				item.Peer = new(peer)
 			}
-		} else if peer, ok := hostByIndex[link.LinkIndex]; ok {
-			item.HostPeer = new(peer)
+		case !pod.Spec.HostNetwork && link.kind() == "veth":
+			if peer, ok := hostByIndex[link.LinkIndex]; ok && peer.Kind == "veth" {
+				item.HostPeer = new(peer)
+			}
 		}
 		result.Interfaces = append(result.Interfaces, item)
 	}
@@ -150,7 +154,7 @@ func (c *Client) podNetNS(ctx context.Context, target Target, pod *corev1.Pod) (
 	rows, err := c.ovsRows(ctx, target, "ovs-vsctl", "name,external_ids,ofport", "Interface",
 		"external_ids:pod_name="+strconv.Quote(podName),
 		"external_ids:pod_namespace="+strconv.Quote(pod.Namespace))
-	if err != nil {
+	if err != nil && !c.ComponentFree {
 		return "", fmt.Errorf("find OVS interfaces for pod %s/%s: %w", pod.Namespace, pod.Name, err)
 	}
 	paths := make(map[string]struct{}, len(rows))
@@ -161,6 +165,17 @@ func (c *Client) podNetNS(ctx context.Context, target Target, pod *corev1.Pod) (
 		}
 	}
 	if len(paths) == 0 {
+		if c.ComponentFree {
+			path, err := c.capture(ctx, target, "/kube-ovn/kubectl-ko-node-agent", "netns", string(pod.UID))
+			if err != nil {
+				return "", fmt.Errorf("resolve pod netns from host processes: %w", err)
+			}
+			path = strings.TrimSpace(path)
+			if !strings.HasPrefix(path, "/proc/") || !strings.HasSuffix(path, "/ns/net") {
+				return "", errors.New("helper returned an invalid pod netns path")
+			}
+			return path, nil
+		}
 		return "", fmt.Errorf("no OVS interface contains pod netns for %s/%s", pod.Namespace, pod.Name)
 	}
 	if len(paths) != 1 {

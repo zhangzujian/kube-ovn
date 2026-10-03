@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"io"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -41,6 +43,69 @@ func TestIPLinksExposeAddressesAndHostVethPeer(t *testing.T) {
 	if item.HostPeer.Name != "pod123_h" || item.HostPeer.Index != 42 {
 		t.Fatalf("unexpected host peer: %#v", item.HostPeer)
 	}
+}
+
+func TestNetworkInspectWithoutOVSInterface(t *testing.T) {
+	for _, queryError := range []bool{false, true} {
+		name := "no OVS row"
+		if queryError {
+			name = "OVS unavailable"
+		}
+		t.Run(name, func(t *testing.T) {
+			pod := &corev1.Pod{Name: "web", Namespace: "app", UID: "pod-uid", Spec: corev1.PodSpec{NodeName: "worker-a"}}
+			agent := readyPod("agent-a", "worker-a", "agent", map[string]string{"app": "kubectl-ko-node-agent"})
+			app, executor, out, _ := testApplication(t, pod, agent, &corev1.Node{Name: "worker-a"})
+			client, err := app.newClient()
+			require.NoError(t, err)
+			client.ComponentFree = true
+			executor.run = func(_ context.Context, target Target, argv []string, streams Streams) error {
+				require.Equal(t, "agent-a", target.Pod)
+				switch argv[0] {
+				case "ovs-vsctl":
+					if queryError {
+						return errors.New("OVS is unavailable")
+					}
+					_, err := io.WriteString(streams.Out, `{"headings":["name","external_ids","ofport"],"data":[]}`)
+					return err
+				case "/kube-ovn/kubectl-ko-node-agent":
+					require.Equal(t, []string{"/kube-ovn/kubectl-ko-node-agent", "netns", "pod-uid"}, argv)
+					_, err := io.WriteString(streams.Out, "/proc/42/ns/net\n")
+					return err
+				case "nsenter":
+					_, err := io.WriteString(streams.Out, `[{"ifindex":5,"ifname":"net1","link_index":5,"linkinfo":{"info_kind":"ipvlan"}}]`)
+					return err
+				case "ip":
+					_, err := io.WriteString(streams.Out, `[{"ifindex":5,"ifname":"parent0","link_type":"ether"}]`)
+					return err
+				default:
+					t.Fatalf("unexpected command: %v", argv)
+					return nil
+				}
+			}
+			require.NoError(t, app.Execute(t.Context(), []string{"network", "inspect", "--pod", "app/web", "--output", "json"}))
+			var info podNetworkInfo
+			require.NoError(t, json.Unmarshal(out.Bytes(), &info))
+			require.Equal(t, "/proc/42/ns/net", info.NetNS)
+			require.Len(t, info.Interfaces, 1)
+			require.NotNil(t, info.Interfaces[0].Parent, "ifindexes can coincide across namespaces")
+			require.Equal(t, "parent0", info.Interfaces[0].Parent.Name)
+		})
+	}
+}
+
+func TestHostNetworkPeerIndexesDoNotAliasHostNICs(t *testing.T) {
+	pod := &corev1.Pod{Name: "web", Namespace: "app", Spec: corev1.PodSpec{NodeName: "worker-a", HostNetwork: true}}
+	ovs := readyPod("ovs-a", "worker-a", "openvswitch", map[string]string{"app": "ovs"})
+	app, executor, out, _ := testApplication(t, pod, ovs, &corev1.Node{Name: "worker-a"})
+	executor.run = func(_ context.Context, _ Target, _ []string, streams Streams) error {
+		_, err := io.WriteString(streams.Out, `[{"ifindex":2,"ifname":"eth0","link_type":"ether"},{"ifindex":42,"ifname":"pod_h","link_index":2,"link_netnsid":0,"linkinfo":{"info_kind":"veth"}}]`)
+		return err
+	}
+	require.NoError(t, app.Execute(t.Context(), []string{"network", "inspect", "--pod", "app/web", "--output", "json"}))
+	var info podNetworkInfo
+	require.NoError(t, json.Unmarshal(out.Bytes(), &info))
+	require.Nil(t, info.Interfaces[1].Peer, "peer ifindex 2 belongs to another netns, not host eth0")
+	require.Equal(t, 2, info.Interfaces[1].PeerIndex)
 }
 
 func TestIPLinksExposeMacvlanParent(t *testing.T) {

@@ -180,8 +180,9 @@ Each node operation uses Kubernetes `pods/exec` to start an isolated helper
 process in the independent agent. A versioned gRPC stream runs over that
 process's stdin/stdout. Concurrent operations have separate streams and do not
 restart the agent. It does not execute in Kube-OVN component Pods.
-`network inspect` resolves the Pod netns from OVSDB through the agent, then
-reads Pod and host links with `ip -j`; it reports the host-side veth peer by
+`network inspect` resolves the Pod netns from OVSDB through the agent, with a
+Pod-UID lookup in host process cgroups when no OVS interface exists, then
+reads Pod and host links with `ip -s -j -d addr show`; it reports the host-side veth peer by
 ifindex and resolves `macvlan`/`ipvlan` parent NICs by link name or ifindex,
 without entering `kube-ovn-cni` or `ovs-ovn`.
 Probe Pods may use the normal Kubernetes streaming path for their own

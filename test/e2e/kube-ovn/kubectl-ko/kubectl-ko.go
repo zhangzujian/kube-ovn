@@ -8,6 +8,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -34,6 +35,33 @@ const (
 	targetIPv4 = "8.8.8.8"
 	targetIPv6 = "2001:4860:4860::8888"
 )
+
+type inspectedNetwork struct {
+	NetNS       string               `json:"netns"`
+	HostNetwork bool                 `json:"hostNetwork"`
+	Interfaces  []inspectedInterface `json:"interfaces"`
+}
+
+type inspectedInterface struct {
+	Name      string              `json:"name"`
+	Index     int                 `json:"index"`
+	Kind      string              `json:"kind"`
+	MAC       string              `json:"mac"`
+	MTU       int                 `json:"mtu"`
+	Addresses []string            `json:"addresses"`
+	HostPeer  *inspectedInterface `json:"hostPeer"`
+	Parent    *inspectedInterface `json:"parent"`
+}
+
+func inspectNetwork(pod *corev1.Pod) inspectedNetwork {
+	ginkgo.GinkgoHelper()
+	output := e2ekubectl.NewKubectlCommand("", "ko", "network", "inspect", "--pod", pod.Namespace+"/"+pod.Name, "--output", "json").ExecOrDie("")
+	var info inspectedNetwork
+	framework.ExpectNoError(json.Unmarshal([]byte(output), &info))
+	framework.ExpectNotEmpty(info.NetNS)
+	framework.ExpectNotEmpty(info.Interfaces)
+	return info
+}
 
 func execOrDie(cmd string, checks ...func(string)) {
 	ginkgo.GinkgoHelper()
@@ -88,6 +116,73 @@ var _ = framework.Describe("[group:kubectl-ko]", func() {
 
 	framework.ConformanceIt(`should support "kubectl ko sbctl show"`, func() {
 		execOrDie("ko sbctl show")
+	})
+
+	framework.ConformanceIt(`should inspect Pod netns, host veth peers and macvlan/ipvlan parents`, func() {
+		f.SkipVersionPriorTo(1, 17, "Network inspection and the independent node agent were introduced in v1.17")
+		pod := podClient.CreateSync(framework.MakePod(namespaceName, podName, nil, nil, "", nil, nil))
+		info := inspectNetwork(pod)
+		framework.ExpectFalse(info.HostNetwork)
+		foundIP, foundPeer := false, false
+		for _, link := range info.Interfaces {
+			for _, ip := range pod.Status.PodIPs {
+				for _, address := range link.Addresses {
+					if strings.HasPrefix(address, ip.IP+"/") {
+						foundIP = true
+					}
+				}
+			}
+			if link.Kind == "veth" && link.HostPeer != nil {
+				framework.ExpectNotEmpty(link.HostPeer.Name)
+				framework.ExpectTrue(link.HostPeer.Index > 0)
+				foundPeer = true
+			}
+		}
+		framework.ExpectTrue(foundIP, "Pod IP must appear in interface addresses")
+		framework.ExpectTrue(foundPeer, "Pod veth must expose its host peer")
+
+		agents, err := cs.CoreV1().Pods("kube-system").List(context.Background(), metav1.ListOptions{LabelSelector: "app=kubectl-ko-node-agent", FieldSelector: "spec.nodeName=" + pod.Spec.NodeName})
+		framework.ExpectNoError(err)
+		framework.ExpectHaveLen(agents.Items, 1)
+		agent := agents.Items[0].Name
+		processNetns := strings.TrimSpace(e2ekubectl.NewKubectlCommand("", "exec", "-n", "kube-system", agent, "-c", "agent", "--", "/kube-ovn/kubectl-ko-node-agent", "netns", string(pod.UID)).ExecOrDie(""))
+		inodes := strings.Fields(e2ekubectl.NewKubectlCommand("", "exec", "-n", "kube-system", agent, "-c", "agent", "--", "stat", "-Lc", "%i", info.NetNS, processNetns).ExecOrDie(""))
+		framework.ExpectHaveLen(inodes, 2)
+		framework.ExpectEqual(inodes[0], inodes[1], "OVS and Pod-UID resolvers must identify the same live network namespace")
+		run := func(args ...string) {
+			ginkgo.GinkgoHelper()
+			command := append([]string{"exec", "-n", "kube-system", agent, "-c", "agent", "--", "ip"}, args...)
+			e2ekubectl.NewKubectlCommand("", command...).ExecOrDie("")
+		}
+		for _, kind := range []string{"macvlan", "ipvlan"} {
+			suffix := framework.RandomSuffix()
+			parent := "ko-" + kind[:2] + "-" + suffix[len(suffix)-8:]
+			child := "net-" + kind[:2]
+			run("link", "add", "name", parent, "type", "dummy")
+			ginkgo.DeferCleanup(func() { run("link", "delete", "dev", parent) })
+			run("link", "add", "link", parent, "name", child, "netns", info.NetNS, "type", kind)
+			updated := inspectNetwork(pod)
+			index := slices.IndexFunc(updated.Interfaces, func(link inspectedInterface) bool { return link.Name == child })
+			framework.ExpectTrue(index >= 0, "%s must be included alongside the main Pod interface", kind)
+			link := updated.Interfaces[index]
+			framework.ExpectEqual(link.Kind, kind)
+			framework.ExpectNotNil(link.Parent)
+			framework.ExpectEqual(link.Parent.Name, parent)
+			framework.ExpectEqual(link.Parent.Kind, "dummy")
+			framework.ExpectNotEmpty(link.Parent.MAC)
+			framework.ExpectTrue(link.Parent.Index > 0 && link.Parent.MTU > 0)
+		}
+	})
+
+	framework.ConformanceIt(`should inspect every host-network Pod interface`, func() {
+		f.SkipVersionPriorTo(1, 17, "Network inspection was introduced in v1.17")
+		pod := framework.MakePod(namespaceName, podName, nil, nil, "", nil, nil)
+		pod.Spec.HostNetwork = true
+		pod = podClient.CreateSync(pod)
+		info := inspectNetwork(pod)
+		framework.ExpectTrue(info.HostNetwork)
+		framework.ExpectEqual(info.NetNS, "/proc/1/ns/net")
+		framework.ExpectTrue(slices.ContainsFunc(info.Interfaces, func(link inspectedInterface) bool { return link.Name == "lo" }))
 	})
 
 	framework.ConformanceIt(`should support "kubectl ko vsctl <node> show"`, func() {

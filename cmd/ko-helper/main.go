@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -67,6 +68,18 @@ func runHelper() int {
 	if len(os.Args) == 1 {
 		// The DaemonSet stays idle; Kubernetes exec starts isolated RPC processes.
 		<-ctx.Done()
+		return 0
+	}
+	if len(os.Args) == 3 && os.Args[1] == "netns" {
+		path, err := kohelper.ResolvePodNetns(ctx, "/host/proc", os.Args[2])
+		if err != nil {
+			_, _ = fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		_, err = fmt.Fprintln(os.Stdout, path)
+		if err != nil {
+			return 1
+		}
 		return 0
 	}
 	if len(os.Args) != 2 || os.Args[1] != "--stdio" {
