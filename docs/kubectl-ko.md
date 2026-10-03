@@ -42,6 +42,9 @@ For a source checkout, run `make build-kubectl-ko`; the results are
 Install the chart's `kubectl-ko-node-agent` DaemonSet before using commands
 that need node access. The module uses replacements, so installing release
 binaries is preferred to `go install ...@version`.
+Both Helm charts deploy the independent agent. The v2 chart uses its global
+image and pull policy, `ovsOvn.ovnDirectory`, `logging.directory` and
+`cni.configDirectory` to mount the same host data as the running components.
 The agent is scheduled only on Linux nodes; Windows client support covers the
 kubectl plugin, while node-side OVN/OVS operations remain Linux-only.
 On Windows, build from the checkout with
@@ -323,6 +326,10 @@ make lint
 
 The dedicated workflow tests real exec streams, builds all six workstation
 platforms and runs file/streaming tests natively on Windows amd64 and arm64.
+Chart CI overlays the current Go client, node agent and environment checker
+onto the published component image, loads it into Kind and installs the v2
+chart with that image. It checks credential-free agent readiness on every
+Linux node, environment output and actual Pod interface statistics.
 Existing `[group:kubectl-ko]` E2E exercises trace, capture, logs,
 diagnostics and backup against a cluster. Environment coverage also installs
 credential-free agents in a namespace without CNI Pods and verifies every Linux

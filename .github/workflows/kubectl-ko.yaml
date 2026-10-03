@@ -14,6 +14,9 @@ on:
       - go.sum
       - makefiles/build.mk
       - charts/kube-ovn/templates/kubectl-ko-node-agent.yaml
+      - charts/kube-ovn-v2/templates/diagnostics/**
+      - hack/kubectl-ko-chart-test.sh
+      - .github/workflows/helm-testing.yaml
       - dist/images/Dockerfile
       - dist/images/install.sh
       - .github/workflows/kubectl-ko.yaml
