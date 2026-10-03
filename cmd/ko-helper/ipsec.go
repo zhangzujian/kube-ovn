@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"time"
 
 	"github.com/kubeovn/kube-ovn/pkg/kohelper"
@@ -37,9 +36,14 @@ func collectIPsec(ctx context.Context, procRoot, uid string, stdout, stderr io.W
 	if err != nil {
 		return errors.Join(resultErr, err)
 	}
-	defer func() { resultErr = errors.Join(resultErr, os.Remove(settings.Name())) }()
+	if err := os.Remove(settings.Name()); err != nil {
+		return errors.Join(resultErr, err, settings.Close())
+	}
+	// An unlinked settings descriptor leaves no file behind if the outer
+	// request kills this helper before deferred cleanup can run.
+	defer func() { resultErr = errors.Join(resultErr, settings.Close()) }()
 	_, err = io.WriteString(settings, "charon {\n plugins {\n  stroke {\n   socket = unix:///proc/self/fd/3/run/charon.ctl\n  }\n }\n}\n")
-	if err = errors.Join(err, settings.Close()); err != nil {
+	if err != nil {
 		return errors.Join(resultErr, err)
 	}
 	for _, operation := range []string{"listcacerts", "listcerts", "statusall"} {
@@ -47,9 +51,10 @@ func collectIPsec(ctx context.Context, procRoot, uid string, stdout, stderr io.W
 			return errors.Join(resultErr, err)
 		}
 		command := exec.CommandContext(ctx, "ipsec", "stroke", operation)
-		command.Env = append(os.Environ(), "STRONGSWAN_CONF="+filepath.Clean(settings.Name()))
-		command.ExtraFiles = []*os.File{root}
-		configureProcessGroup(command)
+		command.Env = append(os.Environ(), "STRONGSWAN_CONF=/proc/self/fd/4")
+		command.ExtraFiles = []*os.File{root, settings}
+		// Inherit the outer runner's group so request cancellation also kills
+		// this nested query. The ipsec wrapper execs stroke in the same PID.
 		command.WaitDelay = 5 * time.Second
 		command.Stdout, command.Stderr = stdout, stderr
 		resultErr = errors.Join(resultErr, command.Run())

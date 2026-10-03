@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -17,7 +18,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	if os.Getenv("KO_IPSEC_STROKE_TEST") == "1" {
+	if os.Getenv("KO_IPSEC_STROKE_TEST") == "1" && filepath.Base(os.Args[0]) == "ipsec" {
 		os.Exit(runTestStroke())
 	}
 	os.Exit(m.Run())
@@ -34,6 +35,16 @@ func runTestStroke() int {
 	if err != nil || !strings.Contains(string(data), "socket = unix:///proc/self/fd/3/run/charon.ctl") {
 		return 3
 	}
+	settingsLink, err := os.Readlink(settings)
+	if err != nil || !strings.HasSuffix(settingsLink, " (deleted)") {
+		return 9
+	}
+	settingsPath := strings.TrimSuffix(settingsLink, " (deleted)")
+	if record := os.Getenv("KO_IPSEC_STROKE_SETTINGS_RECORD"); record != "" {
+		if err := os.WriteFile(record, []byte(settingsPath), 0o600); err != nil {
+			return 10
+		}
+	}
 	if os.Args[2] == "statusall" && os.Getenv("KO_IPSEC_STROKE_FAIL") == "1" {
 		return 17
 	}
@@ -42,16 +53,33 @@ func runTestStroke() int {
 		return 4
 	}
 	defer connection.Close()
+	if os.Getenv("KO_IPSEC_STROKE_REPORT_PID") == "1" {
+		if _, err := fmt.Fprintf(connection, "%d\n", os.Getpid()); err != nil {
+			return 8
+		}
+	}
 	if _, err := io.WriteString(connection, os.Args[2]+"\n"); err != nil {
 		return 5
 	}
 	if _, err := io.Copy(os.Stdout, connection); err != nil {
 		return 6
 	}
-	if _, err := os.Stdout.WriteString("settings=" + settings + "\n"); err != nil {
+	if _, err := os.Stdout.WriteString("settings=" + settingsPath + "\n"); err != nil {
 		return 7
 	}
 	return 0
+}
+
+func TestIPsecCollectorProcess(_ *testing.T) {
+	proc := os.Getenv("KO_IPSEC_COLLECTOR_PROC")
+	if proc == "" {
+		return
+	}
+	if err := collectIPsec(context.Background(), proc, "source", os.Stdout, os.Stderr); err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	os.Exit(0)
 }
 
 func TestIPsecUsesPinnedPodSocketAndAgentTools(t *testing.T) {
