@@ -1,0 +1,102 @@
+name: Fixed candidate IPv4 MetalLB verification
+
+on:
+  push:
+    branches: [ko-metallb-verification-100a]
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.14.0
+          args: --help
+      - run: make lint
+        env:
+          CI: true
+
+  verification:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CI: true
+      E2E_BRANCH: master
+      E2E_IP_FAMILY: ipv4
+      EXPECTED_SOURCE: 100a48deaf2de5ac17b2a64ac1443b7a0416bbaf
+    steps:
+      - uses: jlumbroso/free-disk-space@v2.0.0
+        with:
+          android: true
+          dotnet: true
+          haskell: true
+          docker-images: false
+          large-packages: false
+          tool-cache: false
+          swap-storage: false
+      - uses: actions/checkout@v7
+        with:
+          ref: 100a48deaf2de5ac17b2a64ac1443b7a0416bbaf
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: helm/kind-action@v1.15.0
+        with:
+          version: v0.33.0
+          install_only: true
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: 11277552742
+          run-id: 37131618946
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/metallb-verification-images
+          merge-multiple: true
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: 11276728041
+          run-id: 37131618946
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/metallb-verification-images
+          merge-multiple: true
+      - name: Verify immutable source and original images
+        env:
+          IMAGE_DIRECTORY: ${{ runner.temp }}/metallb-verification-images
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
+          test -z "$(git status --porcelain)"
+          mkdir metallb-verification-results
+          git rev-parse HEAD 'HEAD^{tree}' > metallb-verification-results/source.txt
+          sha256sum "$IMAGE_DIRECTORY"/*.tar > metallb-verification-results/images.sha256
+          docker load --input "$IMAGE_DIRECTORY/kube-ovn.tar"
+          docker load --input "$IMAGE_DIRECTORY/kind-node-v1.37.0.tar"
+          docker run --rm --entrypoint /kube-ovn/kube-ovn-controller kubeovn/kube-ovn:v1.17.0 --help > metallb-verification-results/controller-version.txt 2>&1
+          grep -F 'git-100a48d' metallb-verification-results/controller-version.txt
+      - name: Create original three-node IPv4 layout
+        run: |
+          pipx install jinjanator
+          n_worker=2 make kind-init-ipv4
+      - name: Install original Kube-OVN and MetalLB configuration
+        run: make kind-install-metallb-pool-from-underlay-ipv4
+      - name: Run unchanged original MetalLB suite
+        run: make kube-ovn-underlay-metallb-e2e 2>&1 | tee metallb-verification-results/e2e.log
+      - name: Original restart check
+        run: make check-kube-ovn-pod-restarts
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: current-metallb-ipv4
+          path: metallb-verification-results/
+          if-no-files-found: error
