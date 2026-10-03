@@ -6,13 +6,74 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
+
+func TestAgentCollectionPreservesComponentStdout(t *testing.T) {
+	pods := map[string]*corev1.Pod{
+		"app=ovs":                   readyPod("ovs-a", "worker", "openvswitch", map[string]string{"app": "ovs"}),
+		"app=ovn-central":           readyPod("central-a", "worker", "ovn-central", map[string]string{"app": "ovn-central"}),
+		"app=kubectl-ko-node-agent": readyPod("agent-a", "worker", "agent", map[string]string{"app": "kubectl-ko-node-agent"}),
+	}
+	for _, pod := range pods {
+		pod.Status.ContainerStatuses[0].State.Running.StartedAt = metav1.Now()
+	}
+	var logs []string
+	var logsMutex sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/log") {
+			logsMutex.Lock()
+			logs = append(logs, r.URL.Path)
+			logsMutex.Unlock()
+			_, _ = io.WriteString(w, r.URL.Path)
+			return
+		}
+		pod := pods[r.URL.Query().Get("labelSelector")]
+		if pod == nil {
+			t.Errorf("unexpected discovery: %s", r.URL)
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.MarshalWrite(w, &corev1.PodList{Items: []corev1.Pod{*pod}})
+	}))
+	defer server.Close()
+	kubernetesClient, err := kubernetes.NewForConfig(&rest.Config{Host: server.URL})
+	require.NoError(t, err)
+	client := &Client{Kubernetes: kubernetesClient, Namespace: "ovn-system", ComponentFree: true, DiscoveryTimeout: time.Second}
+	tasks, err := client.collectionTasks(t.Context(), "ovn", collectionOptions{output: t.TempDir(), maxBytes: 1024})
+	require.NoError(t, err)
+	require.Len(t, tasks, 4)
+	for _, task := range tasks {
+		if task.Name != "container stdout" {
+			require.Equal(t, "agent-a", task.Target.Pod, "host files must be collected by the independent agent")
+			continue
+		}
+		require.NotEqual(t, "agent-a", task.Target.Pod)
+		require.NoError(t, task.collect(t.Context()))
+		contents, err := os.ReadFile(task.Path)
+		require.NoError(t, err)
+		require.Contains(t, string(contents), "/"+task.Target.Pod+"/log")
+		require.Contains(t, task.Path, task.Target.Pod+".stdout.log")
+	}
+	logsMutex.Lock()
+	defer logsMutex.Unlock()
+	require.Equal(t, []string{"/api/v1/namespaces/ovn-system/pods/ovs-a/log", "/api/v1/namespaces/ovn-system/pods/central-a/log"}, logs)
+}
 
 func TestLogsWritesManifestAndRetainsPartialFailures(t *testing.T) {
 	for _, strict := range []bool{false, true} {

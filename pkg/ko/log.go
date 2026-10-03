@@ -157,6 +157,7 @@ func (c *Client) collectionTasks(ctx context.Context, component string, options 
 			failures = append(failures, fmt.Errorf("no running containers for %s", group.selector))
 		}
 		for _, target := range targets {
+			source := target
 			if c.ComponentFree {
 				target, err = c.agentTarget(ctx, target.Node)
 				if err != nil {
@@ -172,7 +173,7 @@ func (c *Client) collectionTasks(ctx context.Context, component string, options 
 			// Central and OVS may share a node and /var/log/ovn. Give central its own
 			// child directory to preserve both archives without concurrent overwrites.
 			if group.selector == "app=ovn-central" {
-				directory = filepath.Join(directory, "central-"+target.Pod)
+				directory = filepath.Join(directory, "central-"+source.Pod)
 			}
 			tasks = append(tasks, collectionTask{
 				Target: target, Name: group.directory + " files", Path: directory,
@@ -180,10 +181,10 @@ func (c *Client) collectionTasks(ctx context.Context, component string, options 
 					return c.collectDirectory(ctx, target, "/var/log/"+group.directory, directory, options.maxBytes)
 				},
 			})
-			destination := filepath.Join(directory, target.Pod+".stdout.log")
+			destination := filepath.Join(directory, source.Pod+".stdout.log")
 			tasks = append(tasks, collectionTask{
-				Target: target, Name: "container stdout", Path: destination,
-				collect: func(ctx context.Context) error { return c.collectPodLogs(ctx, target, destination, options.maxBytes) },
+				Target: source, Name: "container stdout", Path: destination,
+				collect: func(ctx context.Context) error { return c.collectPodLogs(ctx, source, destination, options.maxBytes) },
 			})
 		}
 	}
