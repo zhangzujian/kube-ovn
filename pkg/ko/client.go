@@ -67,6 +67,9 @@ func (r *helperExecutor) Exec(ctx context.Context, target Target, argv []string,
 	cancel()
 	transportErr := <-streamErr
 	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return err
 	}
 	if errors.Is(transportErr, context.Canceled) {

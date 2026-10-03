@@ -25,9 +25,14 @@ import (
 	"github.com/kubeovn/kube-ovn/pkg/kohelper"
 )
 
-type echoHelperRunner struct{}
+type echoHelperRunner struct{ started chan struct{} }
 
-func (echoHelperRunner) Run(_ context.Context, request kohelper.Request, stdout, stderr io.Writer) kohelper.Result {
+func (r echoHelperRunner) Run(ctx context.Context, request kohelper.Request, stdout, stderr io.Writer) kohelper.Result {
+	if request.Argv[0] == "wait" {
+		close(r.started)
+		<-ctx.Done()
+		return kohelper.Result{Code: 130, Error: ctx.Err().Error()}
+	}
 	_, _ = stdout.Write(append([]byte{0, 255, 13, 10}, []byte(request.Argv[0])...))
 	_, _ = stderr.Write([]byte("diagnostic"))
 	if len(request.Argv) == 2 {
@@ -38,6 +43,7 @@ func (echoHelperRunner) Run(_ context.Context, request kohelper.Request, stdout,
 
 func TestHelperUsesIsolatedAgentProcesses(t *testing.T) {
 	var calls atomic.Int32
+	started := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/api/v1/namespaces/ovn-system/pods/agent-a" {
 			w.Header().Set("Content-Type", "application/json")
@@ -61,7 +67,7 @@ func TestHelperUsesIsolatedAgentProcesses(t *testing.T) {
 			return
 		}
 		defer conn.Close()
-		_ = kohelper.Serve(t.Context(), &kohelper.StreamConn{Reader: streams[0], Writer: streams[1]}, echoHelperRunner{})
+		_ = kohelper.Serve(t.Context(), &kohelper.StreamConn{Reader: streams[0], Writer: streams[1]}, echoHelperRunner{started})
 		_ = json.MarshalWrite(streams[3], metav1.Status{Status: metav1.StatusSuccess})
 	}))
 	defer server.Close()
@@ -90,7 +96,24 @@ func TestHelperUsesIsolatedAgentProcesses(t *testing.T) {
 		group.Go(func() { invoke([]string{payload}, 0) })
 	}
 	group.Wait()
-	require.EqualValues(t, 4, calls.Load(), "operations must not be replayed")
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- executor.Exec(ctx, target, []string{"wait"}, Streams{Out: io.Discard}) }()
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("helper command did not start")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, context.Canceled)
+		require.Equal(t, 130, ExitCode(err))
+	case <-time.After(5 * time.Second):
+		t.Fatal("helper cancellation did not return")
+	}
+	require.EqualValues(t, 5, calls.Load(), "operations must not be replayed")
 }
 
 func TestHelperRejectsComponentTargets(t *testing.T) {
