@@ -144,13 +144,12 @@ spec:
           - --set-vxlan-tx-off={{- .Values.func.SET_VXLAN_TX_OFF }}
           - --host-tunnel-src={{- .Values.func.HOST_TUNNEL_SRC | default false }}
           - --non-primary-cni-mode={{- .Values.cni_conf.NON_PRIMARY_CNI }}
-          - --disable-legacy-cni-execution={{- .Values.cni_conf.DISABLE_LEGACY_CNI_EXECUTION }}
           - --enable-acl-sampling={{- .Values.aclSampling.enabled }}
           - --acl-sampling-set-id={{- .Values.aclSampling.setID }}
           - --acl-sampling-local-group-id={{- .Values.aclSampling.localGroupID }}
         securityContext:
-          runAsGroup: {{ ternary (include "kubeovn.runAsUser" .) 0 .Values.cni_conf.DISABLE_LEGACY_CNI_EXECUTION }}
-          runAsUser: {{ ternary (include "kubeovn.runAsUser" .) 0 .Values.cni_conf.DISABLE_LEGACY_CNI_EXECUTION }}
+          runAsGroup: {{ include "kubeovn.runAsUser" . }}
+          runAsUser: {{ include "kubeovn.runAsUser" . }}
           privileged: false
           capabilities:
             add:
@@ -158,10 +157,6 @@ spec:
               - NET_BIND_SERVICE
               - NET_RAW
               - SYS_NICE
-              {{- if not .Values.cni_conf.DISABLE_LEGACY_CNI_EXECUTION }}
-              - SYS_ADMIN
-              - SYS_PTRACE
-              {{- end }}
         env:
           - name: ENABLE_SSL
             value: "{{ .Values.networking.ENABLE_SSL }}"

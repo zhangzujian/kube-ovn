@@ -168,7 +168,7 @@ func (csh cniServerHandler) handleAdd(req *restful.Request, resp *restful.Respon
 		}
 		return
 	}
-	if csh.Config.DisableLegacyCNIExecution && !podRequest.PrepareOnly {
+	if !podRequest.PrepareOnly {
 		_ = resp.WriteHeaderAndEntity(http.StatusUpgradeRequired, request.CniResponse{Err: "unsupported legacy CNI API: PrepareOnly must be true; use the CNI executor"})
 		return
 	}
@@ -714,7 +714,7 @@ func (csh cniServerHandler) handleDel(req *restful.Request, resp *restful.Respon
 		}
 		return
 	}
-	if csh.Config.DisableLegacyCNIExecution && !podRequest.PrepareOnly {
+	if !podRequest.PrepareOnly {
 		_ = resp.WriteHeaderAndEntity(http.StatusUpgradeRequired, request.CniResponse{Err: "unsupported legacy CNI API: PrepareOnly must be true; use the CNI executor"})
 		return
 	}

@@ -298,9 +298,6 @@ cni:
   # Interfaces are created using Network Attachment Definitions (NADs)
   # @section -- CNI configuration
   nonPrimaryCNI: false
-  # -- Whether the daemon rejects legacy CNI requests that perform host networking. The CNI binary is installed before cni-server starts. Set false only while rolling back to an older CNI binary or supporting a feature that still requires daemon-side network namespace operations.
-  # @section -- CNI configuration
-  disableLegacyCNIExecution: true
 
 # -- Configuration of the validating webhook used to verify custom resources before they are pushed to Kubernetes.
 # Make sure cert-manager is installed for the generation of certificates for the webhook.
