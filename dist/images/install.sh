@@ -38,7 +38,7 @@ ENABLE_EXTERNAL_VPC=${ENABLE_EXTERNAL_VPC:-false}
 CNI_CONFIG_PRIORITY=${CNI_CONFIG_PRIORITY:-01}
 ENABLE_LB_SVC=${ENABLE_LB_SVC:-false}
 ENABLE_NFTABLE_LB_SVC=${ENABLE_NFTABLE_LB_SVC:-true}
-DISABLE_LEGACY_CNI_EXECUTION=${DISABLE_LEGACY_CNI_EXECUTION:-false}
+DISABLE_LEGACY_CNI_EXECUTION=${DISABLE_LEGACY_CNI_EXECUTION:-true}
 ENABLE_NAT_GW=${ENABLE_NAT_GW:-true}
 ENABLE_KEEP_VM_IP=${ENABLE_KEEP_VM_IP:-true}
 ENABLE_ARP_DETECT_IP_CONFLICT=${ENABLE_ARP_DETECT_IP_CONFLICT:-true}
@@ -136,11 +136,6 @@ if [ "$DISABLE_LEGACY_CNI_EXECUTION" != "true" ]; then
                 - SYS_ADMIN
                 - SYS_PTRACE
                 - SYS_NICE"
-fi
-
-CNI_SERVER_EXECUTION_ARGS=""
-if [ "$DISABLE_LEGACY_CNI_EXECUTION" = "true" ]; then
-  CNI_SERVER_EXECUTION_ARGS="          - --disable-legacy-cni-execution=true"
 fi
 
 KUBELET_DIR=${KUBELET_DIR:-/var/lib/kubelet}
@@ -9197,7 +9192,7 @@ spec:
           - --enable-acl-sampling=$ENABLE_ACL_SAMPLING
           - --acl-sampling-set-id=$ACL_SAMPLING_SET_ID
           - --acl-sampling-local-group-id=$ACL_SAMPLING_LOCAL_GROUP_ID
-${CNI_SERVER_EXECUTION_ARGS}
+          - --disable-legacy-cni-execution=$DISABLE_LEGACY_CNI_EXECUTION
         securityContext:
           runAsGroup: ${CNI_SERVER_RUN_AS_USER}
           runAsUser: ${CNI_SERVER_RUN_AS_USER}

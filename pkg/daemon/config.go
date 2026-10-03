@@ -111,7 +111,7 @@ func ParseFlags() *Configuration {
 		argCniConfDir                = pflag.String("cni-conf-dir", "/etc/cni/net.d", "Path of the CNI config directory.")
 		argCniConfFile               = pflag.String("cni-conf-file", "/kube-ovn/01-kube-ovn.conflist", "Path of the CNI config file.")
 		argsCniConfName              = pflag.String("cni-conf-name", "01-kube-ovn.conflist", "Specify the name of kube ovn conflist name in dir /etc/cni/net.d/, default: 01-kube-ovn.conflist")
-		argDisableLegacyCNIExecution = pflag.Bool("disable-legacy-cni-execution", false, "Reject legacy CNI requests that ask the daemon to modify host networking")
+		argDisableLegacyCNIExecution = pflag.Bool("disable-legacy-cni-execution", true, "Reject legacy CNI requests that ask the daemon to modify host networking")
 
 		argIface                 = pflag.String("iface", "", "The iface used to inter-host pod communication, can be a nic name or a group of regex separated by comma (default the default route iface)")
 		argHostTunnelSrc         = pflag.Bool("host-tunnel-src", false, "Enable /32 address selection for the tunnel source, excludes localhost addresses unless explicitly allowed.")

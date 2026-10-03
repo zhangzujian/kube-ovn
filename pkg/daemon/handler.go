@@ -169,7 +169,7 @@ func (csh cniServerHandler) handleAdd(req *restful.Request, resp *restful.Respon
 		return
 	}
 	if csh.Config.DisableLegacyCNIExecution && !podRequest.PrepareOnly {
-		_ = resp.WriteHeaderAndEntity(http.StatusUpgradeRequired, request.CniResponse{Err: "legacy daemon-side CNI execution is disabled; use the CNI executor"})
+		_ = resp.WriteHeaderAndEntity(http.StatusUpgradeRequired, request.CniResponse{Err: "unsupported legacy CNI API: PrepareOnly must be true; use the CNI executor"})
 		return
 	}
 	eventPod := podForCNIEvent(nil, &podRequest)
@@ -715,7 +715,7 @@ func (csh cniServerHandler) handleDel(req *restful.Request, resp *restful.Respon
 		return
 	}
 	if csh.Config.DisableLegacyCNIExecution && !podRequest.PrepareOnly {
-		_ = resp.WriteHeaderAndEntity(http.StatusUpgradeRequired, request.CniResponse{Err: "legacy daemon-side CNI execution is disabled; use the CNI executor"})
+		_ = resp.WriteHeaderAndEntity(http.StatusUpgradeRequired, request.CniResponse{Err: "unsupported legacy CNI API: PrepareOnly must be true; use the CNI executor"})
 		return
 	}
 	eventPod := podForCNIEvent(nil, &podRequest)

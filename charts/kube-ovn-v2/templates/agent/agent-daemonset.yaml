@@ -165,9 +165,7 @@ spec:
           - --enable-ovn-ipsec={{- .Values.features.enableOvnIpsec }}
           - --host-tunnel-src={{- .Values.features.enableHostTunnelSrc | default false }}
           - --non-primary-cni-mode={{- .Values.cni.nonPrimaryCNI }}
-          {{- if .Values.cni.disableLegacyCNIExecution }}
-          - --disable-legacy-cni-execution=true
-          {{- end }}
+          - --disable-legacy-cni-execution={{- .Values.cni.disableLegacyCNIExecution }}
           {{- if .Values.aclSampling.enabled }}
           - --enable-acl-sampling=true
           - --acl-sampling-set-id={{- .Values.aclSampling.setID }}

@@ -1050,10 +1050,10 @@ false
 			<td>cni.disableLegacyCNIExecution</td>
 			<td>bool</td>
 			<td><pre lang="json">
-false
+true
 </pre>
 </td>
-			<td>Whether the daemon rejects legacy CNI requests that perform host networking. The CNI binary must be upgraded before enabling this. Keep false for features that still require daemon-side network namespace operations.</td>
+			<td>Whether the daemon rejects legacy CNI requests that perform host networking. The CNI binary is installed before cni-server starts. Set false only while rolling back to an older CNI binary or supporting a feature that still requires daemon-side network namespace operations.</td>
 		</tr>
 		<tr>
 			<td>cni.toolingDirectory</td>

@@ -214,7 +214,15 @@ func TestLegacyCNIExecutionCanBeDisabled(t *testing.T) {
 	handler.Config.DisableLegacyCNIExecution = true
 	response := serveCNIRequest(t, handler, "/api/v1/add", request.CniRequest{PodName: "pod", PodNamespace: "ns"})
 	require.Equal(t, http.StatusUpgradeRequired, response.Code)
-	require.Contains(t, response.Body.String(), "legacy daemon-side CNI execution is disabled")
+	require.Contains(t, response.Body.String(), "unsupported legacy CNI API")
+}
+
+func TestLegacyCNIDelIsRejectedBeforeNetworkChanges(t *testing.T) {
+	handler := cniEventTestHandler(t, nil, nil, &cniEventRecorder{})
+	handler.Config.DisableLegacyCNIExecution = true
+	response := serveCNIRequest(t, handler, "/api/v1/del", request.CniRequest{PodName: "pod", PodNamespace: "ns"})
+	require.Equal(t, http.StatusUpgradeRequired, response.Code)
+	require.Contains(t, response.Body.String(), "unsupported legacy CNI API")
 }
 
 func TestHandleDelSuccessEventPreservesPodReference(t *testing.T) {
