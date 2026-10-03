@@ -556,6 +556,13 @@ func (c *Controller) handleAddOrUpdatePod(key string) (err error) {
 	if len(needAllocatePodNets) != 0 && c.isCurrentMigrationSourcePod(pod) {
 		needAllocatePodNets = nil
 	}
+	if len(needAllocatePodNets) != 0 && c.config.EnableDistributedSharedSubnet &&
+		c.config.DistributedZone != c.config.DistributedGatewayOwner {
+		// IP allocation is serialized by the gateway-owner zone. Other zones
+		// wait for the resulting Pod annotations and then render the same IP
+		// locally, avoiding independent allocators selecting duplicate IPs.
+		return nil
+	}
 	if len(needAllocatePodNets) != 0 {
 		if pod, err = c.reconcileAllocateSubnets(pod, needAllocatePodNets); err != nil {
 			klog.Error(err)
@@ -564,6 +571,12 @@ func (c *Controller) handleAddOrUpdatePod(key string) (err error) {
 		if pod == nil {
 			// pod has been deleted
 			return nil
+		}
+	}
+	if c.config.EnableDistributedSharedSubnet {
+		if err = c.reconcileDistributedExistingPodPorts(pod, podNets); err != nil {
+			c.recorder.Eventf(pod, v1.EventTypeWarning, "PodNetworkUpdateFailed", "stage=reconcileDistributedExistingPodPorts error=%v", err)
+			return err
 		}
 	}
 
@@ -581,20 +594,24 @@ func (c *Controller) handleAddOrUpdatePod(key string) (err error) {
 		return err
 	}
 
-	if len(needAllocatePodNets) != 0 {
-		details := c.podNetworkEventDetails(pod, needAllocatePodNets)
+	c.recordPodNetworkReconcile(pod, needAllocatePodNets, needRoutePodNets, hotplugDetails)
+	return nil
+}
+
+func (c *Controller) recordPodNetworkReconcile(pod *v1.Pod, allocatedNets, routedNets []*kubeovnNet, hotplugDetails string) {
+	if len(allocatedNets) != 0 {
+		details := c.podNetworkEventDetails(pod, allocatedNets)
 		if hotplugDetails != "" {
 			details += "; " + hotplugDetails
 		}
 		c.recorder.Eventf(pod, v1.EventTypeNormal, "PodNetworkAllocated", "%s", details)
-	} else if hotplugDetails != "" || len(needRoutePodNets) != 0 {
+	} else if hotplugDetails != "" || len(routedNets) != 0 {
 		details := []string{hotplugDetails}
-		if routeDetails := c.podNetworkEventDetails(pod, needRoutePodNets); routeDetails != "" {
+		if routeDetails := c.podNetworkEventDetails(pod, routedNets); routeDetails != "" {
 			details = append(details, routeDetails)
 		}
 		c.recorder.Eventf(pod, v1.EventTypeNormal, "PodNetworkUpdated", "%s", strings.TrimPrefix(strings.Join(details, "; "), "; "))
 	}
-	return nil
 }
 
 // isCurrentMigrationSourcePod reports whether a virt-launcher pod is the source
@@ -627,6 +644,18 @@ func subnetDHCPOptionsUUIDs(subnet *kubeovnv1.Subnet) *ovs.DHCPOptionsUUIDs {
 	}
 }
 
+// localSubnetDHCPOptionsUUIDs returns the DHCP option rows from the local NB
+// when distributed mode is enabled. Subnet status is shared by all zones, but
+// UUIDs are local to each independent NB database.
+func (c *Controller) localSubnetDHCPOptionsUUIDs(subnet *kubeovnv1.Subnet) (*ovs.DHCPOptionsUUIDs, error) {
+	if c.config == nil || !c.config.EnableDistributedSharedSubnet {
+		return subnetDHCPOptionsUUIDs(subnet), nil
+	}
+	// Query and reconcile local rows every time: caching UUIDs by name survives
+	// subnet recreation or DHCP GC and may attach a deleted/foreign row.
+	return c.reconcileSubnetDHCPRows(subnet)
+}
+
 // dhcpOptionsForPodIPFamily returns DHCP options that match the IP families
 // actually allocated to the pod. A pod can request one family from a dual-stack
 // subnet, so using the subnet's full DHCP option set would attach DHCP for an
@@ -651,6 +680,10 @@ func dhcpOptionsForPodIPFamily(subnetDHCP *ovs.DHCPOptionsUUIDs, podIP, dhcpV4, 
 // It delegates all DHCP logic (stale detection, create/update/cleanup, LSP pointer update)
 // to ReconcilePortDHCPOptions in the OVS layer.
 func (c *Controller) reconcilePodDHCPOptions(pod *v1.Pod, podNets []*kubeovnNet) error {
+	if !c.isLocalNode(pod.Spec.NodeName) {
+		return nil
+	}
+
 	podName := c.getNameByPod(pod)
 	for _, podNet := range podNets {
 		if podNet.Type == providerTypeIPAM {
@@ -666,7 +699,11 @@ func (c *Controller) reconcilePodDHCPOptions(pod *v1.Pod, podNets []*kubeovnNet)
 		podIP := pod.Annotations[fmt.Sprintf(util.IPAddressAnnotationTemplate, podNet.ProviderName)]
 		dhcpV4 := pod.Annotations[fmt.Sprintf(util.DHCPv4OptionsAnnotationTemplate, podNet.ProviderName)]
 		dhcpV6 := pod.Annotations[fmt.Sprintf(util.DHCPv6OptionsAnnotationTemplate, podNet.ProviderName)]
-		dhcpOptions, dhcpV4, dhcpV6 := dhcpOptionsForPodIPFamily(subnetDHCPOptionsUUIDs(subnet), podIP, dhcpV4, dhcpV6)
+		localDHCP, err := c.localSubnetDHCPOptionsUUIDs(subnet)
+		if err != nil {
+			return err
+		}
+		dhcpOptions, dhcpV4, dhcpV6 := dhcpOptionsForPodIPFamily(localDHCP, podIP, dhcpV4, dhcpV6)
 
 		var mtu int
 		var gateway string
@@ -687,6 +724,88 @@ func (c *Controller) reconcilePodDHCPOptions(pod *v1.Pod, podNets []*kubeovnNet)
 		); err != nil {
 			klog.Errorf("failed to reconcile DHCP options for port %s: %v", portName, err)
 			return err
+		}
+	}
+	return nil
+}
+
+// reconcileDistributedExistingPodPorts materializes a globally allocated Pod
+// IP in its node zone. The owner has already persisted the IP and MAC in
+// Pod annotations, so this path never asks the local IPAM for a new address.
+func (c *Controller) reconcileDistributedExistingPodPorts(pod *v1.Pod, podNets []*kubeovnNet) error {
+	if !c.isLocalNode(pod.Spec.NodeName) {
+		return nil
+	}
+
+	podName := c.getNameByPod(pod)
+	for _, podNet := range podNets {
+		if podNet.Type == providerTypeIPAM || !isOvnSubnet(podNet.Subnet) ||
+			pod.Annotations[fmt.Sprintf(util.AllocatedAnnotationTemplate, podNet.ProviderName)] != "true" {
+			continue
+		}
+		portName := ovs.PodNameToPortName(podName, pod.Namespace, podNet.ProviderName)
+		existing, err := c.OVNNbClient.GetLogicalSwitchPort(portName, true)
+		if err != nil {
+			return err
+		}
+		if existing != nil && existing.Type != "" {
+			if existing.Type != "remote" {
+				return fmt.Errorf("local pod port %s has unexpected type %q", portName, existing.Type)
+			}
+			// A rescheduled Pod may still have its former IC remote endpoint.
+			// Its new node owns the normal port; other zones keep IC ownership.
+			if err := c.OVNNbClient.DeleteLogicalSwitchPort(portName); err != nil {
+				return err
+			}
+		}
+		ipStr := pod.Annotations[fmt.Sprintf(util.IPAddressAnnotationTemplate, podNet.ProviderName)]
+		mac := pod.Annotations[fmt.Sprintf(util.MacAddressAnnotationTemplate, podNet.ProviderName)]
+		if ipStr == "" || mac == "" {
+			return fmt.Errorf("allocated pod %s/%s has incomplete IP or MAC annotations", pod.Namespace, pod.Name)
+		}
+
+		dhcpV4 := pod.Annotations[fmt.Sprintf(util.DHCPv4OptionsAnnotationTemplate, podNet.ProviderName)]
+		dhcpV6 := pod.Annotations[fmt.Sprintf(util.DHCPv6OptionsAnnotationTemplate, podNet.ProviderName)]
+		localDHCP, err := c.localSubnetDHCPOptionsUUIDs(podNet.Subnet)
+		if err != nil {
+			return err
+		}
+		subnetDHCP, dhcpV4, dhcpV6 := dhcpOptionsForPodIPFamily(localDHCP, ipStr, dhcpV4, dhcpV6)
+		mtu, err := c.getSubnetMTU(podNet.Subnet)
+		if err != nil {
+			return err
+		}
+		gateway := podNet.Subnet.Spec.Gateway
+		dhcpOptions, hasPerPortDHCP, err := c.OVNNbClient.ReconcilePortDHCPOptions(
+			podNet.Subnet.Name, portName, subnetDHCP, podNet.Subnet.Spec.CIDRBlock, gateway, dhcpV4, dhcpV6, mtu,
+		)
+		if err != nil {
+			return err
+		}
+		portSecurity := pod.Annotations[fmt.Sprintf(util.PortSecurityAnnotationTemplate, podNet.ProviderName)] == "true"
+		securityGroups := pod.Annotations[fmt.Sprintf(util.SecurityGroupAnnotationTemplate, podNet.ProviderName)]
+		vips := c.getVirtualIPs(pod, []*kubeovnNet{podNet})[fmt.Sprintf("%s.%s", podNet.Subnet.Name, podNet.ProviderName)]
+		if err := c.OVNNbClient.CreateLogicalSwitchPort(
+			podNet.Subnet.Name, portName, ipStr, mac, podName, pod.Namespace,
+			portSecurity, securityGroups, vips, podNet.Subnet.Spec.EnableDHCP || hasPerPortDHCP,
+			dhcpOptions, podNet.Subnet.Spec.Vpc,
+		); err != nil {
+			return err
+		}
+		if pod.Annotations[fmt.Sprintf(util.Layer2ForwardAnnotationTemplate, podNet.ProviderName)] == "true" {
+			if err := c.OVNNbClient.EnablePortLayer2forward(portName); err != nil {
+				return err
+			}
+		}
+		if strategy := pod.Annotations[fmt.Sprintf(util.ActivationStrategyTemplate, podNet.ProviderName)]; strategy != "" {
+			if err := c.OVNNbClient.SetLogicalSwitchPortActivationStrategy(portName, pod.Spec.NodeName); err != nil {
+				return err
+			}
+		}
+		for sgName := range strings.SplitSeq(strings.ReplaceAll(securityGroups, " ", ""), ",") {
+			if sgName != "" {
+				c.syncSgPortsQueue.Add(sgName)
+			}
 		}
 	}
 	return nil
@@ -772,94 +891,100 @@ func (c *Controller) reconcileAllocateSubnets(pod *v1.Pod, needAllocatePodNets [
 				patch[fmt.Sprintf(util.ProviderNetworkTemplate, podNet.ProviderName)] = vlan.Spec.Provider
 			}
 
-			portSecurity := false
-			if pod.Annotations[fmt.Sprintf(util.PortSecurityAnnotationTemplate, podNet.ProviderName)] == "true" {
-				portSecurity = true
-			}
-
-			vips := c.getVirtualIPs(pod, []*kubeovnNet{podNet})[fmt.Sprintf("%s.%s", podNet.Subnet.Name, podNet.ProviderName)]
-			for ip := range strings.SplitSeq(vips, ",") {
-				if ip != "" && net.ParseIP(ip) == nil {
-					klog.Errorf("invalid vip address '%s' for pod %s", ip, name)
-					vips = ""
-					break
+			if c.isLocalNode(pod.Spec.NodeName) {
+				portSecurity := false
+				if pod.Annotations[fmt.Sprintf(util.PortSecurityAnnotationTemplate, podNet.ProviderName)] == "true" {
+					portSecurity = true
 				}
-			}
 
-			portName := ovs.PodNameToPortName(podName, namespace, podNet.ProviderName)
-
-			dhcpV4 := pod.Annotations[fmt.Sprintf(util.DHCPv4OptionsAnnotationTemplate, podNet.ProviderName)]
-			dhcpV6 := pod.Annotations[fmt.Sprintf(util.DHCPv6OptionsAnnotationTemplate, podNet.ProviderName)]
-			subnetDHCP, dhcpV4, dhcpV6 := dhcpOptionsForPodIPFamily(subnetDHCPOptionsUUIDs(subnet), ipStr, dhcpV4, dhcpV6)
-
-			var mtu int
-			var gateway string
-			if dhcpV4 != "" || dhcpV6 != "" {
-				if mtu, err = c.getSubnetMTU(subnet); err != nil {
-					recordFailure("getSubnetMTU", err)
-					return nil, err
+				vips := c.getVirtualIPs(pod, []*kubeovnNet{podNet})[fmt.Sprintf("%s.%s", podNet.Subnet.Name, podNet.ProviderName)]
+				for ip := range strings.SplitSeq(vips, ",") {
+					if ip != "" && net.ParseIP(ip) == nil {
+						klog.Errorf("invalid vip address '%s' for pod %s", ip, name)
+						vips = ""
+						break
+					}
 				}
-				gateway = subnet.Spec.Gateway
-				if subnet.Status.U2OInterconnectionIP != "" && subnet.Spec.U2OInterconnection {
-					gateway = subnet.Status.U2OInterconnectionIP
-				}
-			}
 
-			dhcpOptions, hasPerPortDHCP, err := c.OVNNbClient.ReconcilePortDHCPOptions(
-				subnet.Name, portName, subnetDHCP,
-				subnet.Spec.CIDRBlock, gateway, dhcpV4, dhcpV6, mtu,
-			)
-			if err != nil {
-				klog.Errorf("failed to reconcile DHCP options for port %s: %v", portName, err)
-				recordFailure("reconcilePortDHCPOptions", err)
-				return nil, err
-			}
+				portName := ovs.PodNameToPortName(podName, namespace, podNet.ProviderName)
 
-			// When pod has per-port DHCP options, enable DHCP regardless of subnet setting.
-			enableDHCP := podNet.Subnet.Spec.EnableDHCP || hasPerPortDHCP
-
-			var oldSgList []string
-			if vmKey != "" {
-				existingLsp, err := c.OVNNbClient.GetLogicalSwitchPort(portName, true)
+				dhcpV4 := pod.Annotations[fmt.Sprintf(util.DHCPv4OptionsAnnotationTemplate, podNet.ProviderName)]
+				dhcpV6 := pod.Annotations[fmt.Sprintf(util.DHCPv6OptionsAnnotationTemplate, podNet.ProviderName)]
+				localDHCP, err := c.localSubnetDHCPOptionsUUIDs(subnet)
 				if err != nil {
-					klog.Errorf("failed to get logical switch port %s: %v", portName, err)
-					recordFailure("getLogicalSwitchPort", err)
 					return nil, err
 				}
-				if existingLsp != nil {
-					oldSgList, _ = c.getPortSg(existingLsp)
+				subnetDHCP, dhcpV4, dhcpV6 := dhcpOptionsForPodIPFamily(localDHCP, ipStr, dhcpV4, dhcpV6)
+
+				var mtu int
+				var gateway string
+				if dhcpV4 != "" || dhcpV6 != "" {
+					if mtu, err = c.getSubnetMTU(subnet); err != nil {
+						recordFailure("getSubnetMTU", err)
+						return nil, err
+					}
+					gateway = subnet.Spec.Gateway
+					if subnet.Status.U2OInterconnectionIP != "" && subnet.Spec.U2OInterconnection {
+						gateway = subnet.Status.U2OInterconnectionIP
+					}
 				}
-			}
 
-			securityGroupAnnotation := pod.Annotations[fmt.Sprintf(util.SecurityGroupAnnotationTemplate, podNet.ProviderName)]
-			if err := c.OVNNbClient.CreateLogicalSwitchPort(subnet.Name, portName, ipStr, mac, podName, pod.Namespace,
-				portSecurity, securityGroupAnnotation, vips, enableDHCP, dhcpOptions, subnet.Spec.Vpc); err != nil {
-				c.recorder.Eventf(pod, v1.EventTypeWarning, "CreateOVNPortFailed", "stage=createLogicalSwitchPort error=%v", err)
-				klog.Errorf("%v", err)
-				return nil, err
-			}
+				dhcpOptions, hasPerPortDHCP, err := c.OVNNbClient.ReconcilePortDHCPOptions(
+					subnet.Name, portName, subnetDHCP,
+					subnet.Spec.CIDRBlock, gateway, dhcpV4, dhcpV6, mtu,
+				)
+				if err != nil {
+					klog.Errorf("failed to reconcile DHCP options for port %s: %v", portName, err)
+					recordFailure("reconcilePortDHCPOptions", err)
+					return nil, err
+				}
 
-			if pod.Annotations[fmt.Sprintf(util.Layer2ForwardAnnotationTemplate, podNet.ProviderName)] == "true" {
-				if err := c.OVNNbClient.EnablePortLayer2forward(portName); err != nil {
-					c.recorder.Eventf(pod, v1.EventTypeWarning, "SetOVNPortL2ForwardFailed", "stage=setLogicalSwitchPortLayer2Forward error=%v", err)
+				// When pod has per-port DHCP options, enable DHCP regardless of subnet setting.
+				enableDHCP := podNet.Subnet.Spec.EnableDHCP || hasPerPortDHCP
+
+				var oldSgList []string
+				if vmKey != "" {
+					existingLsp, err := c.OVNNbClient.GetLogicalSwitchPort(portName, true)
+					if err != nil {
+						klog.Errorf("failed to get logical switch port %s: %v", portName, err)
+						recordFailure("getLogicalSwitchPort", err)
+						return nil, err
+					}
+					if existingLsp != nil {
+						oldSgList, _ = c.getPortSg(existingLsp)
+					}
+				}
+
+				securityGroupAnnotation := pod.Annotations[fmt.Sprintf(util.SecurityGroupAnnotationTemplate, podNet.ProviderName)]
+				if err := c.OVNNbClient.CreateLogicalSwitchPort(subnet.Name, portName, ipStr, mac, podName, pod.Namespace,
+					portSecurity, securityGroupAnnotation, vips, enableDHCP, dhcpOptions, subnet.Spec.Vpc); err != nil {
+					c.recorder.Eventf(pod, v1.EventTypeWarning, "CreateOVNPortFailed", "stage=createLogicalSwitchPort error=%v", err)
 					klog.Errorf("%v", err)
 					return nil, err
 				}
-			}
 
-			if securityGroupAnnotation != "" || oldSgList != nil {
-				securityGroups := strings.ReplaceAll(securityGroupAnnotation, " ", "")
-				newSgList := strings.Split(securityGroups, ",")
-				sgNames := util.UnionStringSlice(oldSgList, newSgList)
-				for _, sgName := range sgNames {
-					if sgName != "" {
-						c.syncSgPortsQueue.Add(sgName)
+				if pod.Annotations[fmt.Sprintf(util.Layer2ForwardAnnotationTemplate, podNet.ProviderName)] == "true" {
+					if err := c.OVNNbClient.EnablePortLayer2forward(portName); err != nil {
+						c.recorder.Eventf(pod, v1.EventTypeWarning, "SetOVNPortL2ForwardFailed", "stage=setLogicalSwitchPortLayer2Forward error=%v", err)
+						klog.Errorf("%v", err)
+						return nil, err
 					}
 				}
-			}
 
-			if vips != "" {
-				c.syncVirtualPortsQueue.Add(podNet.Subnet.Name)
+				if securityGroupAnnotation != "" || oldSgList != nil {
+					securityGroups := strings.ReplaceAll(securityGroupAnnotation, " ", "")
+					newSgList := strings.Split(securityGroups, ",")
+					sgNames := util.UnionStringSlice(oldSgList, newSgList)
+					for _, sgName := range sgNames {
+						if sgName != "" {
+							c.syncSgPortsQueue.Add(sgName)
+						}
+					}
+				}
+
+				if vips != "" {
+					c.syncVirtualPortsQueue.Add(podNet.Subnet.Name)
+				}
 			}
 		}
 		// CreatePort may fail, so put ip CR creation after CreatePort
@@ -946,6 +1071,12 @@ func policyRouteSrcMatches(podIP, nextHop string) []policyRouteMatch {
 
 // do the same thing as update pod
 func (c *Controller) reconcileRouteSubnets(pod *v1.Pod, needRoutePodNets []*kubeovnNet) error {
+	if c.config.EnableDistributedSharedSubnet {
+		if !c.ownsGlobalState() || len(needRoutePodNets) == 0 {
+			return nil
+		}
+		return util.PatchAnnotations(c.config.KubeClient.CoreV1().Pods(pod.Namespace), pod.Name, c.distributedPodRoutePatch(pod, needRoutePodNets))
+	}
 	// the lb-svc pod has dependencies on Running state, check it when pod state get updated
 	if err := c.checkAndReInitLbSvcPod(pod); err != nil {
 		klog.Errorf("failed to init iptable rules for load-balancer pod %s/%s: %v", pod.Namespace, pod.Name, err)
@@ -1227,10 +1358,12 @@ func (c *Controller) handleDeletePod(key string) (err error) {
 	now := time.Now()
 	klog.Infof("handle delete pod %s", key)
 	podName := c.getNameByPod(pod)
+	podKey := fmt.Sprintf("%s/%s", pod.Namespace, podName)
 	changed := false
 	stage := "prepare"
 	released := []string{}
 	var podNets []*kubeovnNet
+	var ports []ovnnb.LogicalSwitchPort
 	var keepIPCR, isOwnerRefToDel, isOwnerRefDeleted bool
 	var ipcrToDelete []string
 	var vmOrphanedPorts map[string]bool
@@ -1260,6 +1393,22 @@ func (c *Controller) handleDeletePod(key string) (err error) {
 		// Pod with same name exists, just return here
 		return nil
 	}
+	if c.config.EnableDistributedSharedSubnet && c.config.DistributedZone != c.config.DistributedGatewayOwner {
+		stage = "listLogicalSwitchPorts"
+		ports, err = c.OVNNbClient.ListNormalLogicalSwitchPorts(true, map[string]string{"pod": podKey})
+		if err != nil {
+			return err
+		}
+		for _, port := range ports {
+			stage = "deleteLogicalSwitchPort"
+			if err = c.OVNNbClient.DeleteLogicalSwitchPort(port.Name); err != nil {
+				return err
+			}
+			changed = true
+			released = append(released, "logicalSwitchPort="+port.Name)
+		}
+		return nil
+	}
 
 	if aaps := pod.Annotations[util.AAPsAnnotation]; aaps != "" {
 		for vipName := range strings.SplitSeq(aaps, ",") {
@@ -1272,8 +1421,6 @@ func (c *Controller) handleDeletePod(key string) (err error) {
 			}
 		}
 	}
-
-	podKey := fmt.Sprintf("%s/%s", pod.Namespace, podName)
 
 	isStsPod, stsName, stsUID := isStatefulSetPod(pod)
 	if isStsPod {
@@ -1299,7 +1446,7 @@ func (c *Controller) handleDeletePod(key string) (err error) {
 		}
 	}
 	stage = "listLogicalSwitchPorts"
-	ports, err := c.OVNNbClient.ListNormalLogicalSwitchPorts(true, map[string]string{"pod": podKey})
+	ports, err = c.OVNNbClient.ListNormalLogicalSwitchPorts(true, map[string]string{"pod": podKey})
 	if err != nil {
 		klog.Errorf("failed to list lsps of pod %s: %v", podKey, err)
 		return err
@@ -1591,6 +1738,9 @@ func (c *Controller) handleUpdatePodSecurity(key string) error {
 		klog.Error(err)
 		return err
 	}
+	if !c.isLocalNode(pod.Spec.NodeName) {
+		return nil
+	}
 	podName := c.getNameByPod(pod)
 
 	podNets, err := c.getPodKubeovnNets(pod)
@@ -1703,6 +1853,9 @@ func collectStalePodNetworkState(pod *v1.Pod, podName string, targetPorts *strse
 }
 
 func (c *Controller) syncKubeOvnNet(pod *v1.Pod, podNets []*kubeovnNet) (*v1.Pod, string, error) {
+	if !c.ownsGlobalState() || !c.isLocalNode(pod.Spec.NodeName) {
+		return pod, "", nil
+	}
 	podName := c.getNameByPod(pod)
 	key := cache.NewObjectName(pod.Namespace, podName).String()
 	targetPortNameList := strset.NewWithSize(len(podNets))
@@ -2036,6 +2189,10 @@ func natGwContainerID(pod *v1.Pod) string {
 }
 
 func (c *Controller) podNeedSync(pod *v1.Pod) (bool, error) {
+	// Rebuild local ports even for fully allocated/routed Pods after NB loss.
+	if c.config.EnableDistributedSharedSubnet && c.isLocalNode(pod.Spec.NodeName) {
+		return true, nil
+	}
 	// 1. check annotations
 	if pod.Annotations == nil {
 		return true, nil

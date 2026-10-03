@@ -106,6 +106,7 @@ type LogicalSwitch interface {
 
 type LogicalSwitchPort interface {
 	CreateLogicalSwitchPort(lsName, lspName, ip, mac, podName, namespace string, portSecurity bool, securityGroups, vips string, enableDHCP bool, dhcpOptions *DHCPOptionsUUIDs, vpc string) error
+	CreateLogicalSwitchSwitchPort(lsName, lspName, peerName string) error
 	CreateBareLogicalSwitchPort(lsName, lspName, ip, mac string) error
 	CreateLocalnetLogicalSwitchPort(lsName, lspName, provider, cidrBlock string, vlanID int) error
 	CreateVirtualLogicalSwitchPorts(lsName string, ips ...string) error
@@ -158,6 +159,7 @@ type LoadBalancer interface {
 	SetLoadBalancerTemplate(lbName string, template bool) error
 	SetLoadBalancerAddressFamily(lbName, family string) error
 	SetLoadBalancerTemplateVIP(lbName, vip, backendVariable string) error
+	ReconcileTemplateVIPAndChassisVariables(migrations []TemplateVIPMigration, staleVIPs []TemplateVIPDeletion, variables []ChassisTemplateVariableReconciliation) error
 	ReconcileChassisTemplateVariables(chassis, prefix string, variables map[string]string) error
 	DeleteChassisTemplateVariables(filter func(name string) bool) error
 	SetLoadBalancerExternalIDs(lbName string, externalIDs map[string]string) error

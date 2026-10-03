@@ -74,8 +74,12 @@ type Controller struct {
 	bnpNamePrioMap   map[string]int32
 	priorityMapMutex sync.RWMutex
 
-	OVNNbClient ovs.NbClient
-	OVNSbClient ovs.SbClient
+	OVNNbClient         ovs.NbClient
+	OVNSbClient         ovs.SbClient
+	distributedICClient *ovs.LegacyClient
+
+	// Serialize subnet-scoped DHCP row lookup/create/update in this local NB.
+	distributedDHCPOptionsMu sync.Mutex
 
 	// ExternalGatewayType define external gateway type, centralized
 	ExternalGatewayType string
@@ -738,6 +742,13 @@ func Run(ctx context.Context, config *Configuration) {
 		config.OvsDbConnectMaxRetry,
 	); err != nil {
 		util.LogFatalAndExit(err, "failed to create ovn sb client")
+	}
+	if err := controller.validateDistributedNB(); err != nil {
+		util.LogFatalAndExit(err, "invalid distributed NB identity")
+	}
+	if config.EnableDistributedSharedSubnet {
+		controller.distributedICClient = ovs.NewLegacyClient(config.OvnTimeout)
+		controller.distributedICClient.OvnICNbAddress = config.OvnICNbAddr
 	}
 	if config.ACLSampling.Enabled {
 		controller.reconcileACLSampling()

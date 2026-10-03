@@ -1296,6 +1296,20 @@ func (mr *MockLogicalSwitchPortMockRecorder) CreateLogicalSwitchPort(lsName, lsp
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateLogicalSwitchPort", reflect.TypeOf((*MockLogicalSwitchPort)(nil).CreateLogicalSwitchPort), lsName, lspName, ip, mac, podName, namespace, portSecurity, securityGroups, vips, enableDHCP, dhcpOptions, vpc)
 }
 
+// CreateLogicalSwitchSwitchPort mocks base method.
+func (m *MockLogicalSwitchPort) CreateLogicalSwitchSwitchPort(lsName, lspName, peerName string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateLogicalSwitchSwitchPort", lsName, lspName, peerName)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateLogicalSwitchSwitchPort indicates an expected call of CreateLogicalSwitchSwitchPort.
+func (mr *MockLogicalSwitchPortMockRecorder) CreateLogicalSwitchSwitchPort(lsName, lspName, peerName any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateLogicalSwitchSwitchPort", reflect.TypeOf((*MockLogicalSwitchPort)(nil).CreateLogicalSwitchSwitchPort), lsName, lspName, peerName)
+}
+
 // CreateVirtualLogicalSwitchPort mocks base method.
 func (m *MockLogicalSwitchPort) CreateVirtualLogicalSwitchPort(lspName, lsName, ip string) error {
 	m.ctrl.T.Helper()
@@ -1927,6 +1941,20 @@ func (m *MockLoadBalancer) ReconcileChassisTemplateVariables(chassis, prefix str
 func (mr *MockLoadBalancerMockRecorder) ReconcileChassisTemplateVariables(chassis, prefix, variables any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReconcileChassisTemplateVariables", reflect.TypeOf((*MockLoadBalancer)(nil).ReconcileChassisTemplateVariables), chassis, prefix, variables)
+}
+
+// ReconcileTemplateVIPAndChassisVariables mocks base method.
+func (m *MockLoadBalancer) ReconcileTemplateVIPAndChassisVariables(migrations []ovs.TemplateVIPMigration, staleVIPs []ovs.TemplateVIPDeletion, variables []ovs.ChassisTemplateVariableReconciliation) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReconcileTemplateVIPAndChassisVariables", migrations, staleVIPs, variables)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ReconcileTemplateVIPAndChassisVariables indicates an expected call of ReconcileTemplateVIPAndChassisVariables.
+func (mr *MockLoadBalancerMockRecorder) ReconcileTemplateVIPAndChassisVariables(migrations, staleVIPs, variables any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReconcileTemplateVIPAndChassisVariables", reflect.TypeOf((*MockLoadBalancer)(nil).ReconcileTemplateVIPAndChassisVariables), migrations, staleVIPs, variables)
 }
 
 // SetLoadBalancerAddressFamily mocks base method.
@@ -4158,6 +4186,20 @@ func (mr *MockNbClientMockRecorder) CreateLogicalSwitchPort(lsName, lspName, ip,
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateLogicalSwitchPort", reflect.TypeOf((*MockNbClient)(nil).CreateLogicalSwitchPort), lsName, lspName, ip, mac, podName, namespace, portSecurity, securityGroups, vips, enableDHCP, dhcpOptions, vpc)
 }
 
+// CreateLogicalSwitchSwitchPort mocks base method.
+func (m *MockNbClient) CreateLogicalSwitchSwitchPort(lsName, lspName, peerName string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateLogicalSwitchSwitchPort", lsName, lspName, peerName)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CreateLogicalSwitchSwitchPort indicates an expected call of CreateLogicalSwitchSwitchPort.
+func (mr *MockNbClientMockRecorder) CreateLogicalSwitchSwitchPort(lsName, lspName, peerName any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateLogicalSwitchSwitchPort", reflect.TypeOf((*MockNbClient)(nil).CreateLogicalSwitchSwitchPort), lsName, lspName, peerName)
+}
+
 // CreateNodeACL mocks base method.
 func (m *MockNbClient) CreateNodeACL(pgName, nodeIPStr, joinIPStr string) error {
 	m.ctrl.T.Helper()
@@ -5891,6 +5933,20 @@ func (m *MockNbClient) ReconcilePortDHCPOptions(lsName, portName string, subnetD
 func (mr *MockNbClientMockRecorder) ReconcilePortDHCPOptions(lsName, portName, subnetDHCP, cidrBlock, gateway, v4Options, v6Options, mtu any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReconcilePortDHCPOptions", reflect.TypeOf((*MockNbClient)(nil).ReconcilePortDHCPOptions), lsName, portName, subnetDHCP, cidrBlock, gateway, v4Options, v6Options, mtu)
+}
+
+// ReconcileTemplateVIPAndChassisVariables mocks base method.
+func (m *MockNbClient) ReconcileTemplateVIPAndChassisVariables(migrations []ovs.TemplateVIPMigration, staleVIPs []ovs.TemplateVIPDeletion, variables []ovs.ChassisTemplateVariableReconciliation) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReconcileTemplateVIPAndChassisVariables", migrations, staleVIPs, variables)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ReconcileTemplateVIPAndChassisVariables indicates an expected call of ReconcileTemplateVIPAndChassisVariables.
+func (mr *MockNbClientMockRecorder) ReconcileTemplateVIPAndChassisVariables(migrations, staleVIPs, variables any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReconcileTemplateVIPAndChassisVariables", reflect.TypeOf((*MockNbClient)(nil).ReconcileTemplateVIPAndChassisVariables), migrations, staleVIPs, variables)
 }
 
 // RemoveLogicalPatchPort mocks base method.

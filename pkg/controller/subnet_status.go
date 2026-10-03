@@ -21,6 +21,9 @@ import (
 )
 
 func (c *Controller) updateNatOutgoingPolicyRulesStatus(subnet *kubeovnv1.Subnet) error {
+	if !c.ownsGlobalState() {
+		return nil
+	}
 	if subnet.Spec.NatOutgoing {
 		subnet.Status.NatOutgoingPolicyRules = make([]kubeovnv1.NatOutgoingPolicyRuleStatus, len(subnet.Spec.NatOutgoingPolicyRules))
 		for index, rule := range subnet.Spec.NatOutgoingPolicyRules {
@@ -48,6 +51,9 @@ func (c *Controller) updateNatOutgoingPolicyRulesStatus(subnet *kubeovnv1.Subnet
 }
 
 func (c *Controller) patchSubnetStatus(subnet *kubeovnv1.Subnet, reason, errStr string) error {
+	if !c.ownsGlobalState() {
+		return nil
+	}
 	if errStr != "" {
 		subnet.Status.SetError(reason, errStr)
 		if reason == "ValidateLogicalSwitchFailed" {
@@ -83,6 +89,9 @@ func (c *Controller) patchSubnetStatus(subnet *kubeovnv1.Subnet, reason, errStr 
 }
 
 func (c *Controller) handleUpdateSubnetStatus(key string) error {
+	if !c.ownsGlobalState() {
+		return nil
+	}
 	c.subnetKeyMutex.LockKey(key)
 	defer func() { _ = c.subnetKeyMutex.UnlockKey(key) }()
 

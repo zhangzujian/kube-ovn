@@ -21,7 +21,7 @@ func (c *Controller) inspectPod() error {
 	}
 
 	for _, pod := range pods {
-		if pod.Spec.HostNetwork || !isPodAlive(pod) {
+		if pod.Spec.HostNetwork || !isPodAlive(pod) || !c.isLocalNode(pod.Spec.NodeName) {
 			continue
 		}
 
@@ -35,6 +35,18 @@ func (c *Controller) inspectPod() error {
 		for _, podNet := range filterSubnets(pod, podNets) {
 			if podNet.Type != providerTypeIPAM {
 				portName := ovs.PodNameToPortName(podName, pod.Namespace, podNet.ProviderName)
+				if c.config.EnableDistributedSharedSubnet {
+					port, err := c.OVNNbClient.GetLogicalSwitchPort(portName, true)
+					if err != nil {
+						return fmt.Errorf("inspect local Pod port %s: %w", portName, err)
+					}
+					if port == nil || port.Type != "" || pod.Annotations[fmt.Sprintf(util.RoutedAnnotationTemplate, podNet.ProviderName)] != "true" {
+						// A local NB loss does not revoke the global allocation.
+						c.addOrUpdatePodQueue.Add(key)
+						break
+					}
+					continue
+				}
 				exists, err := c.OVNNbClient.LogicalSwitchPortExists(portName)
 				if err != nil {
 					klog.Errorf("failed to check port %s exists, %v", portName, err)

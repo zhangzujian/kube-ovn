@@ -110,6 +110,9 @@ func (c *Controller) enqueueDelVpc(obj any) {
 }
 
 func (c *Controller) handleDelVpc(vpc *kubeovnv1.Vpc) (retErr error) {
+	if !c.ownsGlobalState() {
+		return nil
+	}
 	c.vpcKeyMutex.LockKey(vpc.Name)
 	defer func() { _ = c.vpcKeyMutex.UnlockKey(vpc.Name) }()
 	defer func() {
@@ -167,6 +170,9 @@ func (c *Controller) handleDelVpc(vpc *kubeovnv1.Vpc) (retErr error) {
 }
 
 func (c *Controller) handleUpdateVpcStatus(key string) (retErr error) {
+	if !c.ownsGlobalState() {
+		return nil
+	}
 	c.vpcKeyMutex.LockKey(key)
 	defer func() { _ = c.vpcKeyMutex.UnlockKey(key) }()
 	klog.Infof("handle status update for vpc %s", key)
@@ -268,6 +274,9 @@ func (c *Controller) GenVpcLoadBalancer(vpcKey string) *VpcLoadBalancer {
 }
 
 func (c *Controller) handleAddOrUpdateVpc(key string) (retErr error) {
+	if !c.ownsGlobalState() {
+		return nil
+	}
 	c.vpcKeyMutex.LockKey(key)
 	defer func() { _ = c.vpcKeyMutex.UnlockKey(key) }()
 	klog.Infof("handle add/update vpc %s", key)

@@ -4,7 +4,7 @@ go 1.27.1
 
 require (
 	github.com/brianvoe/gofakeit/v7 v7.17.1
-	github.com/cenkalti/backoff/v7 v7.0.0
+	github.com/cenkalti/backoff/v7 v7.0.1
 	github.com/cert-manager/cert-manager v1.21.2
 	github.com/cnf/structhash v0.0.0-20250313080605-df4c6cc74a9a
 	github.com/containerd/containerd/v2 v2.4.1
@@ -29,8 +29,8 @@ require (
 	github.com/mdlayher/ndp v1.1.0
 	github.com/mdlayher/netx v0.0.0-20230430222610-7e21880baee8
 	github.com/mdlayher/packet v1.2.0
-	github.com/moby/moby/api v1.56.0
-	github.com/moby/moby/client v0.6.0
+	github.com/moby/moby/api v1.56.1
+	github.com/moby/moby/client v0.6.1
 	github.com/moby/sys/mountinfo v0.7.2
 	github.com/onsi/ginkgo/v2 v2.33.0
 	github.com/onsi/gomega v1.44.0
@@ -72,7 +72,7 @@ require (
 	kernel.org/pub/linux/libs/security/libcap/cap v1.2.78
 	kubevirt.io/api v1.9.0
 	kubevirt.io/client-go v1.9.0
-	sigs.k8s.io/controller-runtime v0.25.1
+	sigs.k8s.io/controller-runtime v0.25.2
 	sigs.k8s.io/knftables v0.0.22
 	sigs.k8s.io/network-policy-api v0.1.8-0.20251209142732-3910463a5686
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.2

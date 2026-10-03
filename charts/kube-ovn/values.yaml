@@ -40,6 +40,21 @@ OVN_CENTRAL_MODE: "cluster"
 #                     does not yet know how to talk to a remote ovn-central.
 installMode: full
 
+# Experimental distributed mode. Each zone controller writes to its local
+# OVN NB/SB while the gateway-owner zone performs global IP allocation. The
+# interconnect Transit_Switch database must already be available.
+distributed:
+  sharedSubnet: false
+  zone: ""
+  gatewayOwner: ""
+  # Explicit opt-in: NB/SB, northd and ovn-ic must already run on every node.
+  externalInterconnect: false
+  # Required local NB/SB endpoints, reachable from each controller and agent.
+  # Distributed mode never falls back to centralized database discovery.
+  nbEndpoint: ""
+  sbEndpoint: ""
+  icNbEndpoint: ""
+
 # When installMode=dataPlaneOnly, the agents and controller cannot rely on a
 # local ovn-central Service. Set nbEndpoint/sbEndpoint to the addresses that
 # expose the management cluster's ovn-nb / ovn-sb Services.

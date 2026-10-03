@@ -607,6 +607,10 @@ func (suite *OvnClientTestSuite) Test_ReconcileChassisTemplateVariables() {
 	suite.testReconcileChassisTemplateVariables()
 }
 
+func (suite *OvnClientTestSuite) Test_ReconcileTemplateVIPAndChassisVariables() {
+	suite.testReconcileTemplateVIPAndChassisVariables()
+}
+
 func (suite *OvnClientTestSuite) Test_DeleteChassisTemplateVariables() {
 	suite.testDeleteChassisTemplateVariables()
 }
@@ -1081,6 +1085,10 @@ func (suite *OvnClientTestSuite) Test_tBatchDeleteLogicalRouterStaticRoute() {
 /* dhcp options unit test */
 func (suite *OvnClientTestSuite) Test_UpdateDHCPOptions() {
 	suite.testUpdateDHCPOptions()
+}
+
+func (suite *OvnClientTestSuite) Test_DisableSubnetDHCPPreservesPortOptions() {
+	suite.testDisableSubnetDHCPPreservesPortOptions()
 }
 
 func (suite *OvnClientTestSuite) Test_updateDHCPv4Options() {
