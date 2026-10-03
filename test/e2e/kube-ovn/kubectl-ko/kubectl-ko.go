@@ -191,6 +191,29 @@ var _ = framework.Describe("[group:kubectl-ko]", func() {
 			checkInterfaceStatistics(link)
 			checkInterfaceStatistics(*link.Parent)
 		}
+		localParent := slices.IndexFunc(info.Interfaces, func(link inspectedInterface) bool { return link.Name == "eth0" })
+		framework.ExpectTrue(localParent >= 0)
+		runLocal := func(args ...string) {
+			ginkgo.GinkgoHelper()
+			command := append([]string{"exec", "-n", "kube-system", agent, "-c", "agent", "--", "nsenter", "--net=" + info.NetNS, "--", "ip"}, args...)
+			e2ekubectl.NewKubectlCommand("", command...).ExecOrDie("")
+		}
+		for _, kind := range []string{"macvlan", "ipvlan"} {
+			child := "net-local-" + kind[:2]
+			runLocal("link", "add", "link", "eth0", "name", child, "type", kind)
+			func() {
+				// The two kinds cannot share a lower device simultaneously.
+				defer runLocal("link", "delete", "dev", child)
+				updated := inspectNetwork(pod)
+				index := slices.IndexFunc(updated.Interfaces, func(link inspectedInterface) bool { return link.Name == child })
+				framework.ExpectTrue(index >= 0)
+				link := updated.Interfaces[index]
+				framework.ExpectNotNil(link.Parent)
+				framework.ExpectEqual(link.Parent.Index, info.Interfaces[localParent].Index)
+				framework.ExpectEqual(link.Parent.MAC, info.Interfaces[localParent].MAC, "parent must be Pod eth0, not host eth0")
+				checkInterfaceStatistics(*link.Parent)
+			}()
+		}
 	})
 
 	framework.ConformanceIt(`should inspect every host-network Pod interface`, func() {

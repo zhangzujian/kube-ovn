@@ -183,7 +183,8 @@ restart the agent. It does not execute in Kube-OVN component Pods.
 `network inspect` resolves the Pod netns from OVSDB through the agent, with a
 Pod-UID lookup in host process cgroups when no OVS interface exists, then
 reads Pod and host links with `ip -s -j -d addr show`; it reports the host-side veth peer by
-ifindex and resolves `macvlan`/`ipvlan` parent NICs by link name or ifindex,
+ifindex and resolves `macvlan`/`ipvlan` parent NICs in the Pod or host netns
+using the link namespace identity, name and ifindex,
 without entering `kube-ovn-cni` or `ovs-ovn`.
 Both JSON and text output include RX/TX statistics for Pod interfaces and
 resolved host peers or parent NICs. Counter names match iproute2; 64-bit values

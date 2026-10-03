@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -235,5 +236,59 @@ func TestNetworkStatisticsPreserveCounters(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+func TestNetworkInspectResolvesParentNamespace(t *testing.T) {
+	for _, kind := range []string{"macvlan", "ipvlan"} {
+		for _, fixture := range []struct{ external, hostPresent bool }{{false, true}, {true, true}, {true, false}} {
+			t.Run(kind+"/external="+strconv.FormatBool(fixture.external)+"/host="+strconv.FormatBool(fixture.hostPresent), func(t *testing.T) {
+				pod := &corev1.Pod{Name: "web", Namespace: "app", Spec: corev1.PodSpec{NodeName: "worker-a"}}
+				agent := readyPod("agent-a", "worker-a", "agent", map[string]string{"app": "kubectl-ko-node-agent"})
+				app, executor, out, _ := testApplication(t, pod, agent, &corev1.Node{Name: "worker-a"})
+				client, err := app.newClient()
+				require.NoError(t, err)
+				client.ComponentFree = true
+				executor.run = func(_ context.Context, target Target, argv []string, streams Streams) error {
+					require.Equal(t, "agent-a", target.Pod)
+					switch argv[0] {
+					case "ovs-vsctl":
+						_, err := io.WriteString(streams.Out, `{"headings":["external_ids"],"data":[[["map",[["pod_netns","/var/run/netns/pod"]]]]]}`)
+						return err
+					case "nsenter":
+						link := ipJSONLink{Index: 5, Name: "net1", LinkIndex: 2, LinkName: "eth0", LinkInfo: ipJSONLinkInfo{InfoKind: kind}}
+						if fixture.external {
+							link.LinkNetNSID = new(0)
+						}
+						return json.MarshalWrite(streams.Out, []ipJSONLink{{Index: 2, Name: "eth0", Address: "02:00:00:00:00:02", LinkInfo: ipJSONLinkInfo{InfoKind: "veth"}}, link})
+					case "ip":
+						if !fixture.hostPresent {
+							_, err := io.WriteString(streams.Out, `[]`)
+							return err
+						}
+						_, err := io.WriteString(streams.Out, `[{"ifindex":2,"ifname":"eth0","address":"02:00:00:00:00:01","link_type":"ether"}]`)
+						return err
+					default:
+						t.Fatalf("unexpected command: %v", argv)
+						return nil
+					}
+				}
+				require.NoError(t, app.Execute(t.Context(), []string{"network", "inspect", "--pod", "app/web", "--output", "json"}))
+				var info podNetworkInfo
+				require.NoError(t, json.Unmarshal(out.Bytes(), &info))
+				require.Len(t, info.Interfaces, 2)
+				parent := info.Interfaces[1].Parent
+				if !fixture.hostPresent {
+					require.Nil(t, parent, "external parents must not alias a Pod-local interface")
+					return
+				}
+				require.NotNil(t, parent)
+				want := "02:00:00:00:00:02"
+				if fixture.external {
+					want = "02:00:00:00:00:01"
+				}
+				require.Equal(t, want, parent.MAC, "same name/index in different netns must not alias the parent NIC")
+			})
+		}
 	}
 }

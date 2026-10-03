@@ -247,6 +247,13 @@ func (link ipJSONLink) isMacvlanOrIPVLAN() bool {
 }
 
 func (link ipJSONLink) parentLink(byName map[string]networkLink, byIndex, localByIndex map[int]networkLink) (networkLink, bool) {
+	if link.LinkNetNSID == nil && link.LinkIndex != 0 {
+		// With no external netns ID, the lower interface belongs to the
+		// inspected namespace. Host names and indexes can identify other NICs.
+		if parent, ok := localByIndex[link.LinkIndex]; ok && parent.Index != link.Index {
+			return parent, true
+		}
+	}
 	if link.LinkName != "" {
 		if parent, ok := byName[link.LinkName]; ok {
 			return parent, true
@@ -254,9 +261,6 @@ func (link ipJSONLink) parentLink(byName map[string]networkLink, byIndex, localB
 	}
 	if link.LinkIndex != 0 {
 		if parent, ok := byIndex[link.LinkIndex]; ok {
-			return parent, true
-		}
-		if parent, ok := localByIndex[link.LinkIndex]; ok {
 			return parent, true
 		}
 	}
