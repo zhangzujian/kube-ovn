@@ -208,7 +208,10 @@ func (w *channelWriter) Write(p []byte) (int, error) {
 
 // Serve accepts exactly one connection; closing it ends the helper process.
 func Serve(ctx context.Context, connection net.Conn, runner Runner) error {
-	srv := grpc.NewServer(grpc.MaxRecvMsgSize(64<<10), grpc.MaxConcurrentStreams(16))
+	srv := grpc.NewServer(grpc.MaxRecvMsgSize(64<<10), grpc.MaxConcurrentStreams(16), grpc.WaitForHandlers(true))
+	// A closed transport ends Serve before RPC handlers finish cancelling their
+	// commands. Wait for process-group cleanup before the helper can exit.
+	defer srv.Stop()
 	srv.RegisterService(&grpc.ServiceDesc{ServiceName: "kubeovn.ko.Helper", HandlerType: (*service)(nil), Streams: []grpc.StreamDesc{{StreamName: "Run", ServerStreams: true, Handler: func(s any, stream grpc.ServerStream) error { return s.(service).serve(stream) }}}}, &server{runner})
 	listener := &oneListener{conn: connection, done: make(chan struct{})}
 	stop := context.AfterFunc(ctx, func() { srv.Stop(); _ = listener.Close() })
