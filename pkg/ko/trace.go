@@ -267,7 +267,7 @@ type linkInfo struct {
 }
 
 func (c *Client) links(ctx context.Context, target Target, netns string, extra ...string) ([]linkInfo, error) {
-	argv := namespaceCommand(netns, append([]string{"ip", "-j", "link", "show"}, extra...)...)
+	argv := namespaceCommand(netns, append([]string{"ip", "-s", "-j", "link", "show"}, extra...)...)
 	output, err := c.capture(ctx, target, argv...)
 	if err != nil {
 		return nil, err

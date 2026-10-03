@@ -300,7 +300,7 @@ func (c *Client) multicastTarget(ctx context.Context, pod *corev1.Pod) (multicas
 	if err != nil {
 		return multicastTarget{}, err
 	}
-	output, err := c.capture(ctx, cni, "ip", "-o", "addr", "show")
+	output, err := c.capture(ctx, cni, "ip", "-s", "-o", "addr", "show")
 	if err != nil {
 		return multicastTarget{}, err
 	}

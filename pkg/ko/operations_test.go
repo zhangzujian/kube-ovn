@@ -259,7 +259,7 @@ func TestMulticastCleansUpLostAddResponseAndPreservesExistingMembership(t *testi
 	executor.run = func(execCtx context.Context, target Target, argv []string, streams Streams) error {
 		require.Equal(t, "cni-server", target.Container, "host membership inspection and cleanup need CNI network capabilities")
 		switch strings.Join(argv, " ") {
-		case "ip -o addr show":
+		case "ip -s -o addr show":
 			address := "192.0.2.1"
 			if target.Node == "b" {
 				address = "192.0.2.2"
@@ -330,7 +330,7 @@ func TestMulticastHostNamespaceUsesPrivilegedCNIContainer(t *testing.T) {
 		if target.Container != "cni-server" {
 			return errors.New("Helm OVS lacks NET_ADMIN: ioctl: Operation not permitted")
 		}
-		require.Equal(t, []string{"ip", "-o", "addr", "show"}, argv)
+		require.Equal(t, []string{"ip", "-s", "-o", "addr", "show"}, argv)
 		_, err := io.WriteString(streams.Out, "2: eth0@if3 inet 192.0.2.1/24\n")
 		return err
 	}
