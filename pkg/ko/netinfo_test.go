@@ -168,13 +168,13 @@ func TestNetworkInspectReadsPodAndHostLinks(t *testing.T) {
 			if !slices.Contains(argv, "-s") {
 				t.Errorf("pod netns ip command lacks -s: %v", argv)
 			}
-			_, err := io.WriteString(streams.Out, `[{"ifindex":2,"ifname":"eth0","link_index":42,"mtu":1500,"operstate":"UP","address":"0a:58:0a:f4:00:02","flags":["BROADCAST","UP"],"link_type":"ether","linkinfo":{"info_kind":"veth"},"addr_info":[{"family":"inet","local":"10.244.0.2","prefixlen":24}]}]`)
+			_, err := io.WriteString(streams.Out, `[{"ifindex":2,"ifname":"eth0","link_index":42,"stats64":{"rx":{"bytes":9007199254740993,"packets":12},"tx":{"bytes":21,"packets":8}},"mtu":1500,"operstate":"UP","address":"0a:58:0a:f4:00:02","flags":["BROADCAST","UP"],"link_type":"ether","linkinfo":{"info_kind":"veth"},"addr_info":[{"family":"inet","local":"10.244.0.2","prefixlen":24}]}]`)
 			return err
 		case "ip":
 			if !slices.Contains(argv, "-s") {
 				t.Errorf("host netns ip command lacks -s: %v", argv)
 			}
-			_, err := io.WriteString(streams.Out, `[{"ifindex":42,"ifname":"pod123_h","link_index":2,"mtu":1500,"operstate":"UP","address":"aa:bb:cc:dd:ee:ff","flags":["BROADCAST","UP"],"link_type":"ether","linkinfo":{"info_kind":"veth"}}]`)
+			_, err := io.WriteString(streams.Out, `[{"ifindex":42,"ifname":"pod123_h","link_index":2,"stats64":{"rx":{"bytes":0,"packets":0},"tx":{"bytes":21,"packets":8}},"mtu":1500,"operstate":"UP","address":"aa:bb:cc:dd:ee:ff","flags":["BROADCAST","UP"],"link_type":"ether","linkinfo":{"info_kind":"veth"}}]`)
 			return err
 		default:
 			return nil
@@ -183,9 +183,57 @@ func TestNetworkInspectReadsPodAndHostLinks(t *testing.T) {
 	if err := app.Execute(t.Context(), []string{"network", "inspect", "--pod", "app/web"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Network namespace: /var/run/netns/pod", "eth0", "10.244.0.2/24", "host peer: pod123_h"} {
+	for _, want := range []string{"Network namespace: /var/run/netns/pod", "eth0", "10.244.0.2/24", "host peer: pod123_h", "RX: bytes=9007199254740993 packets=12", "RX: bytes=0 packets=0", "TX: bytes=21 packets=8"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output does not contain %q: %s", want, out.String())
 		}
+	}
+}
+
+func TestNetworkStatisticsPreserveCounters(t *testing.T) {
+	for _, fixture := range []struct {
+		name, input string
+		bytes       uint64
+	}{
+		{"stats64", `"stats64":{"rx":{"bytes":9007199254740993,"packets":12,"errors":3},"tx":{"bytes":21,"packets":8,"dropped":2}}`, 9007199254740993},
+		{"stats", `"stats":{"rx":{"bytes":123,"packets":12,"errors":3},"tx":{"bytes":21,"packets":8,"dropped":2}}`, 123},
+		{"prefer stats64", `"stats":{"rx":{"bytes":1}},"stats64":{"rx":{"bytes":321,"packets":12,"errors":3},"tx":{"bytes":21,"packets":8,"dropped":2}}`, 321},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			var link ipJSONLink
+			require.NoError(t, json.Unmarshal([]byte(`{"ifindex":2,"ifname":"eth0",`+fixture.input+`}`), &link))
+			item := link.podNetworkInterface()
+			peer := link.networkLink()
+			for _, related := range []string{"host peer", "parent", "peer"} {
+				t.Run(related, func(t *testing.T) {
+					switch related {
+					case "host peer":
+						item.HostPeer = &peer
+					case "parent":
+						item.HostPeer = nil
+						item.Parent = &peer
+					case "peer":
+						item.Parent = nil
+						item.Peer = &peer
+					}
+					data, err := json.Marshal(item)
+					require.NoError(t, err)
+					var decoded struct {
+						Statistics *struct {
+							RX map[string]uint64 `json:"rx"`
+							TX map[string]uint64 `json:"tx"`
+						} `json:"statistics"`
+					}
+					require.NoError(t, json.Unmarshal(data, &decoded))
+					require.NotNil(t, decoded.Statistics, "ip -s counters must reach CLI output")
+					require.Equal(t, fixture.bytes, decoded.Statistics.RX["bytes"])
+					require.EqualValues(t, 2, decoded.Statistics.TX["dropped"])
+					var out bytes.Buffer
+					require.NoError(t, writePodNetwork(&out, &podNetworkInfo{Interfaces: []podNetworkInterface{item}}))
+					require.Equal(t, 2, strings.Count(out.String(), "RX: "), "Pod and related link statistics must both be displayed")
+					require.Equal(t, 2, strings.Count(out.String(), "TX: bytes=21 dropped=2 packets=8"))
+				})
+			}
+		})
 	}
 }

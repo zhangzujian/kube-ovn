@@ -1,6 +1,7 @@
 package ko
 
 import (
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -24,45 +25,56 @@ type podNetworkInfo struct {
 }
 
 type podNetworkInterface struct {
-	Name      string       `json:"name"`
-	Index     int          `json:"index"`
-	PeerIndex int          `json:"peerIndex,omitzero"`
-	Kind      string       `json:"kind,omitempty"`
-	MAC       string       `json:"mac,omitempty"`
-	MTU       int          `json:"mtu,omitzero"`
-	OperState string       `json:"operState,omitempty"`
-	Flags     []string     `json:"flags,omitempty"`
-	Addresses []string     `json:"addresses,omitempty"`
-	Parent    *networkLink `json:"parent,omitempty"`
-	HostPeer  *networkLink `json:"hostPeer,omitempty"`
-	Peer      *networkLink `json:"peer,omitempty"`
+	Name       string          `json:"name"`
+	Index      int             `json:"index"`
+	PeerIndex  int             `json:"peerIndex,omitzero"`
+	Kind       string          `json:"kind,omitempty"`
+	MAC        string          `json:"mac,omitempty"`
+	MTU        int             `json:"mtu,omitzero"`
+	OperState  string          `json:"operState,omitempty"`
+	Flags      []string        `json:"flags,omitempty"`
+	Addresses  []string        `json:"addresses,omitempty"`
+	Parent     *networkLink    `json:"parent,omitempty"`
+	HostPeer   *networkLink    `json:"hostPeer,omitempty"`
+	Peer       *networkLink    `json:"peer,omitempty"`
+	Statistics *linkStatistics `json:"statistics,omitempty"`
 }
 
 type networkLink struct {
-	Name      string   `json:"name"`
-	Index     int      `json:"index"`
-	PeerIndex int      `json:"peerIndex,omitzero"`
-	Kind      string   `json:"kind,omitempty"`
-	MAC       string   `json:"mac,omitempty"`
-	MTU       int      `json:"mtu,omitzero"`
-	OperState string   `json:"operState,omitempty"`
-	Flags     []string `json:"flags,omitempty"`
-	Addresses []string `json:"addresses,omitempty"`
+	Name       string          `json:"name"`
+	Index      int             `json:"index"`
+	PeerIndex  int             `json:"peerIndex,omitzero"`
+	Kind       string          `json:"kind,omitempty"`
+	MAC        string          `json:"mac,omitempty"`
+	MTU        int             `json:"mtu,omitzero"`
+	OperState  string          `json:"operState,omitempty"`
+	Flags      []string        `json:"flags,omitempty"`
+	Addresses  []string        `json:"addresses,omitempty"`
+	Statistics *linkStatistics `json:"statistics,omitempty"`
+}
+
+// Counter names follow iproute2, including driver-specific error counters.
+// uint64 preserves counters above the precision limit of JSON float64 values.
+type linkStatistics struct {
+	RX map[string]uint64 `json:"rx"`
+	TX map[string]uint64 `json:"tx"`
 }
 
 type ipJSONLink struct {
-	Index       int            `json:"ifindex"`
-	Name        string         `json:"ifname"`
-	LinkIndex   int            `json:"link_index"`
-	LinkNetNSID *int           `json:"link_netnsid"`
-	MTU         int            `json:"mtu"`
-	OperState   string         `json:"operstate"`
-	Address     string         `json:"address"`
-	LinkName    string         `json:"link"`
-	Flags       []string       `json:"flags"`
-	LinkType    string         `json:"link_type"`
-	LinkInfo    ipJSONLinkInfo `json:"linkinfo"`
-	AddrInfo    []ipJSONAddr   `json:"addr_info"`
+	Index       int             `json:"ifindex"`
+	Name        string          `json:"ifname"`
+	LinkIndex   int             `json:"link_index"`
+	LinkNetNSID *int            `json:"link_netnsid"`
+	MTU         int             `json:"mtu"`
+	OperState   string          `json:"operstate"`
+	Address     string          `json:"address"`
+	LinkName    string          `json:"link"`
+	Flags       []string        `json:"flags"`
+	LinkType    string          `json:"link_type"`
+	LinkInfo    ipJSONLinkInfo  `json:"linkinfo"`
+	AddrInfo    []ipJSONAddr    `json:"addr_info"`
+	Stats64     *linkStatistics `json:"stats64"`
+	Stats       *linkStatistics `json:"stats"`
 }
 
 type ipJSONLinkInfo struct {
@@ -201,29 +213,31 @@ func (c *Client) ipLinks(ctx context.Context, target Target, netns string) ([]ip
 
 func (link ipJSONLink) networkLink() networkLink {
 	return networkLink{
-		Name:      link.Name,
-		Index:     link.Index,
-		PeerIndex: link.LinkIndex,
-		Kind:      link.kind(),
-		MAC:       link.Address,
-		MTU:       link.MTU,
-		OperState: link.OperState,
-		Flags:     slices.Clone(link.Flags),
-		Addresses: link.addresses(),
+		Name:       link.Name,
+		Index:      link.Index,
+		PeerIndex:  link.LinkIndex,
+		Kind:       link.kind(),
+		MAC:        link.Address,
+		MTU:        link.MTU,
+		OperState:  link.OperState,
+		Flags:      slices.Clone(link.Flags),
+		Addresses:  link.addresses(),
+		Statistics: cmp.Or(link.Stats64, link.Stats),
 	}
 }
 
 func (link ipJSONLink) podNetworkInterface() podNetworkInterface {
 	return podNetworkInterface{
-		Name:      link.Name,
-		Index:     link.Index,
-		PeerIndex: link.LinkIndex,
-		Kind:      link.kind(),
-		MAC:       link.Address,
-		MTU:       link.MTU,
-		OperState: link.OperState,
-		Flags:     slices.Clone(link.Flags),
-		Addresses: link.addresses(),
+		Name:       link.Name,
+		Index:      link.Index,
+		PeerIndex:  link.LinkIndex,
+		Kind:       link.kind(),
+		MAC:        link.Address,
+		MTU:        link.MTU,
+		OperState:  link.OperState,
+		Flags:      slices.Clone(link.Flags),
+		Addresses:  link.addresses(),
+		Statistics: cmp.Or(link.Stats64, link.Stats),
 	}
 }
 
@@ -327,16 +341,23 @@ func writePodNetwork(out io.Writer, info *podNetworkInfo) error {
 				return err
 			}
 		}
+		if err := item.Statistics.write(out, "      "); err != nil {
+			return err
+		}
+		var related *networkLink
 		switch {
 		case item.Parent != nil:
+			related = item.Parent
 			if _, err := fmt.Fprintf(out, "      parent: %s (ifindex=%d, kind=%s, mac=%s, mtu=%d, state=%s, flags=%s)\n", item.Parent.Name, item.Parent.Index, item.Parent.Kind, item.Parent.MAC, item.Parent.MTU, item.Parent.OperState, strings.Join(item.Parent.Flags, ",")); err != nil {
 				return err
 			}
 		case item.HostPeer != nil:
+			related = item.HostPeer
 			if _, err := fmt.Fprintf(out, "      host peer: %s (ifindex=%d, kind=%s, mac=%s, mtu=%d, state=%s, flags=%s)\n", item.HostPeer.Name, item.HostPeer.Index, item.HostPeer.Kind, item.HostPeer.MAC, item.HostPeer.MTU, item.HostPeer.OperState, strings.Join(item.HostPeer.Flags, ",")); err != nil {
 				return err
 			}
 		case item.Peer != nil:
+			related = item.Peer
 			if _, err := fmt.Fprintf(out, "      peer: %s (ifindex=%d, kind=%s, mac=%s, mtu=%d, state=%s, flags=%s)\n", item.Peer.Name, item.Peer.Index, item.Peer.Kind, item.Peer.MAC, item.Peer.MTU, item.Peer.OperState, strings.Join(item.Peer.Flags, ",")); err != nil {
 				return err
 			}
@@ -344,6 +365,33 @@ func writePodNetwork(out io.Writer, info *podNetworkInfo) error {
 			if _, err := fmt.Fprintf(out, "      peer ifindex: %d\n", item.PeerIndex); err != nil {
 				return err
 			}
+		}
+		if related != nil {
+			if err := related.Statistics.write(out, "        "); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (statistics *linkStatistics) write(out io.Writer, indent string) error {
+	if statistics == nil {
+		return nil
+	}
+	for _, direction := range []struct {
+		name     string
+		counters map[string]uint64
+	}{{"RX", statistics.RX}, {"TX", statistics.TX}} {
+		if len(direction.counters) == 0 {
+			continue
+		}
+		fields := make([]string, 0, len(direction.counters))
+		for _, name := range slices.Sorted(maps.Keys(direction.counters)) {
+			fields = append(fields, name+"="+strconv.FormatUint(direction.counters[name], 10))
+		}
+		if _, err := fmt.Fprintf(out, "%s%s: %s\n", indent, direction.name, strings.Join(fields, " ")); err != nil {
+			return err
 		}
 	}
 	return nil

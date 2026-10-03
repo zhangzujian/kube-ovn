@@ -43,14 +43,29 @@ type inspectedNetwork struct {
 }
 
 type inspectedInterface struct {
-	Name      string              `json:"name"`
-	Index     int                 `json:"index"`
-	Kind      string              `json:"kind"`
-	MAC       string              `json:"mac"`
-	MTU       int                 `json:"mtu"`
-	Addresses []string            `json:"addresses"`
-	HostPeer  *inspectedInterface `json:"hostPeer"`
-	Parent    *inspectedInterface `json:"parent"`
+	Name       string              `json:"name"`
+	Index      int                 `json:"index"`
+	Kind       string              `json:"kind"`
+	MAC        string              `json:"mac"`
+	MTU        int                 `json:"mtu"`
+	Addresses  []string            `json:"addresses"`
+	HostPeer   *inspectedInterface `json:"hostPeer"`
+	Parent     *inspectedInterface `json:"parent"`
+	Statistics *struct {
+		RX map[string]uint64 `json:"rx"`
+		TX map[string]uint64 `json:"tx"`
+	} `json:"statistics"`
+}
+
+func checkInterfaceStatistics(link inspectedInterface) {
+	ginkgo.GinkgoHelper()
+	framework.ExpectNotNil(link.Statistics, "statistics must be reported for %s", link.Name)
+	for _, counters := range []map[string]uint64{link.Statistics.RX, link.Statistics.TX} {
+		for _, name := range []string{"bytes", "packets", "errors", "dropped"} {
+			_, found := counters[name]
+			framework.ExpectTrue(found, "%s counter must be reported for %s, including zero", name, link.Name)
+		}
+	}
 }
 
 func inspectNetwork(pod *corev1.Pod) inspectedNetwork {
@@ -135,6 +150,8 @@ var _ = framework.Describe("[group:kubectl-ko]", func() {
 			if link.Kind == "veth" && link.HostPeer != nil {
 				framework.ExpectNotEmpty(link.HostPeer.Name)
 				framework.ExpectTrue(link.HostPeer.Index > 0)
+				checkInterfaceStatistics(link)
+				checkInterfaceStatistics(*link.HostPeer)
 				foundPeer = true
 			}
 		}
@@ -171,6 +188,8 @@ var _ = framework.Describe("[group:kubectl-ko]", func() {
 			framework.ExpectEqual(link.Parent.Kind, "dummy")
 			framework.ExpectNotEmpty(link.Parent.MAC)
 			framework.ExpectTrue(link.Parent.Index > 0 && link.Parent.MTU > 0)
+			checkInterfaceStatistics(link)
+			checkInterfaceStatistics(*link.Parent)
 		}
 	})
 
@@ -183,6 +202,11 @@ var _ = framework.Describe("[group:kubectl-ko]", func() {
 		framework.ExpectTrue(info.HostNetwork)
 		framework.ExpectEqual(info.NetNS, "/proc/1/ns/net")
 		framework.ExpectTrue(slices.ContainsFunc(info.Interfaces, func(link inspectedInterface) bool { return link.Name == "lo" }))
+		for _, link := range info.Interfaces {
+			if link.Name == "lo" {
+				checkInterfaceStatistics(link)
+			}
+		}
 	})
 
 	framework.ConformanceIt(`should support "kubectl ko vsctl <node> show"`, func() {
