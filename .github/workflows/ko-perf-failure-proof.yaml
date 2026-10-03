@@ -1,0 +1,98 @@
+name: Fixed candidate perf readiness failure cleanup
+
+on:
+  push:
+    branches: [ko-perf-failure-proof-100a]
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  diagnostics:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CI: true
+      E2E_BRANCH: master
+      E2E_IP_FAMILY: dual
+      NET_STACK: dual
+      ENABLE_SSL: "true"
+      ENABLE_BIND_LOCAL_IP: "false"
+      TLS_MIN_VERSION: TLS12
+      TLS_MAX_VERSION: TLS13
+      TLS_CIPHER_SUITES: TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_AES_256_GCM_SHA384
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.14.0
+          args: --help
+      - name: Repository lint
+        run: make lint
+      - uses: actions/checkout@v7
+        with:
+          ref: 100a48deaf2de5ac17b2a64ac1443b7a0416bbaf
+          path: candidate
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: kube-ovn
+          run-id: 37131618946
+          github-token: ${{ github.token }}
+          path: images
+      - uses: actions/download-artifact@v8
+        with:
+          name: kind-node-v1.37.0
+          run-id: 37131618946
+          github-token: ${{ github.token }}
+          path: images
+      - uses: helm/kind-action@v1.15.0
+        with:
+          version: v0.33.0
+          install_only: true
+      - name: Verify immutable sources and load original images
+        run: |
+          test "$(git -C candidate rev-parse HEAD)" = 100a48deaf2de5ac17b2a64ac1443b7a0416bbaf
+          test -z "$(git -C candidate status --porcelain)"
+          mkdir -p diagnostics-results
+          git -C candidate rev-parse HEAD 'HEAD^{tree}' > diagnostics-results/source.txt
+          sha256sum images/*.tar > diagnostics-results/images.sha256
+          docker load --input images/kube-ovn.tar
+          docker load --input images/kind-node-v1.37.0.tar
+          docker images --digests --no-trunc > diagnostics-results/images.txt
+      - name: Create original HA layout
+        working-directory: candidate
+        run: |
+          pipx install jinjanator
+          make kind-init-ha-dual
+          make kind-install-chart
+      - name: Bootstrap matching CLI from independent agent
+        run: |
+          pod=$(kubectl -n kube-system get pods -l app=kubectl-ko-node-agent -o jsonpath='{.items[0].metadata.name}')
+          kubectl cp -n kube-system -c agent "$pod:/kube-ovn/kubectl-ko" diagnostics-results/kubectl-ko
+          chmod 700 diagnostics-results/kubectl-ko
+          diagnostics-results/kubectl-ko version > diagnostics-results/cli-version.txt
+      - name: Verify controlled readiness failure cleanup
+        run: python3 hack/ko-perf-failure-proof.py
+      - name: Check component restarts
+        if: ${{ !cancelled() }}
+        working-directory: candidate
+        run: make check-kube-ovn-pod-restarts
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ko-perf-failure-proof-100a48dea
+          path: |
+            diagnostics-results/*.json
+            diagnostics-results/*.jsonl
+            diagnostics-results/*.txt
+            diagnostics-results/*.sha256
+            diagnostics-results/*.log
+          if-no-files-found: error
