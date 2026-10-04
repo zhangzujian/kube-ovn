@@ -5,7 +5,6 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"errors"
-	"fmt"
 	"os"
 	"slices"
 	"time"
@@ -70,7 +69,7 @@ func (c *Controller) validateIPsecRequester(csr *certv1.CertificateSigningReques
 	}
 	key, ok := req.PublicKey.(*rsa.PublicKey)
 	if !ok || key.N.BitLen() < 2048 {
-		return fmt.Errorf("IPsec CSR requires an RSA key of at least 2048 bits")
+		return errors.New("IPsec CSR requires an RSA key of at least 2048 bits")
 	}
 	for _, ext := range req.Extensions {
 		// Accept only subjectAltName. Do not copy arbitrary CA or usage extensions.

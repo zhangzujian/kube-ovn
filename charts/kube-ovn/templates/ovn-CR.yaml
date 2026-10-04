@@ -150,6 +150,7 @@ rules:
       - apps
     resources:
       - daemonsets
+      - replicasets
     verbs:
       - get
   - apiGroups:
@@ -278,21 +279,6 @@ rules:
     resources:
     - certificatesigningrequests/status
     - certificatesigningrequests/approval
-    verbs:
-    - update
-  - apiGroups:
-    - ""
-    resources:
-    - secrets
-    verbs:
-    - get
-    - create
-  - apiGroups:
-    - ""
-    resources:
-    - secrets
-    resourceNames:
-    - kube-ovn-tls
     verbs:
     - update
   - apiGroups:

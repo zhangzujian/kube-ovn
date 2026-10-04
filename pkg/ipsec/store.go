@@ -7,8 +7,11 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -31,13 +34,13 @@ func digest(data []byte) string {
 }
 
 func (s store) lock() (*os.File, error) {
-	if err := os.MkdirAll(s.dir, 0o700); err != nil {
+	if err := secureDirectory(s.dir); err != nil {
 		return nil, err
 	}
 	if err := os.Chmod(s.dir, 0o700); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(filepath.Join(s.dir, "owner.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	f, err := os.OpenFile(filepath.Join(s.dir, "owner.lock"), os.O_CREATE|os.O_RDWR|unix.O_NOFOLLOW, 0o600)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +51,7 @@ func (s store) lock() (*os.File, error) {
 }
 
 func (s store) load(name string) (*generation, error) {
-	data, err := os.ReadFile(filepath.Join(s.dir, name+".json"))
+	data, err := readRegularFile(filepath.Join(s.dir, name+".json"))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
@@ -82,14 +85,98 @@ func (s store) path(g *generation, name string) string {
 
 func (s store) write(g *generation, name string, data []byte) error {
 	path := s.path(g, name)
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	if err := s.generationDirectory(g); err != nil {
 		return err
 	}
 	return fileutil.AtomicWriteFile(path, data, 0o600)
 }
 
 func (s store) read(g *generation, name string) ([]byte, error) {
-	return os.ReadFile(s.path(g, name))
+	if err := s.generationDirectory(g); err != nil {
+		return nil, err
+	}
+	return readRegularFile(s.path(g, name))
+}
+
+func secureDirectory(path string) error {
+	if err := os.Mkdir(path, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
+		return err
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("IPsec storage directory must not be a symlink")
+	}
+	return os.Chmod(path, 0o700)
+}
+
+func (s store) generationDirectory(g *generation) error {
+	for _, path := range []string{s.dir, filepath.Join(s.dir, "generations"), filepath.Dir(s.path(g, "private-key"))} {
+		if err := secureDirectory(path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func readRegularFile(path string) ([]byte, error) {
+	f, err := os.OpenFile(path, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, err
+	}
+	info, err := f.Stat()
+	if err == nil && (!info.Mode().IsRegular() || info.Size() > 1<<20) {
+		err = errors.New("IPsec storage entry must be a regular file smaller than 1 MiB")
+	}
+	var data []byte
+	if err == nil {
+		data, err = io.ReadAll(io.LimitReader(f, (1<<20)+1))
+	}
+	return data, errors.Join(err, f.Close())
+}
+
+// importLegacy adopts only the referenced, validated legacy pair in our key
+// directory. It never deletes legacy files: an interrupted upgrade can still
+// resume, and rollback policy is decided separately from identity migration.
+func (s store) importLegacy(nodeUID, chassis string, trust []byte, paths map[string]string) error {
+	for _, name := range []string{"current", "pending"} {
+		g, err := s.load(name)
+		if err != nil || g != nil {
+			return err
+		}
+	}
+	keyPath, certPath := paths["private_key"], paths["certificate"]
+	if keyPath == "" && certPath == "" {
+		return nil
+	}
+	for path, prefix := range map[string]string{keyPath: "ipsec-privkey-", certPath: "ipsec-cert-"} {
+		if filepath.Dir(path) != filepath.Clean(s.dir) || !strings.HasPrefix(filepath.Base(path), prefix) || !strings.HasSuffix(path, ".pem") {
+			return errors.New("cannot adopt IPsec files outside the legacy key layout")
+		}
+	}
+	key, err := readRegularFile(keyPath)
+	if err != nil {
+		return err
+	}
+	cert, err := readRegularFile(certPath)
+	if err != nil {
+		return err
+	}
+	if _, err := validateIdentity(cert, key, trust, chassis, time.Now()); err != nil {
+		// An expired legacy identity must be replaced, rather than permanently
+		// preventing fresh signing. Unreadable paths are handled above.
+		return nil
+	}
+	g := &generation{ID: digest(key), NodeUID: nodeUID, Chassis: chassis}
+	if err := s.write(g, "private-key", key); err != nil {
+		return err
+	}
+	if err := s.write(g, "certificate", cert); err != nil {
+		return err
+	}
+	return s.save("pending", g)
 }
 
 func (s store) sameIdentity(a, b *generation) bool {
@@ -122,7 +209,10 @@ func (s store) prepareGeneration(source *generation, trust []byte) (*generation,
 	g := &generation{ID: digest(data), NodeUID: source.NodeUID, Chassis: source.Chassis}
 	for name, value := range map[string][]byte{"private-key": key, "certificate": cert, "ca-bundle": trust} {
 		path := s.path(g, name)
-		if existing, err := os.ReadFile(path); err == nil {
+		if err := s.generationDirectory(g); err != nil {
+			return nil, err
+		}
+		if existing, err := readRegularFile(path); err == nil {
 			if !bytes.Equal(existing, value) {
 				return nil, errors.New("IPsec generation content changed")
 			}

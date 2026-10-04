@@ -47,6 +47,7 @@ func TestProbesUseThePrivateSocket(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	a := &Agent{config: Configuration{RuntimeDir: t.TempDir()}, runtime: &runtimeManager{}}
+	a.beat.Store(time.Now().UnixNano())
 	require.NoError(t, a.serveStatus(ctx))
 	require.NoError(t, Check(t.Context(), a.config.RuntimeDir, "livez"))
 	require.Error(t, Check(t.Context(), a.config.RuntimeDir, "readyz"))
@@ -55,4 +56,8 @@ func TestProbesUseThePrivateSocket(t *testing.T) {
 	require.NoError(t, Check(t.Context(), a.config.RuntimeDir, "readyz"))
 	a.setStatus(Status{Phase: "Configured", Generation: "synthetic", Expires: time.Now().Add(-time.Second)})
 	require.Error(t, Check(t.Context(), a.config.RuntimeDir, "readyz"))
+	a.setStatus(Status{Phase: "Degraded", Generation: "synthetic", Expires: time.Now().Add(time.Hour)})
+	require.Error(t, Check(t.Context(), a.config.RuntimeDir, "readyz"))
+	a.beat.Store(time.Now().Add(-10 * time.Minute).UnixNano())
+	require.Error(t, Check(t.Context(), a.config.RuntimeDir, "livez"))
 }

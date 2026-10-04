@@ -35,8 +35,26 @@ def validate(text, enabled):
         mounts = {item["name"]: item for item in ipsec["volumeMounts"]}
         assert set(mounts) == {"ovs-ipsec-keys", "host-run-ovs"}
         assert mounts["host-run-ovs"]["readOnly"] is True
+        env = {item["name"]: item for item in ipsec["env"]}
+        assert env["POD_UID"]["valueFrom"]["fieldRef"]["fieldPath"] == "metadata.uid"
         for kind, endpoint in (("startupProbe", "livez"), ("livenessProbe", "livez"), ("readinessProbe", "readyz")):
             assert ipsec[kind]["exec"]["command"] == ["/kube-ovn/kube-ovn-ipsec", f"--check={endpoint}"]
+
+
+def validate_signer_permissions(text):
+    documents = [item for item in yaml.safe_load_all(text) if item]
+    controller = next(item for item in documents if item.get("kind") == "ClusterRole" and item["metadata"]["name"] == "system:ovn")
+    assert all("secrets" not in rule.get("resources", []) for rule in controller["rules"])
+    scoped = next(item for item in documents if item.get("kind") == "Role" and item["metadata"]["name"] == "kube-ovn-controller-secrets")
+    assert scoped["metadata"]["namespace"] == "kube-system"
+    for rule in scoped["rules"]:
+        if "get" in rule["verbs"] or "update" in rule["verbs"]:
+            assert set(rule["resourceNames"]) == {"kube-ovn-tls", "ovn-ipsec-ca", "ovn-ipsec-signer"}
+    for item in documents:
+        if item.get("kind") in ("Role", "ClusterRole") and item["metadata"]["name"] in ("secret-reader-ovn-ipsec", "system:kube-ovn-cni"):
+            for rule in item["rules"]:
+                if "secrets" in rule.get("resources", []):
+                    assert rule["resourceNames"] == ["ovn-ipsec-ca"]
 
 
 def installer(enabled):
@@ -61,7 +79,9 @@ def main():
         for enabled in (False, True):
             for tproxy_enabled in (False, True):
                 args = ["helm", "template", "ipsec-test", str(ROOT / "charts" / chart), "--set", f"{switch}={str(enabled).lower()}", "--set", f"{tproxy}={str(tproxy_enabled).lower()}"]
-                validate(subprocess.check_output(args, text=True, stderr=subprocess.DEVNULL), enabled)
+                rendered = subprocess.check_output(args, text=True, stderr=subprocess.DEVNULL)
+                validate(rendered, enabled)
+                validate_signer_permissions(rendered)
     for enabled in (False, True):
         validate(installer(enabled), enabled)
     assert "CAP_SYS_NICE" not in (ROOT / "dist/images/Dockerfile").read_text()

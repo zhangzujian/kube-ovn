@@ -161,16 +161,38 @@ func (r *runtimeManager) runPair(ctx context.Context) error {
 		return err
 	}
 	defer monitor.stop()
-	r.healthy.Store(true)
 	defer r.healthy.Store(false)
-	select {
-	case <-starter.done:
-		return fmt.Errorf("IPsec starter exited: %w", starter.failure())
-	case <-monitor.done:
-		return fmt.Errorf("IPsec monitor exited: %w", monitor.failure())
-	case <-ctx.Done():
-		return ctx.Err()
+	// Starting the Python process does not prove its OVSDB/event loop is
+	// responding. Confirm both private control endpoints and keep checking
+	// them so a hung process is recovered without waiting for Pod restart.
+	for {
+		probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		err := r.check(probeCtx)
+		cancel()
+		if err == nil {
+			r.healthy.Store(true)
+		} else if r.healthy.Load() || startupCtx.Err() != nil {
+			return fmt.Errorf("IPsec runtime health check failed: %w", err)
+		}
+		select {
+		case <-starter.done:
+			return fmt.Errorf("IPsec starter exited: %w", starter.failure())
+		case <-monitor.done:
+			return fmt.Errorf("IPsec monitor exited: %w", monitor.failure())
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(5 * time.Second):
+		}
 	}
+}
+
+func (r *runtimeManager) check(ctx context.Context) error {
+	if err := command(ctx, "/usr/sbin/ipsec", "status"); err != nil {
+		return err
+	}
+	// list-commands is a harmless liveness request; tunnels/show and
+	// xfrm/state may expose keys and must not be used in health probes.
+	return command(ctx, "ovs-appctl", "-t", filepath.Join(r.dir, "monitor.ctl"), "list-commands")
 }
 
 func (r *runtimeManager) run(ctx context.Context) {

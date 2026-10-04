@@ -31,14 +31,21 @@ const (
 )
 
 type issuer struct {
-	kube                                 kubernetes.Interface
-	cm                                   cmclient.Interface
-	node, nodeUID, namespace, issuerName string
-	duration                             time.Duration
+	kube                                         kubernetes.Interface
+	cm                                           cmclient.Interface
+	node, nodeUID, podUID, namespace, issuerName string
+	duration                                     time.Duration
 }
 
 func requestName(nodeUID string, csr []byte) string {
 	return "ovn-ipsec-" + digest(append([]byte(nodeUID+":"), csr...))[:48]
+}
+
+func (i issuer) name(csr []byte) string {
+	// A rebuilt Pod has a different authenticated identity even when its
+	// pending key survives. Never reuse a CSR bound to the deleted Pod.
+	identity := fmt.Sprintf("%s:%s:%s:%s", i.nodeUID, i.podUID, i.issuerName, i.duration)
+	return requestName(identity, csr)
 }
 
 func (i issuer) sign(ctx context.Context, csr []byte) ([]byte, error) {
@@ -51,7 +58,7 @@ func (i issuer) sign(ctx context.Context, csr []byte) ([]byte, error) {
 		return nil, errors.New("invalid IPsec certificate duration")
 	}
 	req := &certv1.CertificateSigningRequest{
-		ObjectMeta: metav1.ObjectMeta{Name: requestName(i.nodeUID, csr), Annotations: map[string]string{NodeNameAnnotation: i.node, NodeUIDAnnotation: i.nodeUID}},
+		ObjectMeta: metav1.ObjectMeta{Name: i.name(csr), Annotations: map[string]string{NodeNameAnnotation: i.node, NodeUIDAnnotation: i.nodeUID}},
 		Spec:       certv1.CertificateSigningRequestSpec{Request: csr, SignerName: util.SignerName, Usages: []certv1.KeyUsage{certv1.UsageIPsecTunnel}, ExpirationSeconds: new(int32(seconds))},
 	}
 	created, err := client.Create(ctx, req, metav1.CreateOptions{})
@@ -105,7 +112,7 @@ func (i issuer) sign(ctx context.Context, csr []byte) ([]byte, error) {
 func (i issuer) signCertManager(ctx context.Context, csr []byte) ([]byte, error) {
 	client := i.cm.CertmanagerV1().CertificateRequests(i.namespace)
 	req := &certmanagerv1.CertificateRequest{
-		ObjectMeta: metav1.ObjectMeta{Name: requestName(i.nodeUID, csr), Namespace: i.namespace, Annotations: map[string]string{NodeNameAnnotation: i.node, NodeUIDAnnotation: i.nodeUID}},
+		ObjectMeta: metav1.ObjectMeta{Name: i.name(csr), Namespace: i.namespace, Annotations: map[string]string{NodeNameAnnotation: i.node, NodeUIDAnnotation: i.nodeUID}},
 		Spec: certmanagerv1.CertificateRequestSpec{
 			Request: csr, Duration: &metav1.Duration{Duration: i.duration},
 			IssuerRef: cmmeta.IssuerReference{Name: i.issuerName, Kind: "ClusterIssuer", Group: certmanager.GroupName},

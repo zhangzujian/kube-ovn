@@ -18,6 +18,10 @@ import (
 func Certificates(data []byte) ([]*x509.Certificate, error) {
 	var certs []*x509.Certificate
 	for len(bytes.TrimSpace(data)) != 0 {
+		data = bytes.TrimSpace(data)
+		if !bytes.HasPrefix(data, []byte("-----BEGIN CERTIFICATE-----")) {
+			return nil, errors.New("unexpected data in certificate PEM bundle")
+		}
 		block, rest := pem.Decode(data)
 		if block == nil || block.Type != "CERTIFICATE" {
 			return nil, errors.New("invalid certificate PEM bundle")
@@ -36,6 +40,10 @@ func Certificates(data []byte) ([]*x509.Certificate, error) {
 }
 
 func privateKey(data []byte) (*rsa.PrivateKey, error) {
+	data = bytes.TrimSpace(data)
+	if !bytes.HasPrefix(data, []byte("-----BEGIN RSA PRIVATE KEY-----")) && !bytes.HasPrefix(data, []byte("-----BEGIN PRIVATE KEY-----")) {
+		return nil, errors.New("unexpected data in private key PEM")
+	}
 	block, rest := pem.Decode(data)
 	if block == nil || len(bytes.TrimSpace(rest)) != 0 {
 		return nil, errors.New("invalid private key PEM")

@@ -32,6 +32,7 @@ func run() error {
 	config := ipsec.Configuration{}
 	pflag.StringVar(&config.NodeName, "node-name", os.Getenv(util.EnvNodeName), "Node name")
 	pflag.StringVar(&config.Namespace, "namespace", os.Getenv(util.EnvPodNamespace), "IPsec trust namespace")
+	pflag.StringVar(&config.PodUID, "pod-uid", os.Getenv("POD_UID"), "Current bound Pod UID")
 	pflag.StringVar(&config.OVSSocket, "ovs-socket", "/run/openvswitch/db.sock", "Local OVSDB socket")
 	pflag.StringVar(&config.KeyDir, "key-dir", "/etc/ovs_ipsec_keys", "Persistent IPsec identity directory")
 	pflag.StringVar(&config.RuntimeDir, "runtime-dir", "/run/kube-ovn-ipsec", "Private runtime directory")
@@ -55,6 +56,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("configure IPsec Kubernetes client: %w", err)
 	}
+	restConfig.Timeout = 30 * time.Second
 	if config.Kube, err = kubernetes.NewForConfig(restConfig); err != nil {
 		return err
 	}

@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"os"
 	"slices"
 	"strings"
 	"time"
@@ -138,8 +137,8 @@ func (c *Controller) handleAddOrUpdateCsr(key string) (err error) {
 		return nil
 	}
 	// From this point we are dealing with an approved CSR
-	// Get CA in from ovn-ipsec-ca
-	caSecret, err := c.config.KubeClient.CoreV1().Secrets(os.Getenv(util.EnvPodNamespace)).Get(context.TODO(), util.DefaultOVNIPSecCA, metav1.GetOptions{})
+	// Read the private CA from the controller-only signer Secret.
+	caSecret, err := c.config.KubeClient.CoreV1().Secrets(c.config.PodNamespace).Get(context.TODO(), util.DefaultOVNIPSecSigner, metav1.GetOptions{})
 	if err != nil {
 		c.signerFailure(csr, "CAFailure",
 			fmt.Sprintf("Could not get CA certificate and key: %v", err))
@@ -147,6 +146,10 @@ func (c *Controller) handleAddOrUpdateCsr(key string) (err error) {
 	}
 
 	// Decode the CA certificate from PEM format.
+	if err := validateIPsecCA(caSecret.Data["cacert"], caSecret.Data["cakey"]); err != nil {
+		c.signerFailure(csr, "InvalidCA", err.Error())
+		return nil
+	}
 	caCert, err := decodeCertificate(caSecret.Data["cacert"])
 	if err != nil {
 		c.signerFailure(csr, "CorruptCACert",
@@ -180,12 +183,7 @@ func (c *Controller) handleAddOrUpdateCsr(key string) (err error) {
 	}
 
 	// Encode the certificate into PEM format and add to the status of the CSR
-	csr.Status.Certificate, err = encodeCertificates(signedCert)
-	if err != nil {
-		c.signerFailure(csr, "EncodeFailure",
-			fmt.Sprintf("Could not encode certificate: %v", err))
-		return nil
-	}
+	csr.Status.Certificate = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: signedCert.Raw})
 
 	if err := c.updateCsrStatus(csr); err != nil {
 		return err
@@ -289,8 +287,8 @@ func signCSR(template *x509.Certificate, requestKey c.PublicKey, issuer *x509.Ce
 }
 
 func decodeCertificateRequest(pemBytes []byte) (*x509.CertificateRequest, error) {
-	block, _ := pem.Decode(pemBytes)
-	if block == nil || block.Type != "CERTIFICATE REQUEST" {
+	block, rest := pem.Decode(pemBytes)
+	if block == nil || block.Type != "CERTIFICATE REQUEST" || len(bytes.TrimSpace(rest)) != 0 {
 		err := errors.New("certificate PEM block type must be CERTIFICATE_REQUEST")
 		return nil, err
 	}
@@ -306,43 +304,38 @@ func decodeCertificateRequest(pemBytes []byte) (*x509.CertificateRequest, error)
 }
 
 func decodeCertificate(pemBytes []byte) (*x509.Certificate, error) {
-	block, _ := pem.Decode(pemBytes)
-	if block == nil || block.Type != "CERTIFICATE" {
-		err := errors.New("certificate PEM block type must be CERTIFICATE")
+	certs, err := ipsec.Certificates(pemBytes)
+	if err != nil {
 		return nil, err
 	}
-
-	return x509.ParseCertificate(block.Bytes)
+	if len(certs) != 1 {
+		return nil, errors.New("expected exactly one CA certificate")
+	}
+	return certs[0], nil
 }
 
 func decodePrivateKey(pemBytes []byte) (*rsa.PrivateKey, error) {
-	block, _ := pem.Decode(pemBytes)
-	if block == nil || block.Type != "PRIVATE KEY" {
-		err := errors.New("certificate PEM block type must be PRIVATE KEY")
-		return nil, err
+	block, rest := pem.Decode(pemBytes)
+	if block == nil || len(bytes.TrimSpace(rest)) != 0 {
+		return nil, errors.New("invalid IPsec CA private key PEM")
 	}
-
+	if block.Type == "RSA PRIVATE KEY" {
+		key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+		if err != nil {
+			return nil, err
+		}
+		return key, key.Validate()
+	}
+	if block.Type != "PRIVATE KEY" {
+		return nil, errors.New("unsupported IPsec CA private key PEM")
+	}
 	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 	if err != nil {
-		klog.Error(err)
 		return nil, err
 	}
-
 	rsaKey, ok := key.(*rsa.PrivateKey)
 	if !ok {
-		err := errors.New("failed to convert private key to RSA private key")
-		return nil, err
+		return nil, errors.New("IPsec CA key is not RSA")
 	}
-
-	return rsaKey, nil
-}
-
-func encodeCertificates(certs ...*x509.Certificate) ([]byte, error) {
-	b := bytes.Buffer{}
-	for _, cert := range certs {
-		if err := pem.Encode(&b, &pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw}); err != nil {
-			return []byte{}, err
-		}
-	}
-	return b.Bytes(), nil
+	return rsaKey, rsaKey.Validate()
 }

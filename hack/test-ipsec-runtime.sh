@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# This harness uses private Docker network namespaces. It never attaches an
+# IPsec daemon to the runner's host network or touches host IKE processes.
+candidate_image=${1:?candidate image is required}
+runtime_binary=${2:?compiled pkg/ipsec test binary is required}
+runtime_binary=$(realpath "$runtime_binary")
+runtime_id="ipsec-runtime-${GITHUB_RUN_ID:-$$}-${GITHUB_RUN_ATTEMPT:-1}"
+ovs_container="$runtime_id-ovs"
+test_container="$runtime_id-test"
+runtime_volume="$runtime_id-socket"
+
+cleanup() {
+  docker logs "$ovs_container" 2>/dev/null || true
+  docker rm -f "$test_container" "$ovs_container" >/dev/null 2>&1 || true
+  docker volume rm "$runtime_volume" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+docker image inspect "$candidate_image" --format '{{.Id}} {{json .Config.Labels}}'
+docker volume create "$runtime_volume" >/dev/null
+docker run --detach --name "$ovs_container" --network none --cap-drop ALL \
+  --memory 256m --cpus 1 --security-opt no-new-privileges \
+  --mount "type=volume,src=$runtime_volume,dst=/run/openvswitch" \
+  "$candidate_image" bash -c '
+    set -euo pipefail
+    ovsdb-tool create /tmp/ipsec-test.db /usr/share/openvswitch/vswitch.ovsschema
+    exec ovsdb-server /tmp/ipsec-test.db --remote=punix:/run/openvswitch/db.sock \
+      --pidfile=/run/openvswitch/ovsdb-server.pid --unixctl=/run/openvswitch/db.ctl
+  ' >/dev/null
+
+for attempt in {1..30}; do
+  if docker exec "$ovs_container" ovs-vsctl --timeout=1 --no-wait init; then
+    break
+  fi
+  if [[ "$attempt" == 30 ]]; then
+    echo 'Test OVSDB did not start' >&2
+    exit 1
+  fi
+  sleep 1
+done
+docker exec "$ovs_container" ovs-vsctl --timeout=5 --no-wait set Open_vSwitch . external_ids:system-id=runtime-test-chassis
+
+docker run --name "$test_container" --network none --pid host --user 0:0 \
+  --cap-drop ALL --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE --cap-add SYS_NICE \
+  --memory 512m --cpus 1 --security-opt no-new-privileges \
+  --mount "type=volume,src=$runtime_volume,dst=/run/openvswitch,readonly" \
+  --mount "type=bind,src=$runtime_binary,dst=/tmp/ipsec-runtime-tests,readonly" \
+  --env KUBE_OVN_IPSEC_RUNTIME_TEST=true \
+  "$candidate_image" /tmp/ipsec-runtime-tests -test.run '^TestCandidateRuntime$' -test.v -test.timeout=180s

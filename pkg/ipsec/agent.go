@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	cmclient "github.com/cert-manager/cert-manager/pkg/client/clientset/versioned"
@@ -30,6 +31,7 @@ import (
 // Configuration describes the node IPsec module, independently of CNI setup.
 type Configuration struct {
 	NodeName, Namespace, OVSSocket, KeyDir, RuntimeDir string
+	PodUID                                             string
 	IssuerName                                         string
 	Duration, RequestTimeout                           time.Duration
 	Priority                                           int
@@ -45,6 +47,8 @@ type Agent struct {
 	mu      sync.RWMutex
 	status  Status
 	caHash  string
+	beat    atomic.Int64
+	ovs     *ovs.VswitchClient
 }
 
 // Status deliberately excludes certificate contents, private keys and SA keys.
@@ -56,8 +60,8 @@ type Status struct {
 }
 
 func New(config Configuration) (*Agent, error) {
-	if config.NodeName == "" || config.Namespace == "" || config.Kube == nil {
-		return nil, errors.New("IPsec node, namespace and Kubernetes client are required")
+	if config.NodeName == "" || config.Namespace == "" || config.PodUID == "" || config.Kube == nil {
+		return nil, errors.New("IPsec node, namespace, Pod UID and Kubernetes client are required")
 	}
 	if config.Duration < 10*time.Minute || config.Duration/time.Second > 1<<31-1 || config.RequestTimeout <= 0 {
 		return nil, errors.New("invalid IPsec certificate duration or request timeout")
@@ -92,6 +96,12 @@ func (a *Agent) Run(ctx context.Context) error {
 	}()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	defer func() {
+		if a.ovs != nil {
+			a.ovs.Close()
+		}
+	}()
+	a.beat.Store(time.Now().UnixNano())
 	if err := a.serveStatus(ctx); err != nil {
 		return err
 	}
@@ -122,11 +132,14 @@ func (a *Agent) Run(ctx context.Context) error {
 	}
 	backoff := time.Second
 	for ctx.Err() == nil {
+		a.beat.Store(time.Now().UnixNano())
 		err := a.reconcile(ctx, secrets.Lister())
+		a.beat.Store(time.Now().UnixNano())
 		delay := 30 * time.Second
 		if err != nil {
 			klog.ErrorS(err, "Reconcile node IPsec")
 			status := a.Status()
+			status.Phase = "Degraded"
 			status.Reason = err.Error()
 			a.setStatus(status)
 			delay, backoff = backoff, min(30*time.Second, backoff*2)
@@ -153,12 +166,13 @@ func (a *Agent) reconcile(ctx context.Context, secrets listers.SecretLister) err
 	if _, err := Certificates(trust); err != nil {
 		return fmt.Errorf("invalid IPsec trust: %w", err)
 	}
-	ovsClient, err := ovs.NewCNIVswitchClient("unix:" + a.config.OVSSocket)
-	if err != nil {
-		return err
+	if a.ovs == nil {
+		a.ovs, err = ovs.NewCNIVswitchClient("unix:" + a.config.OVSSocket)
+		if err != nil {
+			return err
+		}
 	}
-	defer ovsClient.Close()
-	row, err := ovsClient.IPsecConfiguration()
+	row, err := a.ovs.IPsecConfiguration()
 	if err != nil {
 		return err
 	}
@@ -168,6 +182,9 @@ func (a *Agent) reconcile(ctx context.Context, secrets listers.SecretLister) err
 	}
 	node, err := a.config.Kube.CoreV1().Nodes().Get(ctx, a.config.NodeName, metav1.GetOptions{})
 	if err != nil {
+		return err
+	}
+	if err := a.store.importLegacy(string(node.UID), chassis, trust, row.OtherConfig); err != nil {
 		return err
 	}
 	g, err := a.identity(ctx, string(node.UID), chassis, trust)
@@ -183,7 +200,7 @@ func (a *Agent) reconcile(ctx context.Context, secrets listers.SecretLister) err
 		return err
 	}
 	paths := map[string]string{"certificate": a.store.path(g, "certificate"), "private_key": a.store.path(g, "private-key"), "ca_cert": a.store.path(g, "ca-bundle")}
-	if err := ovsClient.SetIPsecConfiguration(row.UUID, paths); err != nil {
+	if err := a.ovs.SetIPsecConfiguration(row.UUID, paths); err != nil {
 		return err
 	}
 	if err := a.store.save("current", g); err != nil {
@@ -245,7 +262,7 @@ func (a *Agent) identity(ctx context.Context, nodeUID, chassis string, trust []b
 	if err != nil {
 		return nil, err
 	}
-	i := issuer{kube: a.config.Kube, cm: a.config.CertManager, node: a.config.NodeName, nodeUID: nodeUID, namespace: a.config.Namespace, issuerName: a.config.IssuerName, duration: a.config.Duration}
+	i := issuer{kube: a.config.Kube, cm: a.config.CertManager, node: a.config.NodeName, nodeUID: nodeUID, podUID: a.config.PodUID, namespace: a.config.Namespace, issuerName: a.config.IssuerName, duration: a.config.Duration}
 	issueCtx, cancel := context.WithTimeout(ctx, a.config.RequestTimeout)
 	defer cancel()
 	cert, err := i.sign(issueCtx, csr)
@@ -324,10 +341,16 @@ func (a *Agent) serveStatus(ctx context.Context) error {
 		return err
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, _ *http.Request) {
+		if time.Since(time.Unix(0, a.beat.Load())) > a.config.RequestTimeout+90*time.Second {
+			http.Error(w, "IPsec reconciliation is stalled", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
 		status := a.Status()
-		if !a.runtime.healthy.Load() || status.Generation == "" || !time.Now().Before(status.Expires) {
+		if !a.runtime.healthy.Load() || (status.Phase != "Configured" && status.Phase != "Running") || status.Generation == "" || !time.Now().Before(status.Expires) {
 			http.Error(w, "IPsec is not ready", http.StatusServiceUnavailable)
 			return
 		}

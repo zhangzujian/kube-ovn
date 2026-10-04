@@ -7773,6 +7773,7 @@ rules:
       - apps
     resources:
       - daemonsets
+      - replicasets
     verbs:
       - get
   - apiGroups:
@@ -7901,21 +7902,6 @@ rules:
     resources:
     - certificatesigningrequests/status
     - certificatesigningrequests/approval
-    verbs:
-    - update
-  - apiGroups:
-    - ""
-    resources:
-    - secrets
-    verbs:
-    - get
-    - create
-  - apiGroups:
-    - ""
-    resourceNames:
-    - kube-ovn-tls
-    resources:
-    - secrets
     verbs:
     - update
   - apiGroups:
@@ -8064,6 +8050,34 @@ rules:
       - get
       - list
       - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kube-ovn-controller-secrets
+  namespace: kube-system
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [create]
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [kube-ovn-tls, ovn-ipsec-ca, ovn-ipsec-signer]
+    verbs: [get, update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kube-ovn-controller-secrets
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kube-ovn-controller-secrets
+subjects:
+  - kind: ServiceAccount
+    name: ovn
+    namespace: kube-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -8860,6 +8874,10 @@ if [[ "$ENABLE_OVN_IPSEC" == "true" ]]; then
             valueFrom:
               fieldRef:
                 fieldPath: metadata.namespace
+          - name: POD_UID
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.uid
         volumeMounts:
           - name: ovs-ipsec-keys
             mountPath: /etc/ovs_ipsec_keys

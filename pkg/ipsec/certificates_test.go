@@ -60,6 +60,59 @@ func TestTrustRejectsPartialAndEmptyBundles(t *testing.T) {
 		_, err := Certificates(invalid)
 		require.Error(t, err)
 	}
+	_, err := Certificates(append([]byte("discarded prefix\n"), trust...))
+	require.Error(t, err)
+}
+
+func TestLegacyIdentityIsImportedWithoutReissuing(t *testing.T) {
+	cert, key, trust := testIdentity(t, "chassis")
+	s := store{dir: t.TempDir()}
+	keyPath := filepath.Join(s.dir, "ipsec-privkey-123.pem")
+	certPath := filepath.Join(s.dir, "ipsec-cert-123.pem")
+	require.NoError(t, os.WriteFile(keyPath, key, 0o600))
+	require.NoError(t, os.WriteFile(certPath, cert, 0o600))
+	paths := map[string]string{"private_key": keyPath, "certificate": certPath}
+	require.NoError(t, s.importLegacy("node-uid", "chassis", trust, paths))
+	g, err := s.load("pending")
+	require.NoError(t, err)
+	require.NotNil(t, g)
+	imported, err := s.read(g, "private-key")
+	require.NoError(t, err)
+	require.Equal(t, key, imported)
+	imported, err = s.read(g, "certificate")
+	require.NoError(t, err)
+	require.Equal(t, cert, imported)
+	require.FileExists(t, keyPath)
+	require.FileExists(t, certPath)
+	require.NoError(t, s.importLegacy("node-uid", "chassis", trust, paths))
+
+	outside := store{dir: t.TempDir()}
+	require.ErrorContains(t, outside.importLegacy("node-uid", "chassis", trust, paths), "outside the legacy key layout")
+}
+
+func TestStoreRejectsSymlinks(t *testing.T) {
+	for _, entry := range []string{"owner.lock", "current.json", "generations"} {
+		t.Run(entry, func(t *testing.T) {
+			s := store{dir: t.TempDir()}
+			target := filepath.Join(t.TempDir(), "target")
+			require.NoError(t, os.WriteFile(target, []byte("unrelated data"), 0o600))
+			require.NoError(t, os.Symlink(target, filepath.Join(s.dir, entry)))
+			switch entry {
+			case "owner.lock":
+				_, err := s.lock()
+				require.Error(t, err)
+			case "current.json":
+				_, err := s.load("current")
+				require.Error(t, err)
+			case "generations":
+				_, _, err := s.pending("uid", "chassis")
+				require.Error(t, err)
+			}
+			data, err := os.ReadFile(target)
+			require.NoError(t, err)
+			require.Equal(t, "unrelated data", string(data))
+		})
+	}
 }
 
 func TestPendingSurvivesRestartAndNodeRecreation(t *testing.T) {

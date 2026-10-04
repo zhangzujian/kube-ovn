@@ -38,7 +38,7 @@ jobs:
       - name: Test node module and signing profile
         run: |
           go test -race ./pkg/ipsec
-          go test ./pkg/controller -run TestIPsecSigner -count=1
+          go test ./pkg/controller -run TestIPsec -count=1
           go test ./pkg/ovs -run TestIPsecConfiguration -count=1
       - name: Full repository lint
         env:
@@ -51,3 +51,8 @@ jobs:
           make build-go
           go test -c -o /tmp/ipsec-e2e ./test/e2e/ipsec
           git diff --exit-code
+      - name: Build candidate image and validate minimal runtime privileges
+        run: |
+          docker build --build-arg BASE_TAG=v1.17.0@sha256:300011722d58c4c822279b034476d124f6f52d5ba607ddc68939fea1364746c1 --label org.opencontainers.image.revision="$GITHUB_SHA" -t ipsec-candidate:"$GITHUB_SHA" -f dist/images/Dockerfile dist/images
+          CGO_ENABLED=0 go test -c -o /tmp/ipsec-runtime-tests ./pkg/ipsec
+          bash hack/test-ipsec-runtime.sh ipsec-candidate:"$GITHUB_SHA" /tmp/ipsec-runtime-tests
