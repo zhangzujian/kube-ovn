@@ -20,6 +20,11 @@ an existing valid identity. The monitor and strongSwan starter run as supervised
 foreground processes with private monitor pid/control paths. The monitor does
 not restart the IKE daemon itself.
 
+Renewals use a stable per-node/certificate schedule between 40% and 60% of the
+leaf lifetime, so simultaneously installed nodes do not all renew at the midpoint.
+Repeated runtime startup failures back off from one to thirty seconds; a runtime
+that remained up for a minute resets that delay before recovery.
+
 The image applies small, checked adaptations to the upstream OVS monitor:
 accept CN at the end of an RFC2253 subject, and optionally filter interfaces by
 their owning Port's `ovn-chassis-id`. The IPsec entrypoint enables this filter.

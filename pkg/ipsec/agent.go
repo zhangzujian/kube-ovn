@@ -3,6 +3,9 @@ package ipsec
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/binary"
 	"encoding/json/v2"
 	"encoding/pem"
 	"errors"
@@ -294,7 +297,7 @@ func (a *Agent) identity(ctx context.Context, nodeUID, chassis string, trust []b
 		key, keyErr := a.store.read(g, "private-key")
 		if certErr == nil && keyErr == nil {
 			leaf, err := validateIdentity(cert, key, trust, chassis, time.Now())
-			if err == nil && time.Now().Before(leaf.NotBefore.Add(leaf.NotAfter.Sub(leaf.NotBefore)/2)) {
+			if err == nil && time.Now().Before(renewalTime(leaf, nodeUID)) {
 				return g, nil
 			}
 		}
@@ -340,6 +343,16 @@ func (a *Agent) identity(ctx context.Context, nodeUID, chassis string, trust []b
 		}
 	}
 	return nil, err
+}
+
+func renewalTime(cert *x509.Certificate, nodeUID string) time.Time {
+	// Spread renewal between 40% and 60% of the certificate's lifetime.
+	// The same identity keeps its schedule through retries and Pod restarts.
+	lifetime := cert.NotAfter.Sub(cert.NotBefore)
+	hash := sha256.Sum256(append([]byte(nodeUID), cert.Raw...))
+	window := lifetime / 5
+	offset := window / 65536 * time.Duration(binary.BigEndian.Uint16(hash[:2]))
+	return cert.NotBefore.Add(lifetime/5*2 + offset)
 }
 
 func (a *Agent) applyTrust(ctx context.Context, trust []byte) error {

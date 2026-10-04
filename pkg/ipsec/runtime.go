@@ -210,16 +210,24 @@ func (r *runtimeManager) check(ctx context.Context) error {
 }
 
 func (r *runtimeManager) run(ctx context.Context) {
+	backoff := time.Second
 	for ctx.Err() == nil {
+		delay := time.Second
 		if r.enabled.Load() {
+			started := time.Now()
 			if err := r.runPair(ctx); err != nil && ctx.Err() == nil {
-				klog.ErrorS(err, "IPsec runtime stopped; retrying")
+				if time.Since(started) >= time.Minute {
+					backoff = time.Second
+				}
+				delay = backoff
+				backoff = min(30*time.Second, backoff*2)
+				klog.ErrorS(err, "IPsec runtime stopped; retrying", "retryAfter", delay)
 			}
 		}
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(time.Second):
+		case <-time.After(delay):
 		}
 	}
 }
