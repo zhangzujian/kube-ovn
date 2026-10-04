@@ -13,6 +13,12 @@ import (
 
 const ipsecIssuerPolicyName = "kube-ovn-ipsec-issuer"
 
+func unconditionalIPsecSelector(selector *metav1.LabelSelector) bool {
+	// The API Server defaults omitted selectors to {}, which matches all
+	// objects/namespaces. Only a nonempty selector narrows the policy's scope.
+	return selector == nil || len(selector.MatchLabels) == 0 && len(selector.MatchExpressions) == 0
+}
+
 func ipsecIssuerPolicyExpressions(namespace, issuer string) (match, authorized string) {
 	match = fmt.Sprintf(`object.spec.issuerRef.name == %q && has(object.spec.issuerRef.kind) && object.spec.issuerRef.kind == "ClusterIssuer" && (!has(object.spec.issuerRef.group) || object.spec.issuerRef.group == "cert-manager.io")`, issuer)
 	authorized = fmt.Sprintf(`(request.operation == "UPDATE" && object.spec == oldObject.spec) || request.userInfo.username == %q && object.metadata.namespace == %q`, "system:serviceaccount:"+namespace+":ovn", namespace)
@@ -31,7 +37,7 @@ func (c *Controller) verifyIPsecIssuerPolicy(ctx context.Context) error {
 	match, authorized := ipsecIssuerPolicyExpressions(c.config.PodNamespace, c.config.CertManagerIssuerName)
 	normalize := func(expression string) string { return strings.Join(strings.Fields(expression), " ") }
 	constraints := policy.Spec.MatchConstraints
-	if policy.Spec.FailurePolicy == nil || *policy.Spec.FailurePolicy != admissionv1.Fail || policy.Spec.ParamKind != nil || constraints == nil || constraints.NamespaceSelector != nil || constraints.ObjectSelector != nil || len(constraints.ExcludeResourceRules) != 0 || len(constraints.ResourceRules) != 1 || len(policy.Spec.MatchConditions) != 1 || normalize(policy.Spec.MatchConditions[0].Expression) != match || len(policy.Spec.Validations) != 1 || normalize(policy.Spec.Validations[0].Expression) != authorized {
+	if policy.Spec.FailurePolicy == nil || *policy.Spec.FailurePolicy != admissionv1.Fail || policy.Spec.ParamKind != nil || constraints == nil || !unconditionalIPsecSelector(constraints.NamespaceSelector) || !unconditionalIPsecSelector(constraints.ObjectSelector) || len(constraints.ExcludeResourceRules) != 0 || len(constraints.ResourceRules) != 1 || len(policy.Spec.MatchConditions) != 1 || normalize(policy.Spec.MatchConditions[0].Expression) != match || len(policy.Spec.Validations) != 1 || normalize(policy.Spec.Validations[0].Expression) != authorized {
 		return errors.New("IPsec issuer admission policy is missing or has an incompatible scope")
 	}
 	rule := constraints.ResourceRules[0]

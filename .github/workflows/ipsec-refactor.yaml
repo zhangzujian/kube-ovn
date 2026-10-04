@@ -5,6 +5,11 @@ on:
     branches:
       - codex/ipsec-container
   workflow_dispatch:
+    inputs:
+      api_only:
+        description: Run only the disposable API Server signing contract
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -15,6 +20,7 @@ concurrency:
 
 jobs:
   verify:
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.api_only }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

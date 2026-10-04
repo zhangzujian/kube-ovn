@@ -175,7 +175,26 @@ func TestIPsecAPIServerSigningContract(t *testing.T) {
 		}
 	}
 	c.config.CertManagerIssuerName = issuer
-	require.Eventually(t, func() bool { return c.verifyIPsecIssuerPolicy(ctx) == nil }, time.Minute, 200*time.Millisecond)
+	var policyError error
+	valid := false
+	for deadline := time.Now().Add(time.Minute); time.Now().Before(deadline); {
+		policyError = c.verifyIPsecIssuerPolicy(ctx)
+		if policyError == nil {
+			valid = true
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("API contract test cancelled during policy validation")
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+	if !valid {
+		policy, err := admin.AdmissionregistrationV1().ValidatingAdmissionPolicies().Get(ctx, ipsecIssuerPolicyName, metav1.GetOptions{})
+		require.NoError(t, err)
+		t.Logf("policy generation=%d observed=%d type-check=%v", policy.Generation, policy.Status.ObservedGeneration, policy.Status.TypeChecking)
+	}
+	require.NoError(t, policyError)
 	controllerConfig := boundConfig("ovn", false)
 	cmController, err := cmclient.NewForConfig(controllerConfig)
 	require.NoError(t, err)

@@ -46,14 +46,21 @@ func TestIPsecIssuerPoliciesMatchControllerContract(t *testing.T) {
 }
 
 func TestIPsecIssuerRejectsMissingOrWeakenedAdmissionPolicy(t *testing.T) {
-	for _, scenario := range []string{"valid", "missing", "ignore-errors", "namespace-filter", "audit-only", "wrong-issuer", "stale-status"} {
+	for _, scenario := range []string{"valid", "api-defaults", "missing", "ignore-errors", "namespace-filter", "object-filter", "audit-only", "wrong-issuer", "stale-status"} {
 		t.Run(scenario, func(t *testing.T) {
 			policy, binding := testIPsecIssuerPolicy("kube-system", "kube-ovn")
 			switch scenario {
+			case "api-defaults":
+				policy.Spec.MatchConstraints.NamespaceSelector = &metav1.LabelSelector{}
+				policy.Spec.MatchConstraints.ObjectSelector = &metav1.LabelSelector{}
+				policy.Spec.MatchConstraints.MatchPolicy = new(admissionv1.Equivalent)
+				policy.Spec.MatchConstraints.ResourceRules[0].Scope = new(admissionv1.AllScopes)
 			case "ignore-errors":
 				policy.Spec.FailurePolicy = new(admissionv1.Ignore)
 			case "namespace-filter":
-				policy.Spec.MatchConstraints.NamespaceSelector = &metav1.LabelSelector{}
+				policy.Spec.MatchConstraints.NamespaceSelector = &metav1.LabelSelector{MatchLabels: map[string]string{"namespace": "kube-system"}}
+			case "object-filter":
+				policy.Spec.MatchConstraints.ObjectSelector = &metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{{Key: "ipsec", Operator: metav1.LabelSelectorOpExists}}}
 			case "audit-only":
 				binding.Spec.ValidationActions = []admissionv1.ValidationAction{admissionv1.Audit}
 			case "wrong-issuer":
@@ -67,7 +74,7 @@ func TestIPsecIssuerRejectsMissingOrWeakenedAdmissionPolicy(t *testing.T) {
 			}
 			c := &Controller{config: &Configuration{PodNamespace: "kube-system", CertManagerIssuerName: "kube-ovn", KubeClient: client}}
 			err := c.verifyIPsecIssuerPolicy(t.Context())
-			if scenario == "valid" {
+			if scenario == "valid" || scenario == "api-defaults" {
 				require.NoError(t, err)
 			} else {
 				require.Error(t, err)
