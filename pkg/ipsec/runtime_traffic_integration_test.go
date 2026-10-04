@@ -70,6 +70,35 @@ func TestCandidateEncryptedTraffic(t *testing.T) {
 	tunnel := os.Getenv("IPSEC_TUNNEL")
 	port := map[string]int{"geneve": 6081, "vxlan": 4789}[tunnel]
 	require.NotZero(t, port)
+	// Prototype only: reserve this synthetic source/UDP selector in an isolated
+	// namespace. Production needs a verified ownership/conflict contract before
+	// applying such a rule: other tunnels can share an underlay address/port.
+	// The rule belongs to neither charon nor its dynamically allocated reqids.
+	guard := []string{"xfrm", "policy", "add", "src", local, "dst", "0.0.0.0/0", "proto", "udp", "dport", strconv.Itoa(port), "dir", "out", "priority", "2147483647", "index", "759801", "action", "block"}
+	if net.ParseIP(local).To4() == nil {
+		guard[6] = "::/0"
+	}
+	require.NoError(t, command(t.Context(), "ip", guard...))
+	assertGuard := func() {
+		t.Helper()
+		output, err := exec.CommandContext(t.Context(), "ip", "xfrm", "policy", "get", "index", "759801", "dir", "out").Output()
+		require.NoError(t, err)
+		require.Contains(t, string(output), "action block")
+		require.Contains(t, string(output), "priority 2147483647")
+	}
+	assertGuard()
+	probeBlocked := func() {
+		t.Helper()
+		probe, err := net.Dial("udp", net.JoinHostPort(peer, strconv.Itoa(port)))
+		require.NoError(t, err)
+		defer func() { require.NoError(t, probe.Close()) }()
+		// Linux may report a policy rejection synchronously or drop the packet.
+		// The independent outer capture must contain no plaintext in either case.
+		for range 10 {
+			_, _ = probe.Write([]byte("candidate-blocked-transport-" + node))
+		}
+	}
+	probeBlocked()
 	cert, err := os.ReadFile("/fixtures/certificate")
 	require.NoError(t, err)
 	key, err := os.ReadFile("/fixtures/private-key")
@@ -88,9 +117,13 @@ func TestCandidateEncryptedTraffic(t *testing.T) {
 	require.NoError(t, a.store.save("pending", g))
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
+	stopped := false
 	go func() { done <- a.Run(ctx) }()
 	t.Cleanup(func() {
 		cancel()
+		if stopped {
+			return
+		}
 		select {
 		case err := <-done:
 			require.NoError(t, err)
@@ -130,13 +163,34 @@ func TestCandidateEncryptedTraffic(t *testing.T) {
 	// Keep both peers alive until the harness has collected both outcomes.
 	for {
 		if _, err := os.Stat("/fixtures/finish"); err == nil {
-			return
+			break
 		}
 		_, err := sender.Write([]byte(payload))
 		require.NoError(t, err)
 		select {
 		case <-t.Context().Done():
 			t.Fatal("traffic harness did not release the peer")
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+	cancel()
+	select {
+	case err := <-done:
+		stopped = true
+		require.NoError(t, err)
+	case <-time.After(20 * time.Second):
+		t.Fatal("traffic runtime did not stop for the guard test")
+	}
+	assertGuard()
+	probeBlocked()
+	require.NoError(t, os.WriteFile("/fixtures/guard-complete", nil, 0o600))
+	for {
+		if _, err := os.Stat("/fixtures/release"); err == nil {
+			return
+		}
+		select {
+		case <-t.Context().Done():
+			t.Fatal("traffic harness did not release the guard test")
 		case <-time.After(200 * time.Millisecond):
 		}
 	}

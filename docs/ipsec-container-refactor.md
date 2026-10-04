@@ -65,9 +65,21 @@ endpoints, priority/capability inheritance, monitor crash recovery, and shutdown
 `hack/test-ipsec-traffic.sh` runs two private network namespaces with synthetic
 certificate identities and UDP payloads on Geneve/VXLAN ports, for IPv4 and IPv6.
 A separate fixture captures the outer interface and requires ESP packets with
-zero plaintext transport packets. This verifies Linux transport/IKE; it does
-not run `ovn-controller` or Pod overlays, or establish protection during faults
-and rollout.
+zero plaintext transport packets. The isolated test also prototypes a
+low-priority XFRM block policy before starting IKE and confirms it survives
+runtime shutdown. Production does not install this policy: its selector would
+reserve an underlay address/UDP port, so ownership and conflicts must be resolved
+before adoption. This verifies synthetic Linux transport/IKE; it does not run
+`ovn-controller` or Pod overlays, or establish production protection during
+faults and rollout.
+
+`hack/test-ipsec-api.sh` uses a disposable CI cluster with real cert-manager to
+check bound Pod authentication fields, built-in signing, rendered issuer
+admission and controller forwarding. It intentionally grants its test CNI
+CertificateRequest privileges to verify admission independently of RBAC;
+production CNI does not have those privileges. The test also checks namespace
+restriction, unrelated issuers and metadata-only updates. This is an API
+contract test, not a full Kube-OVN deployment or migration test.
 
 Local probes use the private status socket with `--check=livez` or
 `--check=readyz`. Readiness includes an unexpired active certificate and runtime

@@ -57,3 +57,19 @@ jobs:
           CGO_ENABLED=0 go test -c -o /tmp/ipsec-runtime-tests ./pkg/ipsec
           bash hack/test-ipsec-runtime.sh ipsec-candidate:"$GITHUB_SHA" /tmp/ipsec-runtime-tests
           bash hack/test-ipsec-traffic.sh ipsec-candidate:"$GITHUB_SHA" /tmp/ipsec-runtime-tests
+
+  api-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: azure/setup-helm@v5
+      - name: Install Kind
+        run: go install sigs.k8s.io/kind@v0.33.0
+      - name: Validate real bound identities and issuer admission
+        run: bash hack/test-ipsec-api.sh

@@ -28,7 +28,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-docker network create --internal --ipv6 --subnet "fd00:7598:$(printf '%x' "$$")::/64" "$traffic_network" >/dev/null
+docker network create --internal --ipv6 --subnet "fd00:7598:$(printf '%x:%x' "$(( $$ / 65536 ))" "$(( $$ % 65536 ))")::/64" "$traffic_network" >/dev/null
 docker volume create "$traffic_fixtures" >/dev/null
 docker run --rm --network none --user 0:0 --cap-drop ALL --security-opt no-new-privileges \
   --mount "type=volume,src=$traffic_fixtures,dst=/fixtures" \
@@ -41,7 +41,7 @@ for family in 4 6; do
     echo "Candidate transport: IPv$family $tunnel"
     docker run --rm --network none --user 0:0 --cap-drop ALL \
       --mount "type=volume,src=$traffic_fixtures,dst=/fixtures" \
-      "$candidate_image" rm -f /fixtures/node-0/finish /fixtures/node-1/finish /fixtures/node-0/traffic-complete /fixtures/node-1/traffic-complete
+      "$candidate_image" bash -c 'rm -f /fixtures/node-{0,1}/{finish,release,traffic-complete,guard-complete}'
     traffic_addresses=()
     for i in 0 1; do
       docker volume create "${traffic_sockets[$i]}" >/dev/null
@@ -125,6 +125,29 @@ for family in 4 6; do
       fi
       sleep 1
     done
+    for i in 0 1; do
+      docker exec "${traffic_ovs[$i]}" touch "/fixtures/node-$i/finish"
+    done
+    for attempt in {1..40}; do
+      complete=true
+      for i in 0 1; do
+        if [[ "$(docker inspect --format '{{.State.Running}}' "${traffic_tests[$i]}")" != true ]]; then
+          echo 'A candidate exited before validating the persistent guard' >&2
+          exit 1
+        fi
+        if ! docker exec "${traffic_ovs[$i]}" test -f "/fixtures/node-$i/guard-complete"; then
+          complete=false
+        fi
+      done
+      if [[ "$complete" == true ]]; then
+        break
+      fi
+      if [[ "$attempt" == 40 ]]; then
+        echo 'The guard did not survive runtime shutdown' >&2
+        exit 1
+      fi
+      sleep 1
+    done
     docker exec "${traffic_ovs[0]}" bash -c 'kill -INT "$(cat /tmp/capture.pid)"'
     for attempt in {1..20}; do
       if docker exec "${traffic_ovs[0]}" test -f /tmp/capture-complete; then
@@ -138,7 +161,7 @@ for family in 4 6; do
       sleep 0.1
     done
     for i in 0 1; do
-      docker exec "${traffic_ovs[$i]}" touch "/fixtures/node-$i/finish"
+      docker exec "${traffic_ovs[$i]}" touch "/fixtures/node-$i/release"
       exit_code=$(docker wait "${traffic_tests[$i]}")
       if [[ "$exit_code" != 0 ]]; then
         echo "Candidate traffic test failed with status $exit_code" >&2
