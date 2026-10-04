@@ -75,7 +75,7 @@ for family in 4 6; do
     done
     docker exec --detach "${traffic_ovs[0]}" bash -c '
       set -euo pipefail
-      tcpdump -i eth0 -p -n -U -w /tmp/traffic.pcap \
+      tcpdump -Z root -i eth0 -p -n -U -w /tmp/traffic.pcap \
         "host $1 and (udp port 6081 or udp port 4789 or udp port 4500 or ip proto 50 or ip6 proto 50)" >/tmp/capture.log 2>&1 &
       traffic_capture_pid=$!
       echo "$traffic_capture_pid" >/tmp/capture.pid

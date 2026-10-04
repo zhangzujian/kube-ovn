@@ -30,6 +30,15 @@ func TestCandidateRuntime(t *testing.T) {
 		t.Skip("requires the isolated candidate-image runtime harness")
 	}
 	require.NoError(t, checkIKEPorts(), "the test network namespace must be isolated")
+	require.NoError(t, command(t.Context(), "ip", "xfrm", "policy", "add", "src", "192.0.2.10", "dst", "192.0.2.20", "dir", "out", "priority", "99", "index", "759809", "action", "block"))
+	foreignPolicy := func() []byte {
+		t.Helper()
+		output, err := exec.CommandContext(t.Context(), "ip", "xfrm", "policy", "get", "index", "759809", "dir", "out").Output()
+		require.NoError(t, err, "the runtime must preserve an unrelated kernel policy")
+		return output
+	}
+	foreign := foreignPolicy()
+	t.Cleanup(func() { require.Equal(t, foreign, foreignPolicy()) })
 	require.NoError(t, command(t.Context(), "ovs-vsctl", "--timeout=5", "--no-wait", "add-br", "br-fixture"))
 	require.NoError(t, command(t.Context(), "ovs-vsctl", "--timeout=5", "--no-wait", "add-port", "br-fixture", "unrelated-ipsec", "--", "set", "Interface", "unrelated-ipsec", "type=geneve", "options:remote_ip=198.51.100.77", "options:remote_name=external-peer"))
 	cert, key, trust := testIdentity(t, "runtime-test-chassis")
@@ -138,6 +147,7 @@ func TestCandidateRuntime(t *testing.T) {
 	require.Equal(t, "Restored", a.Status().Phase)
 	require.Equal(t, current.ID, a.Status().Generation)
 	checkTrust()
+	require.Equal(t, foreign, foreignPolicy())
 	for _, action := range offline.Actions() {
 		require.Equal(t, "secrets", action.GetResource().Resource, "offline recovery must not issue requests or infer a fresh Node identity")
 	}
