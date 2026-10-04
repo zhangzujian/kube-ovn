@@ -53,7 +53,7 @@ jobs:
       - name: Test node module and signing profile
         run: |
           go test -race ./pkg/ipsec
-          go test ./pkg/controller -run TestIPsec -count=1
+          go test -race ./pkg/controller -run TestIPsec -count=1
           go test ./pkg/ovs -run TestIPsec -count=1
       - name: Compile candidate binaries and IPsec E2E
         run: |

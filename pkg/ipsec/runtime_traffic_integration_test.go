@@ -15,11 +15,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"syscall"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vishvananda/netlink"
+	"golang.org/x/sys/unix"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
@@ -135,17 +138,48 @@ func TestCandidateEncryptedTraffic(t *testing.T) {
 		}
 	})
 	require.NoError(t, command(t.Context(), "ovs-vsctl", "--timeout=5", "--no-wait", "add-br", "br-test"))
-	require.NoError(t, command(t.Context(), "ovs-vsctl", "--timeout=5", "--no-wait", "add-port", "br-test", "ovn-peer", "--", "set", "Interface", "ovn-peer", "type="+tunnel, "options:local_ip="+local, "options:remote_ip="+peer, "options:remote_name=traffic-chassis-"+peerNode, "options:ipsec_reqid=759811", "--", "set", "Port", "ovn-peer", "external_ids:ovn-chassis-id=traffic-chassis-"+peerNode))
-	require.Eventually(t, func() bool {
+	// Follow the production startup gate: the node reserves and publishes its
+	// protection lease before OVN creates an encrypted tunnel. A fixed reqid
+	// inserted concurrently with bootstrap races the ownership conflict check.
+	var runErr error
+	require.EventuallyWithT(t, func(collect *assert.CollectT) {
+		select {
+		case err := <-done:
+			stopped = true
+			runErr = err
+		default:
+		}
+		require.False(collect, stopped, "traffic agent exited before readiness: %v", runErr)
+		status := a.Status()
+		require.True(collect, status.ProtectionArmed && status.RuntimeHealthy && status.ConfigurationApplied, "agent status: %+v", status)
+	}, 60*time.Second, 200*time.Millisecond)
+	a.protectionMu.Lock()
+	lease := a.protection.owner.reservation
+	a.protectionMu.Unlock()
+	require.NoError(t, command(t.Context(), "ovs-vsctl", "--timeout=5", "--no-wait", "add-port", "br-test", "ovn-peer", "--", "set", "Interface", "ovn-peer", "type="+tunnel, "options:local_ip="+local, "options:remote_ip="+peer, "options:remote_name=traffic-chassis-"+peerNode, "options:ipsec_reqid="+strconv.FormatUint(uint64(lease.Reqid), 10), "options:ipsec_mark_out="+strconv.FormatUint(uint64(lease.Mark), 10)+"/0xffffffff", "options:egress_pkt_mark="+strconv.FormatUint(uint64(lease.Mark), 10), "--", "set", "Port", "ovn-peer", "external_ids:ovn-chassis-id=traffic-chassis-"+peerNode))
+	require.EventuallyWithT(t, func(collect *assert.CollectT) {
 		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 		defer cancel()
 		output, err := exec.CommandContext(ctx, "/usr/sbin/ipsec", "statusall").Output()
-		return err == nil && bytes.Contains(output, []byte("ROUTED"))
+		require.NoError(collect, err)
+		// statusall contains public identities and selectors, never SA keys.
+		require.True(collect, bytes.Contains(output, []byte("ROUTED")), "agent status: %+v; IKE status: %s", a.Status(), output)
 	}, 60*time.Second, 200*time.Millisecond, "the real monitor must install transport trap policies")
 	socket, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP(local), Port: port})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, socket.Close()) })
-	sender, err := net.Dial("udp", net.JoinHostPort(peer, strconv.Itoa(port)))
+	// Set the production output mark before connect(): the separate synthetic
+	// guard deliberately blocks an unmarked socket even before its first send.
+	dialer := &net.Dialer{Control: func(_, _ string, raw syscall.RawConn) error {
+		var markErr error
+		if err := raw.Control(func(fd uintptr) {
+			markErr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_MARK, int(lease.Mark))
+		}); err != nil {
+			return err
+		}
+		return markErr
+	}}
+	sender, err := dialer.DialContext(t.Context(), "udp", net.JoinHostPort(peer, strconv.Itoa(port)))
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, sender.Close()) })
 	payload := "candidate-IPsec-node-" + node
@@ -169,7 +203,7 @@ func TestCandidateEncryptedTraffic(t *testing.T) {
 		count := 0
 		for _, state := range states {
 			// Never log or serialize the netlink state: it includes SA keys.
-			if state.Reqid == 759811 {
+			if state.Reqid == int(lease.Reqid) {
 				require.Equal(t, netlink.XFRM_PROTO_ESP, state.Proto)
 				require.Equal(t, netlink.XFRM_MODE_TRANSPORT, state.Mode)
 				require.True(t, state.Src.Equal(net.ParseIP(local)) && state.Dst.Equal(net.ParseIP(peer)) || state.Src.Equal(net.ParseIP(peer)) && state.Dst.Equal(net.ParseIP(local)))
