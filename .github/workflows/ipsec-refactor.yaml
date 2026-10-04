@@ -67,7 +67,11 @@ jobs:
           IPSEC_PROTECTION_PROTOTYPE: 'true'
         run: |
           docker build --build-arg CANDIDATE_IMAGE=ipsec-candidate:"$GITHUB_SHA" --label org.opencontainers.image.revision="$GITHUB_SHA" -t ipsec-source-prototype:"$GITHUB_SHA" -f dist/images/Dockerfile.ipsec-ovn dist/images
-          bash hack/test-ipsec-overlay.sh ipsec-source-prototype:"$GITHUB_SHA"
+          for family in IPv4 IPv6; do
+            for tunnel in geneve vxlan; do
+              IPSEC_OVERLAY_FAMILY="$family" IPSEC_OVERLAY_TUNNEL="$tunnel" bash hack/test-ipsec-overlay.sh ipsec-source-prototype:"$GITHUB_SHA"
+            done
+          done
 
   lint:
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.api_only }}

@@ -166,3 +166,10 @@ traffic and ESP SAs using that reservation. It then stops IKE, changes the SB
 switch to plaintext mode, and requires the retained output mark/guard to block
 Pod probes with zero plaintext transport packets. This still needs an actual CI pass
 and is not a production allocator, reboot gate or cleanup ledger.
+
+The real-overlay acceptance harness also reads the deployed CNI and IKE process
+UID, capability and nice fields: CNI must have UID 65534, nice 0 and no SYS_NICE
+in either its effective or bounding set, while IKE must have nice -5 and no
+effective capabilities outside the three production capabilities. The pending
+source-path matrix covers IPv4/IPv6 and Geneve/VXLAN. These added checks must pass
+in CI before they can serve as evidence.

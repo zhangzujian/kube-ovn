@@ -7,6 +7,17 @@ set -euo pipefail
 # Capture the actual underlay interface, not the decrypted pod interface.
 overlay_image=${1:?candidate image is required}
 overlay_protection=${IPSEC_PROTECTION_PROTOTYPE:-false}
+overlay_family=${IPSEC_OVERLAY_FAMILY:-IPv4}
+overlay_tunnel=${IPSEC_OVERLAY_TUNNEL:-geneve}
+case "$overlay_family" in
+  IPv4) overlay_kind_family=ipv4; overlay_pods=10.16.0.0/16; overlay_services=10.96.0.0/12; overlay_wildcard=0.0.0.0/0 ;;
+  IPv6) overlay_kind_family=ipv6; overlay_pods=fd00:10:16::/112; overlay_services=fd00:10:96::/112; overlay_wildcard=::/0 ;;
+  *) echo 'Unsupported overlay IP family' >&2; exit 1 ;;
+esac
+case "$overlay_tunnel" in
+  geneve|vxlan) ;;
+  *) echo 'Unsupported overlay tunnel type' >&2; exit 1 ;;
+esac
 overlay_cluster="ipsec-overlay-${GITHUB_RUN_ID:?requires an isolated CI runner}-${GITHUB_RUN_ATTEMPT:-1}"
 overlay_kubeconfig=$(mktemp)
 overlay_config=$(mktemp)
@@ -40,13 +51,14 @@ cleanup() {
   exit "$overlay_status"
 }
 trap cleanup EXIT
-cat >"$overlay_config" <<'EOF'
+cat >"$overlay_config" <<EOF
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 networking:
   disableDefaultCNI: true
-  podSubnet: 10.16.0.0/16
-  serviceSubnet: 10.96.0.0/12
+  ipFamily: $overlay_kind_family
+  podSubnet: $overlay_pods
+  serviceSubnet: $overlay_services
 nodes:
   - role: control-plane
   - role: worker
@@ -65,23 +77,52 @@ helm install kube-ovn charts/kube-ovn-v2 --namespace kube-system \
   --set-string "global.images.kubeovn.repository=${overlay_image%:*}" \
   --set-string "global.images.kubeovn.tag=${overlay_image##*:}" \
   --set image.pullPolicy=Never --set features.enableOvnIpsec=true \
-  --set ovsOvn.disableModulesManagement=true
+  --set ovsOvn.disableModulesManagement=true \
+  --set-string "networking.stack=$overlay_family" --set-string "networking.tunnelType=$overlay_tunnel"
 kubectl -n kube-system rollout status deployment/ovn-central --timeout=240s
 kubectl -n kube-system rollout status deployment/kube-ovn-controller --timeout=240s
 kubectl -n kube-system rollout status daemonset/ovs-ovn --timeout=240s
 kubectl -n kube-system rollout status daemonset/kube-ovn-cni --timeout=300s
+# Confirm the requested privilege/priority split in the deployed processes,
+# beyond rendered manifests and the isolated runtime fixture.
+for node in "$overlay_control_plane" "$overlay_worker"; do
+  cni_pod=$(kubectl -n kube-system get pod -l app=kube-ovn-cni --field-selector "spec.nodeName=$node" -o name)
+  kubectl -n kube-system exec "$cni_pod" -c cni-server -- python3 -c '
+import os,subprocess
+pids=subprocess.check_output(["pidof","kube-ovn-daemon"],text=True).split()
+assert len(pids)==1, "expected one node CNI process"
+pid=int(pids[0])
+with open(f"/proc/{pid}/status") as f:
+    status=dict(line.split(":",1) for line in f if ":" in line)
+assert status["Uid"].split()[1]=="65534", "CNI must remain non-root"
+assert int(status["CapBnd"],16)&(1<<23)==0, "CNI must not retain SYS_NICE in its bounding set"
+assert int(status["CapEff"],16)&(1<<23)==0, "CNI must not have effective SYS_NICE"
+assert os.getpriority(os.PRIO_PROCESS,pid)==0, "CNI must use normal process priority"
+print("Deployed CNI: UID 65534, nice 0, SYS_NICE absent")'
+  kubectl -n kube-system exec "$cni_pod" -c ipsec -- python3 -c '
+import os,subprocess
+pids=subprocess.check_output(["pidof","charon"],text=True).split()
+assert len(pids)==1, "expected one owned IKE process"
+pid=int(pids[0])
+with open(f"/proc/{pid}/status") as f:
+    status=dict(line.split(":",1) for line in f if ":" in line)
+assert status["Uid"].split()[1]=="0", "IKE must use the validated root runtime"
+assert int(status["CapEff"],16)&~((1<<12)|(1<<10)|(1<<23))==0, "IKE must stay within the three production capabilities"
+assert os.getpriority(os.PRIO_PROCESS,pid)==-5, "IPsec must own the configured process priority"
+print("Deployed IPsec: IKE nice -5, effective capabilities restricted")'
+done
 # This synthetic reservation is confined to disposable Kind node namespaces.
 # It is not a production allocator, activation coordinator or ownership ledger.
 if [[ "$overlay_protection" == true ]]; then
   for node in "$overlay_control_plane" "$overlay_worker"; do
-    docker exec "$node" ip xfrm policy add src 0.0.0.0/0 dst 0.0.0.0/0 \
+    docker exec "$node" ip xfrm policy add src "$overlay_wildcard" dst "$overlay_wildcard" \
       dir out priority 2147483647 index 759833 action block mark 759815/0xffffffff
     ovs_pod=$(kubectl -n kube-system get pod -l app=ovs --field-selector "spec.nodeName=$node" -o name)
     kubectl -n kube-system exec "$ovs_pod" -- ovs-vsctl set Open_vSwitch . \
       external_ids:ovn-ipsec-protection-mark=759815 \
       external_ids:ovn-ipsec-protection-reqid=759815
     for attempt in {1..60}; do
-      if kubectl -n kube-system exec "$ovs_pod" -- ovs-vsctl --format=json --columns=options find Interface type=geneve | \
+      if kubectl -n kube-system exec "$ovs_pod" -- ovs-vsctl --format=json --columns=options find Interface "type=$overlay_tunnel" | \
           python3 -c 'import json,sys; rows=json.load(sys.stdin)["data"]; expected={"egress_pkt_mark":"759815","ipsec_mark_out":"759815/0xffffffff","ipsec_reqid":"759815"}; sys.exit(not rows or not all(expected.items() <= dict(row[0][1]).items() for row in rows))'; then
         break
       fi
@@ -104,7 +145,7 @@ overlay_ovs=$(kubectl -n kube-system get pod -l app=ovs --field-selector "spec.n
 kubectl -n kube-system exec "$overlay_ovs" -- bash -c '
   set -euo pipefail
   tcpdump -Z root -i eth0 -p -n -U -w /tmp/ipsec-overlay.pcap \
-    "host $1 and (udp port 6081 or udp port 4789 or udp port 4500 or ip proto 50)" >/tmp/ipsec-overlay-capture.log 2>&1 &
+    "host $1 and (udp port 6081 or udp port 4789 or udp port 4500 or ip proto 50 or ip6 proto 50)" >/tmp/ipsec-overlay-capture.log 2>&1 &
   overlay_capture_pid=$!
   echo "$overlay_capture_pid" >/tmp/ipsec-overlay-capture.pid
   wait "$overlay_capture_pid"
@@ -142,7 +183,7 @@ kubectl -n kube-system exec "$overlay_ovs" -- bash -c '
 wait "$overlay_capture_client"
 overlay_esp=$(kubectl -n kube-system exec "$overlay_ovs" -- bash -o pipefail -c 'tcpdump -Z root -n -r /tmp/ipsec-overlay.pcap | awk "/ESP\\(spi=/{count++} END{print count+0}"')
 overlay_plaintext=$(kubectl -n kube-system exec "$overlay_ovs" -- bash -o pipefail -c 'tcpdump -Z root -n -r /tmp/ipsec-overlay.pcap "udp port 6081 or udp port 4789" | wc -l')
-echo "Actual cross-node OVN pods: ESP packets=$overlay_esp plaintext transport packets=$overlay_plaintext"
+echo "Actual cross-node OVN $overlay_family $overlay_tunnel pods: ESP packets=$overlay_esp plaintext transport packets=$overlay_plaintext"
 if [[ "$overlay_esp" == 0 || "$overlay_plaintext" != 0 ]]; then
   echo 'The actual OVN overlay did not prove encryption without plaintext' >&2
   exit 1
@@ -156,7 +197,7 @@ if [[ "$overlay_protection" == true ]]; then
       echo 'No ESP SA uses the prototype ownership reservation' >&2
       exit 1
     fi
-    echo "OVN-generated marked tunnel on $node: owned ESP states=$owned_states"
+    echo "OVN-generated marked $overlay_family $overlay_tunnel tunnel on $node: owned ESP states=$owned_states"
   done
 fi
 
@@ -187,7 +228,7 @@ if [[ "$overlay_protection" == true ]]; then
   ovs_id=$(docker exec "$overlay_control_plane" crictl ps --name '^openvswitch$' -q)
   [[ -n "$ovs_id" && "$ovs_id" != *$'\n'* ]]
   for attempt in {1..30}; do
-    if docker exec "$overlay_control_plane" crictl exec "$ovs_id" ovs-vsctl --format=json --columns=options find Interface type=geneve | \
+    if docker exec "$overlay_control_plane" crictl exec "$ovs_id" ovs-vsctl --format=json --columns=options find Interface "type=$overlay_tunnel" | \
         python3 -c 'import json,sys; rows=json.load(sys.stdin)["data"]; options=[dict(row[0][1]) for row in rows]; sys.exit(not options or not all(o.get("egress_pkt_mark")=="759815" and "remote_name" not in o for o in options))'; then
       break
     fi
@@ -225,6 +266,6 @@ if [[ "$overlay_protection" == true ]]; then
   docker exec "$overlay_control_plane" crictl exec "$ovs_id" bash -c 'kill -INT "$(cat /tmp/ipsec-protected.pid)"'
   wait "$protected_capture_client"
   protected_plaintext=$(docker exec "$overlay_control_plane" crictl exec "$ovs_id" bash -o pipefail -c 'tcpdump -Z root -n -r /tmp/ipsec-protected.pcap | wc -l')
-  echo "OVN retained-mark protection after IKE stop/SB disable: plaintext transport packets=$protected_plaintext"
+  echo "OVN $overlay_family $overlay_tunnel retained-mark protection after IKE stop/SB disable: plaintext transport packets=$protected_plaintext"
   [[ "$protected_plaintext" == 0 ]]
 fi

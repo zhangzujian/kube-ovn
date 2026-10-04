@@ -12,6 +12,10 @@ test_container="$runtime_id-test"
 runtime_volume="$runtime_id-socket"
 
 cleanup() {
+  if docker cp "$ovs_container:/tmp/ovsdb-fixture.log" /tmp/ovsdb-fixture.log 2>/dev/null; then
+    cat /tmp/ovsdb-fixture.log
+    rm -f /tmp/ovsdb-fixture.log
+  fi
   docker logs "$ovs_container" 2>/dev/null || true
   docker rm -f "$test_container" "$ovs_container" >/dev/null 2>&1 || true
   docker volume rm "$runtime_volume" >/dev/null 2>&1 || true
@@ -27,10 +31,14 @@ docker run --rm --network none --user 0:0 --cap-drop ALL --cap-add CHOWN \
   "$candidate_image" chown 65534:65534 /run/openvswitch
 docker run --detach --name "$ovs_container" --network none --user 65534:65534 \
   --cap-drop ALL --cap-add NET_BIND_SERVICE \
-  --memory 256m --cpus 1 --security-opt no-new-privileges \
+  --memory 256m --cpus 1 \
   --mount "type=volume,src=$runtime_volume,dst=/run/openvswitch" \
   "$candidate_image" bash -c '
-    set -euo pipefail
+    exec >/tmp/ovsdb-fixture.log 2>&1
+    set -exuo pipefail
+    id
+    stat -c "%u:%g %a" /run/openvswitch /tmp /usr/share/openvswitch/vswitch.ovsschema
+    getcap /usr/bin/ovsdb-tool /usr/sbin/ovsdb-server
     ovsdb-tool create /tmp/ipsec-test.db /usr/share/openvswitch/vswitch.ovsschema
     umask 0007
     exec ovsdb-server /tmp/ipsec-test.db --remote=punix:/run/openvswitch/db.sock \
