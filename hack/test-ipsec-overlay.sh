@@ -11,7 +11,7 @@ overlay_family=${IPSEC_OVERLAY_FAMILY:-IPv4}
 overlay_tunnel=${IPSEC_OVERLAY_TUNNEL:-geneve}
 case "$overlay_family" in
   IPv4) overlay_kind_family=ipv4; overlay_pods=10.16.0.0/16; overlay_services=10.96.0.0/12; overlay_wildcard=0.0.0.0/0 ;;
-  IPv6) overlay_kind_family=ipv6; overlay_pods=fd00:10:16::/112; overlay_services=fd00:10:96::/112; overlay_wildcard=::/0 ;;
+  IPv6) overlay_kind_family=ipv6; overlay_pods=fd00:10:16::/56; overlay_services=fd00:10:96::/112; overlay_wildcard=::/0 ;;
   *) echo 'Unsupported overlay IP family' >&2; exit 1 ;;
 esac
 case "$overlay_tunnel" in

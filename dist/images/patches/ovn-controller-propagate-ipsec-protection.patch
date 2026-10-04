@@ -101,3 +101,11 @@
      }
 
      /* Create interface. */
+--- a/controller/ovn-controller.c
++++ b/controller/ovn-controller.c
+@@ -8495,4 +8495,5 @@
+         case 'V':
+             ovs_print_version(OFP15_VERSION, OFP15_VERSION);
++            printf("IPsec output protection version 1\n");
+             printf("SB DB Schema %s\n", sbrec_get_db_version());
+             exit(EXIT_SUCCESS);
