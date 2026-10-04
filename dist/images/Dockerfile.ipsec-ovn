@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Disposable source-path proof; production base builds remain unchanged.
 ARG CANDIDATE_IMAGE
-FROM ${CANDIDATE_IMAGE} AS builder
+FROM ubuntu:26.04 AS builder
 USER 0
 RUN apt-get update && apt-get install -y --no-install-recommends \
     autoconf automake bison build-essential curl flex libtool patch pkg-config libssl-dev \

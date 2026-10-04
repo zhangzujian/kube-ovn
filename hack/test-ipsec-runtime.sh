@@ -32,8 +32,9 @@ docker run --detach --name "$ovs_container" --network none --user 65534:65534 \
   "$candidate_image" bash -c '
     set -euo pipefail
     ovsdb-tool create /tmp/ipsec-test.db /usr/share/openvswitch/vswitch.ovsschema
+    umask 0007
     exec ovsdb-server /tmp/ipsec-test.db --remote=punix:/run/openvswitch/db.sock \
-      --pidfile=/run/openvswitch/ovsdb-server.pid --unixctl=/run/openvswitch/db.ctl --umask=0007
+      --pidfile=/run/openvswitch/ovsdb-server.pid --unixctl=/run/openvswitch/db.ctl
   ' >/dev/null
 
 for attempt in {1..30}; do
