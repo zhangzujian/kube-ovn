@@ -12,9 +12,11 @@ RUN mkdir ovs ovn && \
     curl -fsSL https://github.com/openvswitch/ovs/archive/4a04136154d85ca6b64249fc85e25833b4a489ee.tar.gz | tar -xz --strip-components=1 -C ovs && \
     curl -fsSL https://github.com/ovn-org/ovn/archive/28ed48957d637a7bc149b9272240303d0ad8e0c5.tar.gz | tar -xz --strip-components=1 -C ovn
 COPY patches/ovn-controller-propagate-ipsec-protection.patch /src/protection.patch
-RUN cd ovs && ./boot.sh && ./configure && make -j2
+RUN cd ovs && ./boot.sh && \
+    ./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var && make -j2
 RUN cd ovn && patch -p1 < /src/protection.patch && ./boot.sh && \
-    ./configure --with-ovs-source=/src/ovs --with-ovs-build=/src/ovs && \
+    ./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var \
+    --with-ovs-source=/src/ovs --with-ovs-build=/src/ovs && \
     make -j2
 FROM ${CANDIDATE_IMAGE}
 COPY --from=builder /src/ovn/controller/ovn-controller /usr/bin/ovn-controller
