@@ -184,6 +184,34 @@ func sameGuard(actual, expected *netlink.XfrmPolicy) bool {
 		actual.Ifid == 0 && actual.Ifindex == 0 && len(actual.Tmpls) == 0 && actual.Index > 0 && actual.Index&7 == int(netlink.XFRM_DIR_OUT) && (expected.Index == 0 || actual.Index == expected.Index)
 }
 
+func (p *protectionOwner) readGuard(expected *netlink.XfrmPolicy) (*netlink.XfrmPolicy, error) {
+	family := netlink.FAMILY_V4
+	if expected.Src.IP.To4() == nil {
+		family = netlink.FAMILY_V6
+	}
+	// XfrmPolicyGet currently parses with FAMILY_ALL, which turns an IPv6
+	// wildcard selector into IPv4. A family-filtered dump preserves the
+	// selector's actual family and never normalizes a conflicting policy.
+	policies, err := p.kernel.XfrmPolicyList(family)
+	if err != nil {
+		return nil, err
+	}
+	for _, policy := range policies {
+		if expected.Index != 0 {
+			if policy.Index == expected.Index {
+				return &policy, nil
+			}
+			continue
+		}
+		if policy.Src != nil && policy.Dst != nil && policy.Src.String() == expected.Src.String() && policy.Dst.String() == expected.Dst.String() &&
+			policy.Dir == expected.Dir && policy.Proto == expected.Proto && policy.SrcPort == expected.SrcPort && policy.DstPort == expected.DstPort &&
+			policy.Ifid == expected.Ifid && policy.Ifindex == expected.Ifindex && policy.Mark != nil && *policy.Mark == *expected.Mark {
+			return &policy, nil
+		}
+	}
+	return nil, unix.ENOENT
+}
+
 // arm persists protection intent before installing either family. It never
 // removes protection on normal exit or overwrites a conflicting policy. The
 // caller may expose the mark to OVN only after both readbacks succeed.
@@ -206,7 +234,7 @@ func (p *protectionOwner) arm() error {
 	}
 	for family, index := range p.reservation.Indexes {
 		guard := p.guard(family, index)
-		actual, err := p.kernel.XfrmPolicyGet(guard)
+		actual, err := p.readGuard(guard)
 		if errors.Is(err, unix.ENOENT) {
 			// A missing policy, including after a host reboot, gets a fresh
 			// kernel index. Persist the pending insertion for crash recovery.
@@ -218,7 +246,7 @@ func (p *protectionOwner) arm() error {
 			if err := p.kernel.XfrmPolicyAdd(guard); err != nil {
 				return fmt.Errorf("install IPsec protection guard: %w", err)
 			}
-			actual, err = p.kernel.XfrmPolicyGet(guard)
+			actual, err = p.readGuard(guard)
 		}
 		if err != nil {
 			return fmt.Errorf("read IPsec protection guard: %w", err)

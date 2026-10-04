@@ -88,10 +88,17 @@ func TestCandidateMarkedGuard(t *testing.T) {
 	// owner destruction leaves the guard in the isolated kernel namespace.
 	require.NoError(t, kernel.XfrmPolicyDel(owner.guard(0, owner.reservation.Indexes[0])))
 	require.NoError(t, owner.arm())
-	for family, index := range owner.reservation.Indexes {
-		guard, err := kernel.XfrmPolicyGet(owner.guard(family, index))
+	for family, addressFamily := range []int{netlink.FAMILY_V4, netlink.FAMILY_V6} {
+		policies, err := kernel.XfrmPolicyList(addressFamily)
 		require.NoError(t, err)
-		require.True(t, sameGuard(guard, owner.guard(family, index)))
+		found := false
+		for _, policy := range policies {
+			if policy.Index == owner.reservation.Indexes[family] {
+				require.True(t, sameGuard(&policy, owner.guard(family, policy.Index)))
+				found = true
+			}
+		}
+		require.True(t, found, "each family must retain its actual kernel guard")
 	}
 }
 
