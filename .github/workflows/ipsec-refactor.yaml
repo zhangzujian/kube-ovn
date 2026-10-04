@@ -63,6 +63,10 @@ jobs:
           CGO_ENABLED=0 go test -c -o /tmp/ipsec-runtime-tests ./pkg/ipsec
           bash hack/test-ipsec-runtime.sh ipsec-candidate:"$GITHUB_SHA" /tmp/ipsec-runtime-tests
           bash hack/test-ipsec-traffic.sh ipsec-candidate:"$GITHUB_SHA" /tmp/ipsec-runtime-tests
+      - name: Install Kind for actual OVN overlay validation
+        run: go install sigs.k8s.io/kind@v0.33.0
+      - name: Validate actual cross-node OVN pod encryption
+        run: bash hack/test-ipsec-overlay.sh ipsec-candidate:"$GITHUB_SHA"
 
   api-contract:
     runs-on: ubuntu-latest
