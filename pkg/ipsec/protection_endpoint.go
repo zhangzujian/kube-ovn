@@ -13,6 +13,8 @@ import (
 
 	"golang.org/x/sys/unix"
 	"k8s.io/klog/v2"
+
+	"github.com/kubeovn/kube-ovn/pkg/fileutil"
 )
 
 // The public endpoint exposes no key material and is separate from private
@@ -30,6 +32,14 @@ func (a *Agent) serveProtection(ctx context.Context) error {
 		return errors.New("IPsec protection endpoint requires a root-owned directory without group/other write access")
 	}
 	if err := os.Chmod(dir, 0o750); err != nil {
+		return err
+	}
+	// OVSDB can be recreated independently of the identity/protection stores.
+	// Persist the requirement outside that database before exposing the gate;
+	// absence of a database lease must never authorize an unprotected restart.
+	// This is only a durable intent, never a substitute for live readback. Only
+	// coordinated disable cleanup may remove it; normal shutdown retains it.
+	if err := fileutil.AtomicWriteFile(filepath.Join(dir, "required"), []byte("IPsec output protection version 1\n"), 0o640); err != nil {
 		return err
 	}
 	path := filepath.Join(dir, "protection.sock")

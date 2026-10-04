@@ -124,7 +124,7 @@ handle_underlay_bridges
 # removed the sidecar. Only the coordinated cleanup may remove that intent.
 ovs-vsctl --no-wait set Open_vSwitch . external-ids:ovn-encap-type="${TUNNEL_TYPE}"
 protection_mark=$(ovs-vsctl --if-exists get Open_vSwitch . external_ids:ovn-ipsec-protection-mark)
-if [[ "$ENABLE_OVN_IPSEC" == true || "$protection_mark" != '[]' && -n "$protection_mark" ]]; then
+if [[ "$ENABLE_OVN_IPSEC" == true || "$protection_mark" != '[]' && -n "$protection_mark" || -e /run/kube-ovn-ipsec-protection/required || -L /run/kube-ovn-ipsec-protection/required ]]; then
   ovn-controller --version | grep -Fx 'IPsec output protection version 1'
   echo 'Waiting for live IPsec protection before restoring the OVS datapath'
   while true; do

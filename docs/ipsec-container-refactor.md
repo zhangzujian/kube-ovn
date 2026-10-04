@@ -178,8 +178,13 @@ Protection bootstrap runs before trust/identity activation. It requires an OVSDB
 socket and a live Node UID, or the last committed offline binding. It does not
 require chassis registration or CSR signing. The OVS startup script starts
 OVSDB first and waits for this protection before starting/restarting vswitchd
-and ovn-controller. The wait applies while IPsec is enabled or a marked lease
-remains in OVSDB. A root-owned Unix endpoint in
+and ovn-controller. The wait applies while IPsec is enabled, a marked lease
+remains in OVSDB, or durable required intent remains in the public protection
+directory. The agent persists this intent before serving the gate and retains
+it on shutdown. Recreating OVSDB and changing the installation switch cannot
+bypass the gate. Only completed coordinated disable cleanup may remove the
+intent; that cleanup protocol is still under implementation. The intent file
+never satisfies a probe by itself. A root-owned Unix endpoint in
 `/run/kube-ovn-ipsec-protection` serves fresh guard/OVSDB readbacks bound to the
 caller's current OVS UUID. OVS mounts this public directory read-only; identity
 storage and the private runtime/status endpoint remain separate. The probe
