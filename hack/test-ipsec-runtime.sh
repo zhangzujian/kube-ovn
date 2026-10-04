@@ -20,7 +20,8 @@ trap cleanup EXIT
 
 docker image inspect "$candidate_image" --format '{{.Id}} {{json .Config.Labels}}'
 docker volume create "$runtime_volume" >/dev/null
-docker run --detach --name "$ovs_container" --network none --cap-drop ALL \
+docker run --detach --name "$ovs_container" --network none --user 0:0 \
+  --cap-drop ALL --cap-add NET_BIND_SERVICE \
   --memory 256m --cpus 1 --security-opt no-new-privileges \
   --mount "type=volume,src=$runtime_volume,dst=/run/openvswitch" \
   "$candidate_image" bash -c '
@@ -33,6 +34,11 @@ docker run --detach --name "$ovs_container" --network none --cap-drop ALL \
 for attempt in {1..30}; do
   if docker exec "$ovs_container" ovs-vsctl --timeout=1 --no-wait init; then
     break
+  fi
+  if [[ "$(docker inspect --format '{{.State.Running}}' "$ovs_container")" != true ]]; then
+    docker inspect --format '{{json .State}}' "$ovs_container" >&2
+    echo 'Test OVSDB exited before becoming ready' >&2
+    exit 1
   fi
   if [[ "$attempt" == 30 ]]; then
     echo 'Test OVSDB did not start' >&2

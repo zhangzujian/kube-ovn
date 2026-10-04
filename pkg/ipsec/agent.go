@@ -262,7 +262,7 @@ func (a *Agent) identity(ctx context.Context, nodeUID, chassis string, trust []b
 	if err != nil {
 		return nil, err
 	}
-	i := issuer{kube: a.config.Kube, cm: a.config.CertManager, node: a.config.NodeName, nodeUID: nodeUID, podUID: a.config.PodUID, namespace: a.config.Namespace, issuerName: a.config.IssuerName, duration: a.config.Duration}
+	i := issuer{kube: a.config.Kube, cm: a.config.CertManager, node: a.config.NodeName, nodeUID: nodeUID, podUID: a.config.PodUID, namespace: a.config.Namespace, issuerName: a.config.IssuerName, duration: a.config.Duration, trustHash: digest(trust)}
 	issueCtx, cancel := context.WithTimeout(ctx, a.config.RequestTimeout)
 	defer cancel()
 	cert, err := i.sign(issueCtx, csr)
@@ -314,15 +314,24 @@ func (a *Agent) applyTrust(ctx context.Context, trust []byte) error {
 	if err != nil {
 		return err
 	}
+	// Load additions before removing old owned files. A failed reread keeps
+	// the old files available to the currently running identity and retry.
+	if err := a.runtime.reloadTrust(ctx); err != nil {
+		return err
+	}
+	removed := false
 	for _, entry := range entries {
 		if !entry.IsDir() && bytes.HasPrefix([]byte(entry.Name()), []byte("kube-ovn-")) && !keep[entry.Name()] {
 			if err := os.Remove(filepath.Join(dir, entry.Name())); err != nil {
 				return err
 			}
+			removed = true
 		}
 	}
-	if err := a.runtime.reloadTrust(ctx); err != nil {
-		return err
+	if removed {
+		if err := a.runtime.reloadTrust(ctx); err != nil {
+			return err
+		}
 	}
 	a.caHash = hash
 	return nil

@@ -3,6 +3,7 @@ package ipsec
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -61,6 +62,14 @@ func TestCandidateRuntime(t *testing.T) {
 		return Check(ctx, a.config.RuntimeDir, "readyz") == nil
 	}
 	require.Eventually(t, ready, 60*time.Second, 200*time.Millisecond, "candidate monitor and strongSwan must become ready")
+	checkTrust := func() {
+		ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+		defer cancel()
+		output, err := exec.CommandContext(ctx, "/usr/sbin/ipsec", "listcacerts").Output()
+		require.NoError(t, err)
+		require.Contains(t, string(output), "CN=test CA", "readiness must follow loading the configured trust")
+	}
+	checkTrust()
 	pidBytes, err := os.ReadFile(filepath.Join(a.config.RuntimeDir, "monitor.pid"))
 	require.NoError(t, err)
 	pid, err := strconv.Atoi(strings.TrimSpace(string(pidBytes)))
@@ -75,4 +84,5 @@ func TestCandidateRuntime(t *testing.T) {
 	newPID, err := os.ReadFile(filepath.Join(a.config.RuntimeDir, "monitor.pid"))
 	require.NoError(t, err)
 	require.NotEqual(t, string(pidBytes), string(newPID))
+	checkTrust()
 }

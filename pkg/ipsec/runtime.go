@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -33,6 +34,7 @@ const strongSwanConfig = `charon {
 type runtimeManager struct {
 	dir, ovsSocket string
 	priority       int
+	mu             sync.Mutex
 	enabled        atomic.Bool
 	healthy        atomic.Bool
 }
@@ -170,7 +172,9 @@ func (r *runtimeManager) runPair(ctx context.Context) error {
 		err := r.check(probeCtx)
 		cancel()
 		if err == nil {
-			r.healthy.Store(true)
+			if err := r.confirmTrust(ctx); err != nil {
+				return err
+			}
 		} else if r.healthy.Load() || startupCtx.Err() != nil {
 			return fmt.Errorf("IPsec runtime health check failed: %w", err)
 		}
@@ -211,8 +215,30 @@ func (r *runtimeManager) run(ctx context.Context) {
 }
 
 func (r *runtimeManager) reloadTrust(ctx context.Context) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if !r.healthy.Load() {
 		return nil
 	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
 	return command(ctx, "/usr/sbin/ipsec", "rereadcacerts")
+}
+
+func (r *runtimeManager) confirmTrust(ctx context.Context) error {
+	// Serialize the transition with reloadTrust. Trust written while charon
+	// is starting must be reread either here or by the reconciler after this
+	// transition, so a concurrent restart cannot acknowledge stale trust.
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.healthy.Load() {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if err := command(ctx, "/usr/sbin/ipsec", "rereadcacerts"); err != nil {
+		return err
+	}
+	r.healthy.Store(true)
+	return nil
 }

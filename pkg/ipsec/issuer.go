@@ -34,6 +34,7 @@ type issuer struct {
 	kube                                         kubernetes.Interface
 	cm                                           cmclient.Interface
 	node, nodeUID, podUID, namespace, issuerName string
+	trustHash                                    string
 	duration                                     time.Duration
 }
 
@@ -44,7 +45,7 @@ func requestName(nodeUID string, csr []byte) string {
 func (i issuer) name(csr []byte) string {
 	// A rebuilt Pod has a different authenticated identity even when its
 	// pending key survives. Never reuse a CSR bound to the deleted Pod.
-	identity := fmt.Sprintf("%s:%s:%s:%s", i.nodeUID, i.podUID, i.issuerName, i.duration)
+	identity := fmt.Sprintf("%s:%s:%s:%s:%s", i.nodeUID, i.podUID, i.issuerName, i.duration, i.trustHash)
 	return requestName(identity, csr)
 }
 
@@ -70,6 +71,9 @@ func (i issuer) sign(ctx context.Context, csr []byte) ([]byte, error) {
 	}
 	if !bytes.Equal(created.Spec.Request, csr) || created.Spec.SignerName != req.Spec.SignerName || !slices.Equal(created.Spec.Usages, req.Spec.Usages) || created.Spec.ExpirationSeconds == nil || *created.Spec.ExpirationSeconds != *req.Spec.ExpirationSeconds || created.Annotations[NodeNameAnnotation] != i.node || created.Annotations[NodeUIDAnnotation] != i.nodeUID {
 		return nil, errors.New("IPsec CSR name conflicts with a different request")
+	}
+	if created.Spec.Username != "system:serviceaccount:"+i.namespace+":kube-ovn-cni" || !slices.Equal(created.Spec.Extra["authentication.kubernetes.io/pod-uid"], []string{i.podUID}) {
+		return nil, errors.New("IPsec CSR is not authenticated as the current bound Pod")
 	}
 	check := func(event watch.Event) (bool, error) {
 		if event.Type == watch.Deleted {
@@ -128,6 +132,9 @@ func (i issuer) signCertManager(ctx context.Context, csr []byte) ([]byte, error)
 	}
 	if !bytes.Equal(created.Spec.Request, csr) || created.Spec.IssuerRef != req.Spec.IssuerRef || !slices.Equal(created.Spec.Usages, req.Spec.Usages) || created.Spec.Duration == nil || *created.Spec.Duration != *req.Spec.Duration || created.Spec.IsCA || created.Annotations[NodeNameAnnotation] != i.node || created.Annotations[NodeUIDAnnotation] != i.nodeUID {
 		return nil, errors.New("IPsec CertificateRequest name conflicts with a different request")
+	}
+	if created.Spec.Username != "system:serviceaccount:"+i.namespace+":kube-ovn-cni" || !slices.Equal(created.Spec.Extra["authentication.kubernetes.io/pod-uid"], []string{i.podUID}) {
+		return nil, errors.New("IPsec CertificateRequest is not authenticated as the current bound Pod")
 	}
 	check := func(event watch.Event) (bool, error) {
 		if event.Type == watch.Deleted {
