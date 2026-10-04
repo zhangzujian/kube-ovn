@@ -78,8 +78,10 @@ contract. This does not establish installation safety across API Server replicas
 `observedGeneration` confirms policy processing, not that every instance already
 enforces a newly created binding. The admission barrier must be established before
 the dedicated issuer is made available. That rollout barrier remains incomplete
-in this draft; an earlier immediate rejection check failed without sufficient
-response detail to determine its cause.
+in this draft; a later immediate rejection check returned an accepted request after policy
+status convergence. The test now waits for an actual unauthorized dry-run
+rejection before provisioning its disposable issuer. This does not implement
+a production barrier across API Server instances.
 
 `hack/test-ipsec-runtime.sh` validates the real candidate's startup, private
 endpoints, priority/capability inheritance, monitor crash recovery, and shutdown.
@@ -150,3 +152,17 @@ reuses the reconnecting native OVSDB client, and probes check responsive local
 IKE/monitor endpoints and a bounded reconciliation heartbeat.
 
 The IPsec switch no longer changes the UID of OVS, the controller, or other ordinary containers. The agent runs as UID 0 with GID 65534 to access the non-root OVSDB socket without DAC capabilities. The shell installer retains its existing debug-wrapper UID/GID 0 exception for the shared socket. CNI DaemonSet rollouts explicitly use `maxSurge: 0` and `maxUnavailable: 1`.
+
+The source-path prototype rebuilds only `ovn-controller` from pinned OVN/OVS
+sources in `Dockerfile.ipsec-ovn`. A small candidate patch generates
+`egress_pkt_mark`, `ipsec_mark_out`, and `ipsec_reqid` from paired local
+`ovn-ipsec-protection-mark`/`ovn-ipsec-protection-reqid` external IDs. The output
+mark remains configured when the SB IPsec switch is off, so a future activation
+coordinator can protect the transition. The normal base image and production
+agent do not use this prototype. The disposable Kind harness reserves its own
+synthetic mark/reqid, installs an independent guard before setting the external
+IDs, verifies actual OVN-generated options, and requires marked encrypted Pod
+traffic and ESP SAs using that reservation. It then stops IKE, changes the SB
+switch to plaintext mode, and requires the retained output mark/guard to block
+Pod probes with zero plaintext transport packets. This still needs an actual CI pass
+and is not a production allocator, reboot gate or cleanup ledger.

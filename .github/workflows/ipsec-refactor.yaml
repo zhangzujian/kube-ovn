@@ -22,7 +22,7 @@ jobs:
   verify:
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.api_only }}
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v7
         with:
@@ -62,6 +62,12 @@ jobs:
         run: go install sigs.k8s.io/kind@v0.33.0
       - name: Validate actual cross-node OVN pod encryption
         run: bash hack/test-ipsec-overlay.sh ipsec-candidate:"$GITHUB_SHA"
+      - name: Prove OVN-generated protection mark and reqid path
+        env:
+          IPSEC_PROTECTION_PROTOTYPE: 'true'
+        run: |
+          docker build --build-arg CANDIDATE_IMAGE=ipsec-candidate:"$GITHUB_SHA" --label org.opencontainers.image.revision="$GITHUB_SHA" -t ipsec-source-prototype:"$GITHUB_SHA" -f dist/images/Dockerfile.ipsec-ovn dist/images
+          bash hack/test-ipsec-overlay.sh ipsec-source-prototype:"$GITHUB_SHA"
 
   lint:
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.api_only }}

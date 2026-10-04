@@ -6,6 +6,7 @@ set -euo pipefail
 # Run against a disposable, two-node Kind cluster on CI's Docker runner.
 # Capture the actual underlay interface, not the decrypted pod interface.
 overlay_image=${1:?candidate image is required}
+overlay_protection=${IPSEC_PROTECTION_PROTOTYPE:-false}
 overlay_cluster="ipsec-overlay-${GITHUB_RUN_ID:?requires an isolated CI runner}-${GITHUB_RUN_ATTEMPT:-1}"
 overlay_kubeconfig=$(mktemp)
 overlay_config=$(mktemp)
@@ -69,6 +70,29 @@ kubectl -n kube-system rollout status deployment/ovn-central --timeout=240s
 kubectl -n kube-system rollout status deployment/kube-ovn-controller --timeout=240s
 kubectl -n kube-system rollout status daemonset/ovs-ovn --timeout=240s
 kubectl -n kube-system rollout status daemonset/kube-ovn-cni --timeout=300s
+# This synthetic reservation is confined to disposable Kind node namespaces.
+# It is not a production allocator, activation coordinator or ownership ledger.
+if [[ "$overlay_protection" == true ]]; then
+  for node in "$overlay_control_plane" "$overlay_worker"; do
+    docker exec "$node" ip xfrm policy add src 0.0.0.0/0 dst 0.0.0.0/0 \
+      dir out priority 2147483647 index 759833 action block mark 759815/0xffffffff
+    ovs_pod=$(kubectl -n kube-system get pod -l app=ovs --field-selector "spec.nodeName=$node" -o name)
+    kubectl -n kube-system exec "$ovs_pod" -- ovs-vsctl set Open_vSwitch . \
+      external_ids:ovn-ipsec-protection-mark=759815 \
+      external_ids:ovn-ipsec-protection-reqid=759815
+    for attempt in {1..60}; do
+      if kubectl -n kube-system exec "$ovs_pod" -- ovs-vsctl --format=json --columns=options find Interface type=geneve | \
+          python3 -c 'import json,sys; rows=json.load(sys.stdin)["data"]; expected={"egress_pkt_mark":"759815","ipsec_mark_out":"759815/0xffffffff","ipsec_reqid":"759815"}; sys.exit(not rows or not all(expected.items() <= dict(row[0][1]).items() for row in rows))'; then
+        break
+      fi
+      if [[ "$attempt" == 60 ]]; then
+        echo 'OVN did not generate the owned output mark and IKE selectors' >&2
+        exit 1
+      fi
+      sleep 1
+    done
+  done
+fi
 kubectl create namespace ipsec-overlay
 for role in control-plane worker; do
   kubectl -n ipsec-overlay run "$role" --image="$overlay_image" --image-pull-policy=Never \
@@ -122,4 +146,85 @@ echo "Actual cross-node OVN pods: ESP packets=$overlay_esp plaintext transport p
 if [[ "$overlay_esp" == 0 || "$overlay_plaintext" != 0 ]]; then
   echo 'The actual OVN overlay did not prove encryption without plaintext' >&2
   exit 1
+fi
+
+if [[ "$overlay_protection" == true ]]; then
+  for node in "$overlay_control_plane" "$overlay_worker"; do
+    # Do not dump XFRM key material; print only the counted owned reqid headers.
+    owned_states=$(docker exec "$node" bash -o pipefail -c 'ip xfrm state | awk "/reqid 759815 /{n++} END{print n+0}"')
+    if [[ "$owned_states" == 0 ]]; then
+      echo 'No ESP SA uses the prototype ownership reservation' >&2
+      exit 1
+    fi
+    echo "OVN-generated marked tunnel on $node: owned ESP states=$owned_states"
+  done
+fi
+
+if [[ "$overlay_protection" == true ]]; then
+  # Freeze kubelet recovery only in disposable Kind nodes. CRI exec continues
+  # to exercise existing containers without depending on the stopped kubelet.
+  for node in "$overlay_control_plane" "$overlay_worker"; do
+    docker exec "$node" systemctl stop kubelet
+    ipsec_id=$(docker exec "$node" crictl ps --name '^ipsec$' -q)
+    [[ -n "$ipsec_id" && "$ipsec_id" != *$'\n'* ]]
+    docker exec "$node" crictl stop --timeout 10 "$ipsec_id"
+    for attempt in {1..30}; do
+      owned_states=$(docker exec "$node" bash -o pipefail -c 'ip xfrm state | awk "/reqid 759815 /{n++} END{print n+0}"')
+      if [[ "$owned_states" == 0 ]]; then
+        break
+      fi
+      if [[ "$attempt" == 30 ]]; then
+        echo 'Stopped IKE runtime retained owned prototype ESP SAs' >&2
+        exit 1
+      fi
+      sleep 1
+    done
+    docker exec "$node" bash -o pipefail -c 'ip xfrm policy get index 759833 dir out | grep -q "action block"'
+  done
+  central_id=$(docker exec "$overlay_control_plane" crictl ps --name '^ovn-central$' -q)
+  [[ -n "$central_id" && "$central_id" != *$'\n'* ]]
+  docker exec "$overlay_control_plane" crictl exec "$central_id" ovn-nbctl set NB_Global . ipsec=false
+  ovs_id=$(docker exec "$overlay_control_plane" crictl ps --name '^openvswitch$' -q)
+  [[ -n "$ovs_id" && "$ovs_id" != *$'\n'* ]]
+  for attempt in {1..30}; do
+    if docker exec "$overlay_control_plane" crictl exec "$ovs_id" ovs-vsctl --format=json --columns=options find Interface type=geneve | \
+        python3 -c 'import json,sys; rows=json.load(sys.stdin)["data"]; options=[dict(row[0][1]) for row in rows]; sys.exit(not options or not all(o.get("egress_pkt_mark")=="759815" and "remote_name" not in o for o in options))'; then
+      break
+    fi
+    if [[ "$attempt" == 30 ]]; then
+      echo 'OVN did not retain the protection mark with SB encryption disabled' >&2
+      exit 1
+    fi
+    sleep 1
+  done
+  docker exec "$overlay_control_plane" crictl exec "$ovs_id" bash -c '
+    set -euo pipefail
+    tcpdump -Z root -i eth0 -p -n -U -w /tmp/ipsec-protected.pcap \
+      "host $1 and (udp port 6081 or udp port 4789)" >/tmp/ipsec-protected.log 2>&1 &
+    echo "$!" >/tmp/ipsec-protected.pid
+    wait "$!"
+  ' protected-capture "$overlay_peer" &
+  protected_capture_client=$!
+  for attempt in {1..30}; do
+    if docker exec "$overlay_control_plane" crictl exec "$ovs_id" bash -c 'grep -q "listening on eth0" /tmp/ipsec-protected.log'; then
+      break
+    fi
+    if [[ "$attempt" == 30 ]]; then
+      echo 'Protected-output capture did not start' >&2
+      exit 1
+    fi
+    sleep 0.1
+  done
+  pod_id=$(docker exec "$overlay_control_plane" crictl ps --name '^control-plane$' -q)
+  [[ -n "$pod_id" && "$pod_id" != *$'\n'* ]]
+  overlay_pod_ip=$(kubectl -n ipsec-overlay get pod worker -o jsonpath='{.status.podIP}')
+  if docker exec "$overlay_control_plane" crictl exec "$pod_id" ping -c 5 -W 1 "$overlay_pod_ip"; then
+    echo 'Protected cross-node traffic was delivered with IKE stopped and SB encryption disabled' >&2
+    exit 1
+  fi
+  docker exec "$overlay_control_plane" crictl exec "$ovs_id" bash -c 'kill -INT "$(cat /tmp/ipsec-protected.pid)"'
+  wait "$protected_capture_client"
+  protected_plaintext=$(docker exec "$overlay_control_plane" crictl exec "$ovs_id" bash -o pipefail -c 'tcpdump -Z root -n -r /tmp/ipsec-protected.pcap | wc -l')
+  echo "OVN retained-mark protection after IKE stop/SB disable: plaintext transport packets=$protected_plaintext"
+  [[ "$protected_plaintext" == 0 ]]
 fi

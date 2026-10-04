@@ -1,0 +1,28 @@
+--- a/controller/encaps.c
++++ b/controller/encaps.c
+@@ -260,6 +260,25 @@
+         }
+     }
+ 
++    /* Keep the output mark while encryption is armed, including before the
++     * SB switch is enabled and during an explicitly coordinated disable.
++     * The node owner must install its independent protection before setting
++     * these local external IDs and clear them only after owned cleanup. */
++    if (cfg) {
++        unsigned int mark = smap_get_uint(&cfg->external_ids,
++                                          "ovn-ipsec-protection-mark", 0);
++        unsigned int reqid = smap_get_uint(&cfg->external_ids,
++                                           "ovn-ipsec-protection-reqid", 0);
++        if (mark && reqid) {
++            smap_add_format(&options, "egress_pkt_mark", "%u", mark);
++            if (sbg->ipsec) {
++                smap_add_format(&options, "ipsec_mark_out", "%u/0xffffffff",
++                                mark);
++                smap_add_format(&options, "ipsec_reqid", "%u", reqid);
++            }
++        }
++    }
++
+     /* Add auth info if ipsec is enabled. */
+     if (sbg->ipsec) {
+         smap_add(&options, "remote_name", chassis_rec->name);
