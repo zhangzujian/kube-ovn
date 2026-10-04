@@ -167,6 +167,15 @@ switch to plaintext mode, and requires the retained output mark/guard to block
 Pod probes with zero plaintext transport packets. This still needs an actual CI pass
 and is not a production allocator, reboot gate or cleanup ledger.
 
+The prototype also marks flow-based and EVPN tunnel outputs and reconciles
+lease changes on existing ports. Upstream flow-based tunnels explicitly ignore
+IPsec settings; EVPN also lacks the per-peer identity used by this runtime.
+Marking these paths makes them block under the fixture guard and does not add
+encrypted connectivity support. The source harness checks new and existing
+flow-based/EVPN options and a blocked Pod probe in the same physical capture.
+Production must reject these modes before activation; custom EVPN UDP ports,
+userspace datapaths and offload are outside this prototype's acceptance matrix.
+
 The real-overlay acceptance harness also reads the deployed CNI and IKE process
 UID, capability and nice fields: CNI must have UID 65534, nice 0 and no SYS_NICE
 in either its effective or bounding set, while IKE must have nice -5 and no
@@ -196,3 +205,18 @@ the Kubernetes garbage collector reclaims them with the parent. The API harness
 checks this relationship and preservation of an unrelated issuer request. A
 cluster that disables these Kubernetes controllers needs an explicit retention
 policy; the node does not receive delete privileges or delete requests by name.
+
+The kernel protection module now journals a node-local, Node-UID-bound random
+mark/reqid lease and installs independent IPv4 and IPv6 outbound block guards.
+Fresh reservations reject existing masked mark aliases, reqid aliases and
+potentially overlapping unmarked tunnel bypass policies. Arm persists required
+intent first and verifies actual kernel selectors/action/priority/mark/index. It
+rechecks preempting tunnel bypass policies on every Arm, including recovery, and
+recovers interrupted insertion or lost policies without replacing a conflicting
+entry. Its isolated runtime probe exercises both IP families and both tunnel UDP
+ports. Normal exit does not delete these guards. The candidate runtime test uses
+this module and checks lease recovery, Node replacement rejection, conflict
+preservation and policy restoration in its isolated namespace. The module is not
+yet wired into the production Agent or OVN activation coordinator, and its new
+runtime acceptance is pending. A lease alone never authorizes deleting an SA;
+connection/SA ownership and coordinated disable remain separate requirements.

@@ -263,6 +263,39 @@ if [[ "$overlay_protection" == true ]]; then
     echo 'Protected cross-node traffic was delivered with IKE stopped and SB encryption disabled' >&2
     exit 1
   fi
+  # These upstream paths have no per-peer IKE identity. They are unsupported
+  # encryption modes and must retain the output guard, including existing ports.
+  for node in "$overlay_control_plane" "$overlay_worker"; do
+    node_ovs_id=$(docker exec "$node" crictl ps --name '^openvswitch$' -q)
+    [[ -n "$node_ovs_id" && "$node_ovs_id" != *$'\n'* ]]
+    docker exec "$node" crictl exec "$node_ovs_id" ovs-vsctl set Open_vSwitch . \
+      external_ids:ovn-enable-flow-based-tunnels=true \
+      external_ids:ovn-evpn-vxlan-ports=4789
+    for expected_mark in 759815 759816; do
+      if [[ "$expected_mark" == 759816 ]]; then
+        # Install the replacement fixture guard before publishing its mark.
+        docker exec "$node" ip xfrm policy add src "$overlay_wildcard" dst "$overlay_wildcard" \
+          dir out priority 2147483647 index 759841 action block mark 759816 mask 0xffffffff
+        docker exec "$node" crictl exec "$node_ovs_id" ovs-vsctl set Open_vSwitch . \
+          external_ids:ovn-ipsec-protection-mark=759816
+      fi
+      for attempt in {1..30}; do
+        if docker exec "$node" crictl exec "$node_ovs_id" ovs-vsctl --format=json --columns=name,options list Interface | \
+            python3 -c 'import json,sys; rows=json.load(sys.stdin)["data"]; ports=[(name,dict(options[1])) for name,options in rows if name.startswith("ovn") and dict(options[1]).get("remote_ip")=="flow"]; sys.exit(not any("-evpn-" in name for name,_ in ports) or not any("-evpn-" not in name for name,_ in ports) or not all(o.get("egress_pkt_mark")==sys.argv[1] and "remote_name" not in o and "ipsec_mark_out" not in o and "ipsec_reqid" not in o for _,o in ports))' "$expected_mark"; then
+          break
+        fi
+        if [[ "$attempt" == 30 ]]; then
+          echo "OVN did not reconcile flow-based/EVPN output mark $expected_mark on $node" >&2
+          exit 1
+        fi
+        sleep 1
+      done
+    done
+  done
+  if docker exec "$overlay_control_plane" crictl exec "$pod_id" ping -c 5 -W 1 "$overlay_pod_ip"; then
+    echo 'Unsupported flow-based output bypassed the armed protection' >&2
+    exit 1
+  fi
   docker exec "$overlay_control_plane" crictl exec "$ovs_id" bash -c 'kill -INT "$(cat /tmp/ipsec-protected.pid)"'
   wait "$protected_capture_client"
   protected_plaintext=$(docker exec "$overlay_control_plane" crictl exec "$ovs_id" bash -o pipefail -c 'tcpdump -Z root -n -r /tmp/ipsec-protected.pcap | wc -l')
