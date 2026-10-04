@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"os"
+	"os/exec"
 	"testing"
 	"time"
 
@@ -19,11 +20,12 @@ func TestCandidateMarkedGuard(t *testing.T) {
 	if os.Getenv("KUBE_OVN_IPSEC_RUNTIME_TEST") != "true" {
 		t.Skip("requires the isolated candidate-image runtime harness")
 	}
-	require.NoError(t, command(t.Context(), "ip", "xfrm", "policy", "add", "src", "127.0.0.1", "dst", "0.0.0.0/0", "proto", "udp", "dport", "6081", "dir", "out", "priority", "2147483647", "index", "759833", "action", "block", "mark", "759815/0xffffffff"))
+	output, err := exec.CommandContext(t.Context(), "ip", "xfrm", "policy", "add", "src", "127.0.0.1", "dst", "0.0.0.0/0", "proto", "udp", "dport", "6081", "dir", "out", "priority", "2147483647", "index", "759833", "action", "block", "mark", "759815", "mask", "0xffffffff").CombinedOutput()
+	require.NoError(t, err, "install the synthetic marked guard: %s", output)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		require.NoError(t, command(ctx, "ip", "xfrm", "policy", "delete", "index", "759833", "dir", "out"))
+		require.NoError(t, command(ctx, "ip", "xfrm", "policy", "delete", "index", "759833", "dir", "out", "mark", "759815", "mask", "0xffffffff"))
 	})
 	listener, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 6081})
 	require.NoError(t, err)

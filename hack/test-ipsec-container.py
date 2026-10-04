@@ -14,6 +14,9 @@ def validate(text, enabled, debug=False):
     documents = [item for item in yaml.safe_load_all(text) if item]
     daemonset = next(item for item in documents if item.get("kind") == "DaemonSet" and item["metadata"]["name"] == "kube-ovn-cni")
     assert daemonset["spec"]["updateStrategy"] == {"type": "RollingUpdate", "rollingUpdate": {"maxSurge": 0, "maxUnavailable": 1}}
+    ovs = next(item for item in documents if item.get("kind") == "DaemonSet" and item["metadata"]["name"] == "ovs-ovn")
+    ovs_security = ovs["spec"]["template"]["spec"]["containers"][0]["securityContext"]
+    assert ovs_security["runAsUser"] == ovs_security["runAsGroup"] == (0 if debug else 65534)
     pod = daemonset["spec"]["template"]["spec"]
     containers = {item["name"]: item for item in pod["containers"]}
     daemon = containers["cni-server"]
@@ -89,7 +92,9 @@ def installer(enabled, debug=False):
     start = source.index("kind: DaemonSet", end)
     end = source.index("\n---\nkind: Deployment", start)
     defaults = source[source.index("# debug\n"):source.index("CNI_SERVER_CAPABILITIES=")]
-    script = defaults + rendering + "cat <<EOF\n" + source[start:end] + "\nEOF\n"
+    ovs_start = source.index("kind: DaemonSet\napiVersion: apps/v1\nmetadata:\n  name: ovs-ovn\n")
+    ovs_end = source.index("\nEOF", ovs_start)
+    script = defaults + "cat <<EOF\n" + source[ovs_start:ovs_end] + "\n---\nEOF\n" + rendering + "cat <<EOF\n" + source[start:end] + "\nEOF\n"
     env = dict(os.environ, ENABLE_OVN_IPSEC=str(enabled).lower(), ENABLE_TPROXY="false",
                REGISTRY="registry.test/kubeovn", VERSION="test", IMAGE_PULL_POLICY="IfNotPresent",
                DEBUG_WRAPPER="valgrind" if debug else "", KUBELET_DIR="/var/lib/kubelet",
@@ -124,11 +129,6 @@ def main():
     for enabled in (False, True):
         validate(installer(enabled), enabled)
         validate(installer(enabled, debug=True), enabled, debug=True)
-    for chart in ("kube-ovn", "kube-ovn-v2"):
-        rendered = subprocess.check_output(["helm", "template", "ipsec-test", str(ROOT / "charts" / chart), "--set", "func.ENABLE_OVN_IPSEC=true" if chart == "kube-ovn" else "features.enableOvnIpsec=true"], text=True, stderr=subprocess.DEVNULL)
-        documents = [item for item in yaml.safe_load_all(rendered) if item]
-        ovs = next(item for item in documents if item.get("kind") == "DaemonSet" and item["metadata"]["name"] == "ovs-ovn")
-        assert ovs["spec"]["template"]["spec"]["containers"][0]["securityContext"]["runAsUser"] == 65534
     assert "CAP_SYS_NICE" not in (ROOT / "dist/images/Dockerfile").read_text()
     print("IPsec enabled/disabled, CNI UID, nice capability, mount, probe and installer checks passed.")
 

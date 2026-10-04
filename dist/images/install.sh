@@ -8536,6 +8536,7 @@ spec:
           - /kube-ovn/start-ovs.sh
           securityContext:
             runAsUser: ${RUN_AS_USER}
+            runAsGroup: ${RUN_AS_USER}
             privileged: false
             capabilities:
               add:

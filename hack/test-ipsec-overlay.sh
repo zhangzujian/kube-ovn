@@ -116,7 +116,7 @@ done
 if [[ "$overlay_protection" == true ]]; then
   for node in "$overlay_control_plane" "$overlay_worker"; do
     docker exec "$node" ip xfrm policy add src "$overlay_wildcard" dst "$overlay_wildcard" \
-      dir out priority 2147483647 index 759833 action block mark 759815/0xffffffff
+      dir out priority 2147483647 index 759833 action block mark 759815 mask 0xffffffff
     ovs_pod=$(kubectl -n kube-system get pod -l app=ovs --field-selector "spec.nodeName=$node" -o name)
     kubectl -n kube-system exec "$ovs_pod" -- ovs-vsctl set Open_vSwitch . \
       external_ids:ovn-ipsec-protection-mark=759815 \
@@ -220,7 +220,7 @@ if [[ "$overlay_protection" == true ]]; then
       fi
       sleep 1
     done
-    docker exec "$node" bash -o pipefail -c 'ip xfrm policy get index 759833 dir out | grep -q "action block"'
+    docker exec "$node" bash -o pipefail -c 'ip xfrm policy get index 759833 dir out mark 759815 mask 0xffffffff | grep -q "action block"'
   done
   central_id=$(docker exec "$overlay_control_plane" crictl ps --name '^ovn-central$' -q)
   [[ -n "$central_id" && "$central_id" != *$'\n'* ]]

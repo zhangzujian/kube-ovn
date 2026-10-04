@@ -92,6 +92,7 @@ spec:
           command: ["/kube-ovn/start-ovs.sh"]
           securityContext:
             runAsUser: {{ include "kubeovn.runAsUser" . }}
+            runAsGroup: 65534
             privileged: false
             capabilities:
               add:
