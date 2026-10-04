@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -11,7 +12,6 @@ import (
 	"fmt"
 	"math/big"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -80,7 +80,9 @@ func checkPodXfrmState(pod corev1.Pod, node1IP, node2IP string) {
 
 	ginkgo.By("Checking ip xfrm state for pod " + pod.Name + " on node " + pod.Spec.NodeName + " from " + node1IP + " to " + node2IP)
 	framework.WaitUntil(0, time.Second*120, func(_ context.Context) (bool, error) {
-		cmd := fmt.Sprintf("ip xfrm state list src %s dst %s", node1IP, node2IP)
+		// Return only SA selector headers, so kubectl diagnostics cannot expose
+		// the authentication/encryption keys in a full XFRM state dump.
+		cmd := fmt.Sprintf("ip xfrm state list src %s dst %s | sed -n '/^src /p'", node1IP, node2IP)
 		output, err := runIPsecCommand(pod, cmd)
 		if err != nil {
 			return false, err
@@ -111,7 +113,6 @@ func checkPodCACert(pod corev1.Pod, expectedCACerts []string) (bool, error) {
 		}
 		return false, fmt.Errorf("reading CA certs: %w", err)
 	}
-	framework.Logf("Got CA cert from pod %s:\n%s", pod.Name, actualCACert)
 
 	actualCerts := splitCerts(actualCACert)
 	if !slices.Equal(actualCerts, expectedCACerts) {
@@ -129,7 +130,14 @@ func checkPodCACert(pod corev1.Pod, expectedCACerts []string) (bool, error) {
 func getPodCert(pod corev1.Pod) (string, error) {
 	ginkgo.GinkgoHelper()
 
-	return runIPsecCommand(pod, currentCertificateCommand(pod, false))
+	output, err := runIPsecCommand(pod, currentCertificateCommand(pod, false))
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(output) == "" {
+		return "", fmt.Errorf("pod %s has an empty IPsec certificate", pod.Name)
+	}
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(output))), nil
 }
 
 func getValueFromSecret(cs clientset.Interface, namespace, secretName, fieldName string) (string, error) {
@@ -298,7 +306,6 @@ var _ = framework.OrderedDescribe("[group:ipsec]", func() {
 		framework.ExpectNoError(err)
 		secondaryCA, err := generateSelfSignedCA(secondaryKey)
 		framework.ExpectNoError(err)
-		framework.Logf("Generated secondary CA:\n%s", secondaryCA)
 
 		ginkgo.By("Adding secondary CA to secret bundle")
 		ovnIpsecSecret, err := cs.CoreV1().Secrets(framework.KubeOvnNamespace).Get(context.Background(), util.DefaultOVNIPSecCA, metav1.GetOptions{})
@@ -307,7 +314,6 @@ var _ = framework.OrderedDescribe("[group:ipsec]", func() {
 		ovnIpsecSecret.Data["cacert"] = []byte(updatedCA)
 		ovnIpsecSecret, err = cs.CoreV1().Secrets(framework.KubeOvnNamespace).Update(context.Background(), ovnIpsecSecret, metav1.UpdateOptions{})
 		framework.ExpectNoError(err)
-		framework.Logf("Updated secret %s with new CA:\n%s", util.DefaultOVNIPSecCA, string(ovnIpsecSecret.Data["cacert"]))
 
 		ginkgo.By("Verifying new trust bundle distributed")
 		for _, pod := range podList.Items {
@@ -403,8 +409,10 @@ func splitCerts(content string) []string {
 		if !found {
 			continue
 		}
-		certs = append(certs, strings.TrimSpace(prefix))
+		// Assertions need equality only; retain fingerprints so a mismatch
+		// does not cause Ginkgo to print certificate contents.
+		certs = append(certs, fmt.Sprintf("%x", sha256.Sum256([]byte(strings.TrimSpace(prefix)))))
 	}
-	sort.Strings(certs) // Sort to ensure consistent order
+	slices.Sort(certs) // Sort to ensure consistent order
 	return certs
 }
