@@ -86,6 +86,16 @@ Local probes use the private status socket with `--check=livez` or
 health; API outages do not directly fail liveness. An IPsec readiness failure
 still makes the whole Pod unready, although its CNI container is not restarted.
 
+Before the trust informer synchronizes, cold startup may restore the last
+committed generation. Recovery requires the same Node name, namespace and local
+OVS chassis, a recorded Node UID, intact content digest, matching key/certificate
+and an unexpired identity under its last committed trust. It does not import
+legacy files or submit a CSR offline. Status reports `Restored`; this represents
+the last verified binding, not a new live Node UID or a CA rotation acknowledgement.
+After API synchronization, online identity and trust checks take precedence.
+Older generations without the name/namespace binding need one successful online
+reconciliation before they can recover offline.
+
 This draft is still under implementation. Activation protection, disable
 cleanup and compatibility migration must be completed and
 verified before enabling the refactor in a supported release. A populated

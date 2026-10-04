@@ -14,7 +14,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
@@ -110,4 +112,33 @@ func TestCandidateRuntime(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, string(pidBytes), string(newPID))
 	checkTrust()
+	current, err := a.store.load("current")
+	require.NoError(t, err)
+	require.Equal(t, a.config.NodeName, current.NodeName)
+	cancel()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(20 * time.Second):
+		t.Fatal("the first runtime did not stop before offline recovery")
+	}
+	offline := fake.NewClientset()
+	offline.PrependReactor("*", "*", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, context.DeadlineExceeded
+	})
+	config := a.config
+	config.Kube, config.PodUID = offline, "replacement-pod-uid"
+	a, err = New(config)
+	require.NoError(t, err)
+	offlineCtx, offlineCancel := context.WithCancel(t.Context())
+	t.Cleanup(offlineCancel)
+	done = make(chan error, 1)
+	go func() { done <- a.Run(offlineCtx) }()
+	require.Eventually(t, ready, 30*time.Second, 200*time.Millisecond, "a valid committed identity must restore without API trust synchronization")
+	require.Equal(t, "Restored", a.Status().Phase)
+	require.Equal(t, current.ID, a.Status().Generation)
+	checkTrust()
+	for _, action := range offline.Actions() {
+		require.Equal(t, "secrets", action.GetResource().Resource, "offline recovery must not issue requests or infer a fresh Node identity")
+	}
 }

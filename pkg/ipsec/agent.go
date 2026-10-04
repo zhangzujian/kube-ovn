@@ -124,13 +124,18 @@ func (a *Agent) Run(ctx context.Context) error {
 	}
 	factory.Start(ctx.Done())
 	defer factory.Shutdown()
-	if !cache.WaitForCacheSync(ctx.Done(), secrets.Informer().HasSynced) {
-		return errors.New("IPsec trust cache did not synchronize")
-	}
 	backoff := time.Second
 	for ctx.Err() == nil {
 		a.beat.Store(time.Now().UnixNano())
-		err := a.reconcile(ctx, secrets.Lister())
+		var err error
+		if secrets.Informer().HasSynced() {
+			err = a.reconcile(ctx, secrets.Lister())
+		} else {
+			// Reuse only the last committed, locally validated generation while
+			// the API is unreachable. Do not issue requests or import legacy files.
+			// Once synchronized, explicit trust changes take precedence immediately.
+			err = a.restoreCurrent(ctx)
+		}
 		a.beat.Store(time.Now().UnixNano())
 		delay := 30 * time.Second
 		if err != nil {
@@ -189,18 +194,13 @@ func (a *Agent) reconcile(ctx context.Context, secrets listers.SecretLister) err
 		return err
 	}
 	source := g
+	source.NodeName = a.config.NodeName
+	source.Namespace = a.config.Namespace
 	g, err = a.store.prepareGeneration(source, trust)
 	if err != nil {
 		return err
 	}
-	if err := a.applyTrust(ctx, trust); err != nil {
-		return err
-	}
-	paths := map[string]string{"certificate": a.store.path(g, "certificate"), "private_key": a.store.path(g, "private-key"), "ca_cert": a.store.path(g, "ca-bundle")}
-	if err := a.ovs.SetIPsecConfiguration(row.UUID, paths); err != nil {
-		return err
-	}
-	if err := a.store.save("current", g); err != nil {
+	if err := a.activate(ctx, row.UUID, g, trust, "Configured"); err != nil {
 		return err
 	}
 	pending, err := a.store.load("pending")
@@ -212,6 +212,10 @@ func (a *Agent) reconcile(ctx context.Context, secrets listers.SecretLister) err
 			return err
 		}
 	}
+	return nil
+}
+
+func (a *Agent) activate(ctx context.Context, ovsUUID string, g *generation, trust []byte, phase string) error {
 	certPEM, err := a.store.read(g, "certificate")
 	if err != nil {
 		return err
@@ -220,12 +224,64 @@ func (a *Agent) reconcile(ctx context.Context, secrets listers.SecretLister) err
 	if err != nil {
 		return err
 	}
-	a.setStatus(Status{Phase: "Configured", Generation: g.ID, Expires: certs[0].NotAfter})
-	a.runtime.enabled.Store(true)
-	if a.runtime.healthy.Load() {
-		a.setStatus(Status{Phase: "Running", Generation: g.ID, Expires: certs[0].NotAfter})
+	if err := a.applyTrust(ctx, trust); err != nil {
+		return err
 	}
+	paths := map[string]string{"certificate": a.store.path(g, "certificate"), "private_key": a.store.path(g, "private-key"), "ca_cert": a.store.path(g, "ca-bundle")}
+	if err := a.ovs.SetIPsecConfiguration(ovsUUID, paths); err != nil {
+		return err
+	}
+	if err := a.store.save("current", g); err != nil {
+		return err
+	}
+	if phase == "Configured" && a.runtime.healthy.Load() {
+		phase = "Running"
+	}
+	a.setStatus(Status{Phase: phase, Generation: g.ID, Expires: certs[0].NotAfter})
+	a.runtime.enabled.Store(true)
 	return nil
+}
+
+func (a *Agent) restoreCurrent(ctx context.Context) error {
+	g, err := a.store.load("current")
+	if err != nil {
+		return err
+	}
+	if g == nil || g.NodeName != a.config.NodeName || g.Namespace != a.config.Namespace || g.NodeUID == "" {
+		return errors.New("API trust is not synchronized and no bound current generation is available")
+	}
+	key, err := a.store.read(g, "private-key")
+	if err != nil {
+		return err
+	}
+	cert, err := a.store.read(g, "certificate")
+	if err != nil {
+		return err
+	}
+	trust, err := a.store.read(g, "ca-bundle")
+	if err != nil {
+		return err
+	}
+	if digest(append(append(append([]byte{}, key...), cert...), trust...)) != g.ID {
+		return errors.New("current IPsec generation content is inconsistent")
+	}
+	if _, err := validateIdentity(cert, key, trust, g.Chassis, time.Now()); err != nil {
+		return err
+	}
+	if a.ovs == nil {
+		a.ovs, err = ovs.NewCNIVswitchClient("unix:" + a.config.OVSSocket)
+		if err != nil {
+			return err
+		}
+	}
+	row, err := a.ovs.IPsecConfiguration()
+	if err != nil {
+		return err
+	}
+	if row.ExternalIDs["system-id"] != g.Chassis {
+		return errors.New("current IPsec chassis does not match the local OVS identity")
+	}
+	return a.activate(ctx, row.UUID, g, trust, "Restored")
 }
 
 func (a *Agent) identity(ctx context.Context, nodeUID, chassis string, trust []byte) (*generation, error) {
@@ -356,7 +412,7 @@ func (a *Agent) serveStatus(ctx context.Context) error {
 	})
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
 		status := a.Status()
-		if !a.runtime.healthy.Load() || (status.Phase != "Configured" && status.Phase != "Running") || status.Generation == "" || !time.Now().Before(status.Expires) {
+		if !a.runtime.healthy.Load() || (status.Phase != "Configured" && status.Phase != "Running" && status.Phase != "Restored") || status.Generation == "" || !time.Now().Before(status.Expires) {
 			http.Error(w, "IPsec is not ready", http.StatusServiceUnavailable)
 			return
 		}

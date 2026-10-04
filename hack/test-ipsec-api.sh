@@ -15,7 +15,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-kind create cluster --name "$api_cluster" --image ghcr.io/kubeovn/kindest-node:v1.37.0 --kubeconfig "$api_kubeconfig" --wait 120s
+kind create cluster --name "$api_cluster" --image kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5 --kubeconfig "$api_kubeconfig" --wait 120s
 api_created=true
 helm install cert-manager oci://quay.io/jetstack/charts/cert-manager \
   --version v1.21.2 --namespace cert-manager --create-namespace \

@@ -19,9 +19,11 @@ import (
 )
 
 type generation struct {
-	ID      string `json:"id"`
-	NodeUID string `json:"nodeUID"`
-	Chassis string `json:"chassis"`
+	ID        string `json:"id"`
+	NodeName  string `json:"nodeName,omitempty"`
+	Namespace string `json:"namespace,omitempty"`
+	NodeUID   string `json:"nodeUID"`
+	Chassis   string `json:"chassis"`
 }
 
 type store struct {
@@ -206,7 +208,7 @@ func (s store) prepareGeneration(source *generation, trust []byte) (*generation,
 		return nil, err
 	}
 	data := append(append(append([]byte{}, key...), cert...), trust...)
-	g := &generation{ID: digest(data), NodeUID: source.NodeUID, Chassis: source.Chassis}
+	g := &generation{ID: digest(data), NodeName: source.NodeName, Namespace: source.Namespace, NodeUID: source.NodeUID, Chassis: source.Chassis}
 	for name, value := range map[string][]byte{"private-key": key, "certificate": cert, "ca-bundle": trust} {
 		path := s.path(g, name)
 		if err := s.generationDirectory(g); err != nil {
