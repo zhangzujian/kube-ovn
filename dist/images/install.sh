@@ -8064,6 +8064,9 @@ rules:
     resources: [secrets]
     resourceNames: [kube-ovn-tls, ovn-ipsec-ca, ovn-ipsec-signer]
     verbs: [get, update]
+  - apiGroups: [cert-manager.io]
+    resources: [certificaterequests]
+    verbs: [get, list, watch, create]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -8095,15 +8098,6 @@ rules:
     - "get"
     - "list"
     - "watch"
-- apiGroups:
-    - "cert-manager.io"
-  resources:
-    - "certificaterequests"
-  verbs:
-    - "get"
-    - "list"
-    - "create"
-    - "delete"
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -8839,6 +8833,53 @@ echo ""
 
 echo "[Step 3/6] Install Kube-OVN"
 
+IPSEC_ISSUER_POLICY=""
+if [[ "$CERT_MANAGER_IPSEC_CERT" == "true" ]]; then
+  if [[ ! "$CERT_MANAGER_ISSUER_NAME" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]]; then
+    echo 'IPsec ClusterIssuer name is invalid' >&2
+    exit 1
+  fi
+  if ! kubectl api-resources --api-group=admissionregistration.k8s.io -o name | grep -qx 'validatingadmissionpolicies.admissionregistration.k8s.io'; then
+    echo 'IPsec cert-manager authorization requires ValidatingAdmissionPolicy (Kubernetes >= 1.30)' >&2
+    exit 1
+  fi
+  IPSEC_ISSUER_POLICY=$(cat <<EOF
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: kube-ovn-ipsec-issuer
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [cert-manager.io]
+        apiVersions: [v1]
+        operations: [CREATE]
+        resources: [certificaterequests]
+  matchConditions:
+    - name: dedicated-ipsec-issuer
+      expression: >-
+        object.spec.issuerRef.name == "$CERT_MANAGER_ISSUER_NAME" &&
+        has(object.spec.issuerRef.kind) && object.spec.issuerRef.kind == "ClusterIssuer" &&
+        (!has(object.spec.issuerRef.group) || object.spec.issuerRef.group == "cert-manager.io")
+  validations:
+    - expression: >-
+        request.userInfo.username == "system:serviceaccount:kube-system:ovn" &&
+        object.metadata.namespace == "kube-system"
+      message: The IPsec ClusterIssuer accepts only authorized kube-ovn-controller requests
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: kube-ovn-ipsec-issuer
+spec:
+  policyName: kube-ovn-ipsec-issuer
+  validationActions: [Deny]
+EOF
+)
+fi
+
 IPSEC_CONTAINER=""
 if [[ "$ENABLE_OVN_IPSEC" == "true" ]]; then
   IPSEC_CONTAINER=$(cat <<EOF
@@ -8848,8 +8889,6 @@ if [[ "$ENABLE_OVN_IPSEC" == "true" ]]; then
         command:
           - /kube-ovn/kube-ovn-ipsec
         args:
-          - --cert-manager-ipsec-cert=$CERT_MANAGER_IPSEC_CERT
-          - --cert-manager-issuer-name=$CERT_MANAGER_ISSUER_NAME
           - --ovn-ipsec-cert-duration=$IPSEC_CERT_DURATION
           - --request-timeout=300s
           - --priority=-5
@@ -8965,6 +9004,7 @@ EOF
 fi
 
 cat <<EOF > kube-ovn.yaml
+$IPSEC_ISSUER_POLICY
 ---
 kind: ConfigMap
 apiVersion: v1
@@ -9106,6 +9146,7 @@ spec:
           - --skip-conntrack-dst-cidrs=$SKIP_CONNTRACK_DST_CIDRS
           - --enable-ovn-ipsec=$ENABLE_OVN_IPSEC
           - --cert-manager-ipsec-cert=$CERT_MANAGER_IPSEC_CERT
+          - --cert-manager-issuer-name=$CERT_MANAGER_ISSUER_NAME
           - --secure-serving=${SECURE_SERVING}
           - --enable-anp=$ENABLE_ANP
           - --enable-dns-name-resolver=$ENABLE_DNS_NAME_RESOLVER

@@ -103,17 +103,23 @@ func newCSR(keyPEM []byte, chassis string) ([]byte, error) {
 }
 
 func validateIdentity(certPEM, keyPEM, trustPEM []byte, chassis string, now time.Time) (*x509.Certificate, error) {
-	certs, err := Certificates(certPEM)
+	key, err := privateKey(keyPEM)
 	if err != nil {
 		return nil, err
 	}
-	key, err := privateKey(keyPEM)
+	return ValidateCertificate(certPEM, trustPEM, &key.PublicKey, chassis, now)
+}
+
+// ValidateCertificate checks an issuer result before the controller publishes
+// it or the node activates it. The controller never needs a node private key.
+func ValidateCertificate(certPEM, trustPEM []byte, publicKey *rsa.PublicKey, chassis string, now time.Time) (*x509.Certificate, error) {
+	certs, err := Certificates(certPEM)
 	if err != nil {
 		return nil, err
 	}
 	leaf := certs[0]
 	pub, ok := leaf.PublicKey.(*rsa.PublicKey)
-	if !ok || !pub.Equal(&key.PublicKey) {
+	if !ok || publicKey == nil || !pub.Equal(publicKey) {
 		return nil, errors.New("certificate does not match the private key")
 	}
 	if leaf.IsCA || leaf.Subject.CommonName != chassis || !slices.Equal(leaf.DNSNames, []string{chassis}) || len(leaf.IPAddresses)+len(leaf.URIs)+len(leaf.EmailAddresses) != 0 {

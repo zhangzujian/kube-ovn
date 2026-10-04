@@ -142,6 +142,9 @@ func (c *Controller) handleAddOrUpdateCsr(key string) (err error) {
 		return nil
 	}
 	// From this point we are dealing with an approved CSR
+	if c.config.CertManagerIPSecCert {
+		return c.signIPsecWithCertManager(csr)
+	}
 	// Read the private CA from the controller-only signer Secret.
 	caSecret, err := c.config.KubeClient.CoreV1().Secrets(c.config.PodNamespace).Get(context.TODO(), util.DefaultOVNIPSecSigner, metav1.GetOptions{})
 	if err != nil {

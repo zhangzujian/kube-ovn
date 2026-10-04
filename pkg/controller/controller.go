@@ -1263,6 +1263,9 @@ func (c *Controller) Run(ctx context.Context) {
 	}
 
 	c.startKubeOVNTLSManager(ctx)
+	if c.config.EnableOVNIPSec && c.config.CertManagerIPSecCert {
+		go c.watchIPsecCertificateRequests(ctx)
+	}
 
 	// start workers to do all the network operations
 	if c.config.EnableOVNIPSec && !c.config.CertManagerIPSecCert {

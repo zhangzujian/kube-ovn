@@ -78,6 +78,18 @@ func TestCandidateRuntime(t *testing.T) {
 	require.NoError(t, err)
 	// Linux's raw getpriority syscall returns 20 minus the nice value.
 	require.Equal(t, -5, 20-priority, "SYS_NICE must be effective in the minimal-capability IPsec container")
+	status, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "status"))
+	require.NoError(t, err)
+	var effective uint64
+	for line := range strings.SplitSeq(string(status), "\n") {
+		if value, found := strings.CutPrefix(line, "CapEff:"); found {
+			effective, err = strconv.ParseUint(strings.TrimSpace(value), 16, 64)
+			require.NoError(t, err)
+		}
+	}
+	for _, capability := range []uint{unix.CAP_NET_ADMIN, unix.CAP_NET_BIND_SERVICE, unix.CAP_SYS_NICE} {
+		require.NotZero(t, effective&(uint64(1)<<capability), "the nice launcher must preserve runtime capabilities")
+	}
 	require.NoError(t, syscall.Kill(pid, syscall.SIGKILL))
 	require.Eventually(t, func() bool { return !a.runtime.healthy.Load() }, 10*time.Second, 50*time.Millisecond)
 	require.Eventually(t, ready, 60*time.Second, 200*time.Millisecond, "the runtime must recover after a monitor crash")

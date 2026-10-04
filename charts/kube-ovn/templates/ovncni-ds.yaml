@@ -295,8 +295,6 @@ spec:
         command:
           - /kube-ovn/kube-ovn-ipsec
         args:
-          - --cert-manager-ipsec-cert={{ .Values.ipsec.certManager.enabled }}
-          - --cert-manager-issuer-name={{ .Values.ipsec.certManager.issuerName }}
           - --ovn-ipsec-cert-duration={{ .Values.ipsec.certificateDuration }}
           - --request-timeout={{ .Values.ipsec.requestTimeout }}
           - --priority={{ .Values.ipsec.priority }}

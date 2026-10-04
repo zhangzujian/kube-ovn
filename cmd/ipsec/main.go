@@ -7,7 +7,6 @@ import (
 	"os"
 	"time"
 
-	cmclient "github.com/cert-manager/cert-manager/pkg/client/clientset/versioned"
 	"github.com/spf13/pflag"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
@@ -36,11 +35,9 @@ func run() error {
 	pflag.StringVar(&config.OVSSocket, "ovs-socket", "/run/openvswitch/db.sock", "Local OVSDB socket")
 	pflag.StringVar(&config.KeyDir, "key-dir", "/etc/ovs_ipsec_keys", "Persistent IPsec identity directory")
 	pflag.StringVar(&config.RuntimeDir, "runtime-dir", "/run/kube-ovn-ipsec", "Private runtime directory")
-	pflag.StringVar(&config.IssuerName, "cert-manager-issuer-name", "kube-ovn", "cert-manager ClusterIssuer name")
 	duration := pflag.Int("ovn-ipsec-cert-duration", 2*365*24*60*60, "Requested certificate duration in seconds")
 	pflag.DurationVar(&config.RequestTimeout, "request-timeout", 300*time.Second, "Certificate request timeout")
 	pflag.IntVar(&config.Priority, "priority", -5, "IPsec subprocess nice priority")
-	certManager := pflag.Bool("cert-manager-ipsec-cert", false, "Use cert-manager for certificate signing")
 	kubeconfig := pflag.String("kubeconfig", "", "Kubernetes client configuration; empty uses in-cluster credentials")
 	check := pflag.String("check", "", "Probe the private livez or readyz endpoint")
 	klog.InitFlags(flag.CommandLine)
@@ -59,11 +56,6 @@ func run() error {
 	restConfig.Timeout = 30 * time.Second
 	if config.Kube, err = kubernetes.NewForConfig(restConfig); err != nil {
 		return err
-	}
-	if *certManager {
-		if config.CertManager, err = cmclient.NewForConfig(restConfig); err != nil {
-			return err
-		}
 	}
 	klog.Info(versions.String())
 	agent, err := ipsec.New(config)

@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -91,6 +92,7 @@ type child struct {
 func (r *runtimeManager) startChild(name string, args ...string) (*child, error) {
 	args = append([]string{"-n", strconv.Itoa(r.priority), name}, args...)
 	cmd := exec.Command("nice", args...) // #nosec G204 -- fixed runtime programs and validated configuration.
+	cmd.Env = append(os.Environ(), "OVS_RUNDIR="+r.dir)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
@@ -158,7 +160,7 @@ func (r *runtimeManager) runPair(ctx context.Context) error {
 		}
 	}
 	monitor, err := r.startChild("/usr/share/openvswitch/scripts/ovs-monitor-ipsec", "unix:"+r.ovsSocket,
-		"--ike-daemon=strongswan", "--no-restart-ike-daemon", "--pidfile="+filepath.Join(r.dir, "monitor.pid"), "--unixctl="+filepath.Join(r.dir, "monitor.ctl"))
+		"--ike-daemon=strongswan", "--no-restart-ike-daemon", "--pidfile="+filepath.Join(r.dir, "monitor.pid"))
 	if err != nil {
 		return err
 	}
@@ -196,7 +198,15 @@ func (r *runtimeManager) check(ctx context.Context) error {
 	}
 	// list-commands is a harmless liveness request; tunnels/show and
 	// xfrm/state may expose keys and must not be used in health probes.
-	return command(ctx, "ovs-appctl", "-t", filepath.Join(r.dir, "monitor.ctl"), "list-commands")
+	pidBytes, err := os.ReadFile(filepath.Join(r.dir, "monitor.pid"))
+	if err != nil {
+		return err
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(pidBytes)))
+	if err != nil || pid <= 0 {
+		return errors.New("invalid private IPsec monitor PID")
+	}
+	return command(ctx, "ovs-appctl", "-t", filepath.Join(r.dir, fmt.Sprintf("ovs-monitor-ipsec.%d.ctl", pid)), "list-commands")
 }
 
 func (r *runtimeManager) run(ctx context.Context) {

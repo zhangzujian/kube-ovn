@@ -12,8 +12,8 @@ unprivileged service user even with IPsec enabled. Installer debug mode retains
 its existing CNI root exception. Pod-level host networking, host PID namespace,
 and the ServiceAccount remain shared; this is not a separate security identity.
 
-The node module persists pending private keys, watches both Kubernetes CSR and
-cert-manager CertificateRequest results, validates the returned identity, and
+The node module persists pending private keys, watches Kubernetes CSR results,
+validates the returned identity, and
 activates complete key/certificate/trust generations through a single OVSDB
 map mutation. Other `other_config` entries are preserved. Failed renewals keep
 an existing valid identity. The monitor and strongSwan starter run as supervised
@@ -29,12 +29,25 @@ registration still need to be included in the threat model.
 
 Both Charts use an `ipsec` configuration section for the backend, issuer,
 duration, timeout, priority, and resource limits. Existing IPsec feature switches
-remain in place. These arguments now belong to the IPsec entrypoint, rather
-than `kube-ovn-daemon`:
+remain in place. The controller selects the signing backend with
+`--cert-manager-ipsec-cert` and `--cert-manager-issuer-name`. Nodes always submit
+a Kubernetes CSR, including when cert-manager signs the certificate. The
+controller validates the bound identity before forwarding an approved CSR to
+cert-manager and checks the returned certificate before publishing it. CNI's
+ServiceAccount cannot create CertificateRequests; that permission belongs only
+to the controller and is restricted to its namespace.
 
-- `--cert-manager-ipsec-cert`
-- `--cert-manager-issuer-name`
-- `--ovn-ipsec-cert-duration`
+The IPsec entrypoint owns `--ovn-ipsec-cert-duration`, `--request-timeout`, and
+`--priority`, rather than `kube-ovn-daemon`.
+
+The external ClusterIssuer and public `ovn-ipsec-ca` trust bundle must be
+provisioned consistently. The issuer must be dedicated to Kube-OVN IPsec.
+Installation creates a fail-closed ValidatingAdmissionPolicy and binding that
+restrict requests to this ClusterIssuer across all namespaces to the controller
+ServiceAccount in its configured namespace. Kubernetes >= 1.30 is required for
+this backend. Generic cert-manager auto-approval cannot admit a different
+requester past this policy. Policy installation and real bound-token signing
+still require cluster acceptance testing before this draft is ready.
 
 Local probes use the private status socket with `--check=livez` or
 `--check=readyz`. Readiness includes an unexpired active certificate and runtime
@@ -42,7 +55,7 @@ health; API outages do not directly fail liveness. An IPsec readiness failure
 still makes the whole Pod unready, although its CNI container is not restarted.
 
 This draft is still under implementation. Activation protection, disable
-cleanup, CA-key isolation and compatibility migration must be completed and
+cleanup and compatibility migration must be completed and
 verified before enabling the refactor in a supported release. A populated
 OVSDB `ipsec_skb_mark` does not alone prove that a drop policy is installed.
 The candidate image must prove startup/restart behavior and actual encrypted

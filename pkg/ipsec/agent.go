@@ -15,7 +15,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	cmclient "github.com/cert-manager/cert-manager/pkg/client/clientset/versioned"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
@@ -32,11 +31,9 @@ import (
 type Configuration struct {
 	NodeName, Namespace, OVSSocket, KeyDir, RuntimeDir string
 	PodUID                                             string
-	IssuerName                                         string
 	Duration, RequestTimeout                           time.Duration
 	Priority                                           int
 	Kube                                               kubernetes.Interface
-	CertManager                                        cmclient.Interface
 }
 
 // Agent owns certificate reconciliation and the IKE/OVS monitor process pair.
@@ -262,7 +259,7 @@ func (a *Agent) identity(ctx context.Context, nodeUID, chassis string, trust []b
 	if err != nil {
 		return nil, err
 	}
-	i := issuer{kube: a.config.Kube, cm: a.config.CertManager, node: a.config.NodeName, nodeUID: nodeUID, podUID: a.config.PodUID, namespace: a.config.Namespace, issuerName: a.config.IssuerName, duration: a.config.Duration, trustHash: digest(trust)}
+	i := issuer{kube: a.config.Kube, node: a.config.NodeName, nodeUID: nodeUID, podUID: a.config.PodUID, namespace: a.config.Namespace, duration: a.config.Duration, trustHash: digest(trust)}
 	issueCtx, cancel := context.WithTimeout(ctx, a.config.RequestTimeout)
 	defer cancel()
 	cert, err := i.sign(issueCtx, csr)
