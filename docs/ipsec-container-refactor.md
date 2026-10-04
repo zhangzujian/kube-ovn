@@ -174,6 +174,33 @@ changes. Foreign leases or protection options are rejected without replacement.
 Other maps and unrelated IPsec interfaces remain untouched. Readiness now also
 requires a fresh readback of the kernel guards, lease and owned tunnel options.
 
+Initial global enable is coordinated through the controller-owned public
+`ovn-ipsec-coordination` ConfigMap. The controller freezes the CNI DaemonSet
+UID/template digest, public trust digest and all matching Node UIDs, including
+offline nodes. Required node affinity and selectors select the initial cohort.
+Prepare and Arm use separate random epochs; only fresh receipts from every
+frozen target allow `NB_Global.ipsec=true`. Neither Pod readiness alone nor an
+unsigned Node annotation can satisfy the barrier. A removed/replaced target,
+changed template or changed trust blocks the in-progress barrier without
+silently shrinking or rewriting its cohort. Recovery/reconfiguration of such
+a blocked generation still needs a coordinated operator workflow.
+
+The agent signs public status claims with its existing node identity key and
+references a CSR authenticated as its current bound Pod. This also binds a
+reused legacy identity to a rebuilt Pod without granting controller exec or
+publishing key material. The controller verifies the CSR UID, server-populated
+bound Pod identity, live DaemonSet/Node ownership, certificate/profile, current
+container/security template, signature, epoch and two-minute receipt lifetime.
+The receipt confirms current local configuration and guard readbacks; it does
+not prove every peer SA or completion of CA root withdrawal. It permits at most
+five seconds of future clock skew. Local bootstrap arms before runtime Prepare
+to satisfy the independent OVS startup gate; this can interrupt plaintext
+overlay traffic before global enable. Prepared readiness remains independent
+of global enable, avoiding a zero-surge DaemonSet rollout dependency on NB.
+Legacy clusters already enabled keep NB enabled during rolling takeover.
+Disabling is published before NB is switched off; the node guards and public
+required intent remain until the separate owned cleanup protocol completes.
+
 Protection bootstrap runs before trust/identity activation. It requires an OVSDB
 socket and a live Node UID, or the last committed offline binding. It does not
 require chassis registration or CSR signing. The OVS startup script starts

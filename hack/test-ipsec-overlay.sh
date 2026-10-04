@@ -159,12 +159,17 @@ kubectl -n kube-system exec "$overlay_ovs" -- bash -c '
     "host $1 and (udp port 6081 or udp port 4789 or udp port 4500 or ip proto 50 or ip6 proto 50)" >/tmp/ipsec-overlay-capture.log 2>&1 &
   overlay_capture_pid=$!
   echo "$overlay_capture_pid" >/tmp/ipsec-overlay-capture.pid
+  tcpdump -Z root -i eth0 -Q out -p -n -U -w /tmp/ipsec-overlay-egress.pcap \
+    "host $1 and (udp port 6081 or udp port 4789 or udp port 4500 or ip proto 50 or ip6 proto 50)" >/tmp/ipsec-overlay-egress.log 2>&1 &
+  overlay_egress_pid=$!
+  echo "$overlay_egress_pid" >/tmp/ipsec-overlay-egress.pid
   wait "$overlay_capture_pid"
+  wait "$overlay_egress_pid"
   touch /tmp/ipsec-overlay-capture-complete
 ' overlay-capture "$overlay_peer" &
 overlay_capture_client=$!
 for attempt in {1..30}; do
-  if kubectl -n kube-system exec "$overlay_ovs" -- bash -c 'grep -q "listening on eth0" /tmp/ipsec-overlay-capture.log && kill -0 "$(cat /tmp/ipsec-overlay-capture.pid)"'; then
+  if kubectl -n kube-system exec "$overlay_ovs" -- bash -c 'grep -q "listening on eth0" /tmp/ipsec-overlay-capture.log && grep -q "listening on eth0" /tmp/ipsec-overlay-egress.log && kill -0 "$(cat /tmp/ipsec-overlay-capture.pid)" && kill -0 "$(cat /tmp/ipsec-overlay-egress.pid)"'; then
     break
   fi
   if [[ "$attempt" == 30 ]]; then
@@ -183,6 +188,7 @@ for direction in control-plane worker; do
 done
 kubectl -n kube-system exec "$overlay_ovs" -- bash -c '
   kill -INT "$(cat /tmp/ipsec-overlay-capture.pid)"
+  kill -INT "$(cat /tmp/ipsec-overlay-egress.pid)"
   for attempt in {1..30}; do
     if test -f /tmp/ipsec-overlay-capture-complete; then
       exit 0
@@ -196,6 +202,10 @@ overlay_esp=$(kubectl -n kube-system exec "$overlay_ovs" -- bash -o pipefail -c 
 overlay_plaintext=$(kubectl -n kube-system exec "$overlay_ovs" -- bash -o pipefail -c 'tcpdump -Z root -n -r /tmp/ipsec-overlay.pcap "udp port 6081 or udp port 4789" | wc -l')
 echo "Actual cross-node OVN $overlay_family $overlay_tunnel pods: ESP packets=$overlay_esp plaintext transport packets=$overlay_plaintext"
 if [[ "$overlay_esp" == 0 || "$overlay_plaintext" != 0 ]]; then
+  # Preserve the rejection and distinguish physical egress from ingress
+  # observations before investigating a possible unencrypted packet.
+  kubectl -n kube-system exec "$overlay_ovs" -- tcpdump -Z root -n -vv -r /tmp/ipsec-overlay.pcap 'udp port 6081 or udp port 4789'
+  kubectl -n kube-system exec "$overlay_ovs" -- tcpdump -Z root -n -vv -r /tmp/ipsec-overlay-egress.pcap 'udp port 6081 or udp port 4789'
   echo 'The actual OVN overlay did not prove encryption without plaintext' >&2
   exit 1
 fi

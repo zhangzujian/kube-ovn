@@ -172,6 +172,9 @@ func (a *Agent) Run(ctx context.Context) error {
 		if err = a.bootstrapProtection(ctx, online); err == nil {
 			if online {
 				err = a.reconcile(ctx, secrets.Lister())
+				if err == nil {
+					err = a.publishReceipt(ctx)
+				}
 			} else {
 				// Reuse only the last committed, locally validated generation while
 				// the API is unreachable. Do not issue requests or import legacy files.
