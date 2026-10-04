@@ -29,7 +29,10 @@ func TestIPsecSignerBindsRequesterToLiveNode(t *testing.T) {
 	t.Setenv(util.EnvPodNamespace, "kube-system")
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
-	request := &x509.CertificateRequest{Subject: pkix.Name{CommonName: "chassis-a"}, DNSNames: []string{"chassis-a"}, PublicKey: &key.PublicKey}
+	der, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{Subject: pkix.Name{CommonName: "chassis-a"}, DNSNames: []string{"chassis-a"}}, key)
+	require.NoError(t, err)
+	request, err := x509.ParseCertificateRequest(der)
+	require.NoError(t, err)
 	client := fake.NewClientset(
 		&appsv1.DaemonSet{Name: "kube-ovn-cni", Namespace: "kube-system", UID: "ds-uid"},
 		&corev1.Pod{Name: "cni-a", Namespace: "kube-system", UID: "pod-uid", OwnerReferences: []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "DaemonSet", Name: "kube-ovn-cni", UID: "ds-uid", Controller: new(true)}}, Spec: corev1.PodSpec{NodeName: "node-a", ServiceAccountName: "kube-ovn-cni"}},

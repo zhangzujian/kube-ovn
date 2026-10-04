@@ -63,6 +63,9 @@ func (c *Controller) signIPsecWithCertManager(csr *certv1.CertificateSigningRequ
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	if err := c.verifyIPsecIssuerPolicy(ctx); err != nil {
+		return err
+	}
 	client := c.config.CertManagerClient.CertmanagerV1().CertificateRequests(c.config.PodNamespace)
 	hash := sha256.Sum256(fmt.Appendf(nil, "%s:%s:%s:%s", csr.UID, csr.Spec.Request, c.config.CertManagerIssuerName, duration))
 	req := &cmv1.CertificateRequest{

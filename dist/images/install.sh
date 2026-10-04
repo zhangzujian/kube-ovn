@@ -7637,6 +7637,10 @@ metadata:
     rbac.authorization.k8s.io/system-only: "true"
   name: system:ovn
 rules:
+  - apiGroups: [admissionregistration.k8s.io]
+    resources: [validatingadmissionpolicies, validatingadmissionpolicybindings]
+    resourceNames: [kube-ovn-ipsec-issuer]
+    verbs: [get]
   - apiGroups:
       - "kubeovn.io"
     resources:
@@ -8855,7 +8859,7 @@ spec:
     resourceRules:
       - apiGroups: [cert-manager.io]
         apiVersions: [v1]
-        operations: [CREATE]
+        operations: [CREATE, UPDATE]
         resources: [certificaterequests]
   matchConditions:
     - name: dedicated-ipsec-issuer
@@ -8865,6 +8869,7 @@ spec:
         (!has(object.spec.issuerRef.group) || object.spec.issuerRef.group == "cert-manager.io")
   validations:
     - expression: >-
+        (request.operation == "UPDATE" && object.spec == oldObject.spec) ||
         request.userInfo.username == "system:serviceaccount:kube-system:ovn" &&
         object.metadata.namespace == "kube-system"
       message: The IPsec ClusterIssuer accepts only authorized kube-ovn-controller requests

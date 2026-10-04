@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/asn1"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -125,6 +126,25 @@ func ValidateCertificate(certPEM, trustPEM []byte, publicKey *rsa.PublicKey, cha
 	if leaf.IsCA || leaf.Subject.CommonName != chassis || !slices.Equal(leaf.DNSNames, []string{chassis}) || len(leaf.IPAddresses)+len(leaf.URIs)+len(leaf.EmailAddresses) != 0 {
 		return nil, errors.New("certificate does not match the IPsec chassis identity")
 	}
+	if err := validateChassisNames(leaf.Subject, leaf.Extensions, chassis); err != nil {
+		return nil, err
+	}
+	if leaf.KeyUsage != 0 && leaf.KeyUsage&x509.KeyUsageDigitalSignature == 0 {
+		return nil, errors.New("IPsec certificate does not allow digital signatures")
+	}
+	if leaf.KeyUsage&(x509.KeyUsageCertSign|x509.KeyUsageCRLSign) != 0 {
+		return nil, errors.New("IPsec leaf certificate must not allow CA signing")
+	}
+	for _, usage := range leaf.ExtKeyUsage {
+		if usage != x509.ExtKeyUsageIPSECTunnel {
+			return nil, errors.New("certificate has a non-IPsec extended key usage")
+		}
+	}
+	for _, usage := range leaf.UnknownExtKeyUsage {
+		if usage.String() != "1.3.6.1.5.5.7.3.17" && usage.String() != "1.3.6.1.5.5.8.2.2" {
+			return nil, errors.New("certificate has an unsupported extended key usage")
+		}
+	}
 	trust, err := Certificates(trustPEM)
 	if err != nil {
 		return nil, err
@@ -143,4 +163,53 @@ func ValidateCertificate(certPEM, trustPEM []byte, publicKey *rsa.PublicKey, cha
 		return nil, fmt.Errorf("verify IPsec identity: %w", err)
 	}
 	return leaf, nil
+}
+
+// ValidateRequestProfile is shared by both signing backends. Go's parsed SAN
+// fields alone cannot reject unsupported GeneralName types in the raw CSR.
+func ValidateRequestProfile(req *x509.CertificateRequest, chassis string) error {
+	if err := req.CheckSignature(); err != nil {
+		return err
+	}
+	if chassis == "" || req.Subject.CommonName != chassis || !slices.Equal(req.DNSNames, []string{chassis}) || len(req.IPAddresses)+len(req.URIs)+len(req.EmailAddresses) != 0 {
+		return errors.New("IPsec CSR must request only its bound node chassis")
+	}
+	key, ok := req.PublicKey.(*rsa.PublicKey)
+	if !ok || key.N.BitLen() < 2048 {
+		return errors.New("IPsec CSR requires an RSA key of at least 2048 bits")
+	}
+	for _, ext := range req.Extensions {
+		if ext.Id.String() != "2.5.29.17" {
+			return errors.New("unexpected IPsec CSR extension")
+		}
+	}
+	return validateChassisNames(req.Subject, req.Extensions, chassis)
+}
+
+func validateChassisNames(subject pkix.Name, extensions []pkix.Extension, chassis string) error {
+	cnCount := 0
+	for _, name := range subject.Names {
+		if name.Type.String() == "2.5.4.3" {
+			cnCount++
+		}
+	}
+	if cnCount > 1 {
+		return errors.New("IPsec identity must not contain multiple common names")
+	}
+	sanCount := 0
+	for _, ext := range extensions {
+		if ext.Id.String() != "2.5.29.17" {
+			continue
+		}
+		sanCount++
+		var names []asn1.RawValue
+		rest, err := asn1.Unmarshal(ext.Value, &names)
+		if err != nil || len(rest) != 0 || len(names) != 1 || names[0].Class != asn1.ClassContextSpecific || names[0].Tag != 2 || names[0].IsCompound || string(names[0].Bytes) != chassis {
+			return errors.New("IPsec SAN must contain exactly one chassis DNS name")
+		}
+	}
+	if sanCount != 1 {
+		return errors.New("IPsec identity must contain exactly one SAN extension")
+	}
+	return nil
 }

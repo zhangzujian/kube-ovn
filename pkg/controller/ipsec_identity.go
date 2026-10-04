@@ -2,11 +2,8 @@ package controller
 
 import (
 	"context"
-	"crypto/rsa"
 	"crypto/x509"
-	"encoding/asn1"
 	"os"
-	"slices"
 	"time"
 
 	certv1 "k8s.io/api/certificates/v1"
@@ -69,33 +66,8 @@ func (c *Controller) validateIPsecRequester(csr *certv1.CertificateSigningReques
 	if csr.Annotations[ipsec.NodeNameAnnotation] != "" && (csr.Annotations[ipsec.NodeNameAnnotation] != node.Name || csr.Annotations[ipsec.NodeUIDAnnotation] != string(node.UID)) {
 		return rejectIPsecIdentity("IPsec request Node UID does not match bound Pod")
 	}
-	chassis := node.Annotations[util.ChassisAnnotation]
-	if chassis == "" || req.Subject.CommonName != chassis || !slices.Equal(req.DNSNames, []string{chassis}) || len(req.IPAddresses)+len(req.URIs)+len(req.EmailAddresses) != 0 {
-		return rejectIPsecIdentity("IPsec CSR must request only its bound node chassis")
-	}
-	key, ok := req.PublicKey.(*rsa.PublicKey)
-	if !ok || key.N.BitLen() < 2048 {
-		return rejectIPsecIdentity("IPsec CSR requires an RSA key of at least 2048 bits")
-	}
-	cnCount := 0
-	for _, name := range req.Subject.Names {
-		if name.Type.String() == "2.5.4.3" {
-			cnCount++
-		}
-	}
-	if cnCount > 1 {
-		return rejectIPsecIdentity("IPsec CSR must not contain multiple common names")
-	}
-	for _, ext := range req.Extensions {
-		// Accept only subjectAltName. Do not copy arbitrary CA or usage extensions.
-		if ext.Id.String() != "2.5.29.17" {
-			return rejectIPsecIdentity("unexpected IPsec CSR extension")
-		}
-		var names []asn1.RawValue
-		rest, err := asn1.Unmarshal(ext.Value, &names)
-		if err != nil || len(rest) != 0 || len(names) != 1 || names[0].Class != asn1.ClassContextSpecific || names[0].Tag != 2 || names[0].IsCompound || string(names[0].Bytes) != chassis {
-			return rejectIPsecIdentity("IPsec CSR SAN must contain exactly one chassis DNS name")
-		}
+	if err := ipsec.ValidateRequestProfile(req, node.Annotations[util.ChassisAnnotation]); err != nil {
+		return rejectIPsecIdentity(err.Error())
 	}
 	return nil
 }

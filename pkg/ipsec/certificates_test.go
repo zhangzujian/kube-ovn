@@ -5,6 +5,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/asn1"
 	"encoding/pem"
 	"math/big"
 	"os"
@@ -52,6 +53,38 @@ func TestValidateIdentityBeforeActivation(t *testing.T) {
 	_, _, otherTrust := testIdentity(t, "chassis-a")
 	_, err = validateIdentity(cert, key, otherTrust, "chassis-a", time.Now())
 	require.Error(t, err)
+}
+
+func TestCertificateRejectsAdditionalIdentityAndWrongUsages(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	now := time.Now()
+	caTemplate := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "test CA"}, NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign}
+	caDER, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &key.PublicKey, key)
+	require.NoError(t, err)
+	ca, err := x509.ParseCertificate(caDER)
+	require.NoError(t, err)
+	san, err := asn1.Marshal([]asn1.RawValue{
+		{Class: asn1.ClassContextSpecific, Tag: 2, Bytes: []byte("chassis-a")},
+		{Class: asn1.ClassContextSpecific, Tag: 8, Bytes: []byte("unparsed-identity")},
+	})
+	require.NoError(t, err)
+	leaf := &x509.Certificate{SerialNumber: big.NewInt(2), Subject: pkix.Name{CommonName: "chassis-a"}, NotBefore: now.Add(-time.Minute), NotAfter: now.Add(30 * time.Minute), ExtraExtensions: []pkix.Extension{{Id: asn1.ObjectIdentifier{2, 5, 29, 17}, Value: san}}}
+	der, err := x509.CreateCertificate(rand.Reader, leaf, ca, &key.PublicKey, key)
+	require.NoError(t, err)
+	parsed, err := x509.ParseCertificate(der)
+	require.NoError(t, err)
+	require.Equal(t, []string{"chassis-a"}, parsed.DNSNames, "the extra identity is invisible in x509 DNSNames")
+	_, err = ValidateCertificate(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER}), &key.PublicKey, "chassis-a", now)
+	require.ErrorContains(t, err, "exactly one chassis DNS name")
+	leaf.ExtraExtensions = nil
+	leaf.DNSNames = []string{"chassis-a"}
+	leaf.KeyUsage = x509.KeyUsageDigitalSignature
+	leaf.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
+	der, err = x509.CreateCertificate(rand.Reader, leaf, ca, &key.PublicKey, key)
+	require.NoError(t, err)
+	_, err = ValidateCertificate(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER}), &key.PublicKey, "chassis-a", now)
+	require.ErrorContains(t, err, "non-IPsec extended key usage")
 }
 
 func TestTrustRejectsPartialAndEmptyBundles(t *testing.T) {

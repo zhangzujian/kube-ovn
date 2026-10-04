@@ -69,7 +69,7 @@ def validate_cert_manager(text):
     policy = next(item for item in documents if item.get("kind") == "ValidatingAdmissionPolicy")
     binding = next(item for item in documents if item.get("kind") == "ValidatingAdmissionPolicyBinding")
     assert policy["spec"]["failurePolicy"] == "Fail"
-    assert policy["spec"]["matchConstraints"]["resourceRules"] == [{"apiGroups": ["cert-manager.io"], "apiVersions": ["v1"], "operations": ["CREATE"], "resources": ["certificaterequests"]}]
+    assert policy["spec"]["matchConstraints"]["resourceRules"] == [{"apiGroups": ["cert-manager.io"], "apiVersions": ["v1"], "operations": ["CREATE", "UPDATE"], "resources": ["certificaterequests"]}]
     assert 'object.spec.issuerRef.name == "kube-ovn"' in policy["spec"]["matchConditions"][0]["expression"]
     assert 'request.userInfo.username == "system:serviceaccount:kube-system:ovn"' in policy["spec"]["validations"][0]["expression"]
     assert binding["spec"] == {"policyName": policy["metadata"]["name"], "validationActions": ["Deny"]}

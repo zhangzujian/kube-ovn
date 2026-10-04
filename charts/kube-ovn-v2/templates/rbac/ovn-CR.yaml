@@ -6,6 +6,12 @@ metadata:
     rbac.authorization.k8s.io/system-only: "true"
   name: system:ovn
 rules:
+{{- if .Values.ipsec.certManager.enabled }}
+  - apiGroups: [admissionregistration.k8s.io]
+    resources: [validatingadmissionpolicies, validatingadmissionpolicybindings]
+    resourceNames: [kube-ovn-ipsec-issuer]
+    verbs: [get]
+{{- end }}
   - apiGroups:
       - "kubeovn.io"
     resources:

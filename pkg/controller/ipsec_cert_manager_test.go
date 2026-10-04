@@ -13,6 +13,7 @@ import (
 	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	cmfake "github.com/cert-manager/cert-manager/pkg/client/clientset/versioned/fake"
 	"github.com/stretchr/testify/require"
+	admissionv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	certv1 "k8s.io/api/certificates/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -27,6 +28,18 @@ import (
 	"github.com/kubeovn/kube-ovn/pkg/ipsec"
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
+
+func testIPsecIssuerPolicy(namespace, issuer string) (*admissionv1.ValidatingAdmissionPolicy, *admissionv1.ValidatingAdmissionPolicyBinding) {
+	match, authorized := ipsecIssuerPolicyExpressions(namespace, issuer)
+	policy := &admissionv1.ValidatingAdmissionPolicy{Name: ipsecIssuerPolicyName, Spec: admissionv1.ValidatingAdmissionPolicySpec{
+		FailurePolicy:    new(admissionv1.Fail),
+		MatchConstraints: &admissionv1.MatchResources{ResourceRules: []admissionv1.NamedRuleWithOperations{{APIGroups: []string{"cert-manager.io"}, APIVersions: []string{"v1"}, Operations: []admissionv1.OperationType{admissionv1.Create, admissionv1.Update}, Resources: []string{"certificaterequests"}}}},
+		MatchConditions:  []admissionv1.MatchCondition{{Name: "dedicated-ipsec-issuer", Expression: match}},
+		Validations:      []admissionv1.Validation{{Expression: authorized}},
+	}}
+	binding := &admissionv1.ValidatingAdmissionPolicyBinding{Name: ipsecIssuerPolicyName, Spec: admissionv1.ValidatingAdmissionPolicyBindingSpec{PolicyName: ipsecIssuerPolicyName, ValidationActions: []admissionv1.ValidationAction{admissionv1.Deny}}}
+	return policy, binding
+}
 
 func TestIPsecCertManagerSharesCSRIdentityAuthorization(t *testing.T) {
 	t.Setenv(util.EnvPodNamespace, "kube-system")
@@ -67,7 +80,9 @@ func TestIPsecCertManagerSharesCSRIdentityAuthorization(t *testing.T) {
 			if scenario == "unbound-token" {
 				csr.Spec.Extra = nil
 			}
+			policy, binding := testIPsecIssuerPolicy("kube-system", "kube-ovn")
 			client := fake.NewClientset(csr,
+				policy, binding,
 				&appsv1.DaemonSet{Name: "kube-ovn-cni", Namespace: "kube-system", UID: "ds-uid"},
 				&corev1.Pod{Name: "cni-a", Namespace: "kube-system", UID: "pod-uid", OwnerReferences: []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "DaemonSet", Name: "kube-ovn-cni", UID: "ds-uid", Controller: new(true)}}, Spec: corev1.PodSpec{NodeName: "node-a", ServiceAccountName: "kube-ovn-cni"}},
 				&corev1.Node{Name: "node-a", UID: "node-uid", Annotations: map[string]string{util.ChassisAnnotation: "chassis-a"}},
