@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def validate(text, enabled):
     documents = [item for item in yaml.safe_load_all(text) if item]
     daemonset = next(item for item in documents if item.get("kind") == "DaemonSet" and item["metadata"]["name"] == "kube-ovn-cni")
+    assert daemonset["spec"]["updateStrategy"] == {"type": "RollingUpdate", "rollingUpdate": {"maxSurge": 0, "maxUnavailable": 1}}
     pod = daemonset["spec"]["template"]["spec"]
     containers = {item["name"]: item for item in pod["containers"]}
     daemon = containers["cni-server"]

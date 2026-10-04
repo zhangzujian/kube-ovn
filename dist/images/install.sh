@@ -9258,6 +9258,11 @@ metadata:
     kubernetes.io/description: |
       This daemon set launches the kube-ovn cni daemon.
 spec:
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: kube-ovn-cni

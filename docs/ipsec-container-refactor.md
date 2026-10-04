@@ -11,6 +11,8 @@ nice priority, defaulting to -5. CNI explicitly drops `SYS_NICE` and uses the
 unprivileged service user even with IPsec enabled. Installer debug mode retains
 its existing CNI root exception. Pod-level host networking, host PID namespace,
 and the ServiceAccount remain shared; this is not a separate security identity.
+Both Charts and the installer explicitly use a zero-surge CNI DaemonSet rollout;
+the persistent node owner lock additionally excludes concurrent new writers.
 
 The node module persists pending private keys, watches Kubernetes CSR results,
 validates the returned identity, and
