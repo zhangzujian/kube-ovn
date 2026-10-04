@@ -14,9 +14,16 @@ RUN mkdir ovs ovn && \
 COPY patches/ovn-controller-propagate-ipsec-protection.patch /src/protection.patch
 RUN cd ovs && ./boot.sh && \
     ./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var && make -j2
-RUN cd ovn && patch -p1 < /src/protection.patch && ./boot.sh && \
+RUN cd ovn && patch -p1 < /src/protection.patch && \
+    sed -i -E 's/^(AC_INIT\(\[?ovn\]?, \[?[^],)]+)(\]?)(,.*)$/\1+g28ed48957d63\2\3/' configure.ac && \
+    ./boot.sh && \
     ./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var \
     --with-ovs-source=/src/ovs --with-ovs-build=/src/ovs && \
     make -j2
 FROM ${CANDIDATE_IMAGE}
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 COPY --from=builder /src/ovn/controller/ovn-controller /usr/bin/ovn-controller
+# Keep the internal version check enabled. The pinned source must match the
+# northd package already shipped by the candidate base, including its suffix.
+RUN ovn-controller --version | grep -F '26.03.4+g28ed48957d63' && \
+    ovn-northd --version | grep -F '26.03.4+g28ed48957d63'
