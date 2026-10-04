@@ -90,13 +90,15 @@ func TestCandidateEncryptedTraffic(t *testing.T) {
 	assertGuard()
 	probeBlocked := func() {
 		t.Helper()
-		probe, err := net.Dial("udp", net.JoinHostPort(peer, strconv.Itoa(port)))
+		// An XFRM block can reject connect() before any packet is sent. Use an
+		// unconnected socket so the probe exercises the blocked output path.
+		probe, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP(local)})
 		require.NoError(t, err)
 		defer func() { require.NoError(t, probe.Close()) }()
 		// Linux may report a policy rejection synchronously or drop the packet.
 		// The independent outer capture must contain no plaintext in either case.
 		for range 10 {
-			_, _ = probe.Write([]byte("candidate-blocked-transport-" + node))
+			_, _ = probe.WriteToUDP([]byte("candidate-blocked-transport-"+node), &net.UDPAddr{IP: net.ParseIP(peer), Port: port})
 		}
 	}
 	probeBlocked()
