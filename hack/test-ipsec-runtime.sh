@@ -54,4 +54,4 @@ docker run --name "$test_container" --network none --pid host --user 0:0 \
   --mount "type=volume,src=$runtime_volume,dst=/run/openvswitch,readonly" \
   --mount "type=bind,src=$runtime_binary,dst=/tmp/ipsec-runtime-tests,readonly" \
   --env KUBE_OVN_IPSEC_RUNTIME_TEST=true \
-  "$candidate_image" /tmp/ipsec-runtime-tests -test.run '^TestCandidateRuntime$' -test.v -test.timeout=180s
+  "$candidate_image" /tmp/ipsec-runtime-tests -test.run '^TestCandidate(Runtime|MarkedGuard)$' -test.v -test.timeout=180s
