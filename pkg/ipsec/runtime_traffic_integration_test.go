@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/vishvananda/netlink"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
@@ -132,7 +133,7 @@ func TestCandidateEncryptedTraffic(t *testing.T) {
 		}
 	})
 	require.NoError(t, command(t.Context(), "ovs-vsctl", "--timeout=5", "--no-wait", "add-br", "br-test"))
-	require.NoError(t, command(t.Context(), "ovs-vsctl", "--timeout=5", "--no-wait", "add-port", "br-test", "ovn-peer", "--", "set", "Interface", "ovn-peer", "type="+tunnel, "options:local_ip="+local, "options:remote_ip="+peer, "options:remote_name=traffic-chassis-"+peerNode, "--", "set", "Port", "ovn-peer", "external_ids:ovn-chassis-id=traffic-chassis-"+peerNode))
+	require.NoError(t, command(t.Context(), "ovs-vsctl", "--timeout=5", "--no-wait", "add-port", "br-test", "ovn-peer", "--", "set", "Interface", "ovn-peer", "type="+tunnel, "options:local_ip="+local, "options:remote_ip="+peer, "options:remote_name=traffic-chassis-"+peerNode, "options:ipsec_reqid=759811", "--", "set", "Port", "ovn-peer", "external_ids:ovn-chassis-id=traffic-chassis-"+peerNode))
 	require.Eventually(t, func() bool {
 		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 		defer cancel()
@@ -159,6 +160,23 @@ func TestCandidateEncryptedTraffic(t *testing.T) {
 		n, _, err := socket.ReadFromUDP(buffer)
 		return err == nil && string(buffer[:n]) == want
 	}, 60*time.Second, 200*time.Millisecond, "both minimal-capability runtimes must exchange the synthetic payload")
+	stateCount := func() int {
+		t.Helper()
+		states, err := netlink.XfrmStateList(netlink.FAMILY_ALL)
+		require.NoError(t, err)
+		count := 0
+		for _, state := range states {
+			// Never log or serialize the netlink state: it includes SA keys.
+			if state.Reqid == 759811 {
+				require.Equal(t, netlink.XFRM_PROTO_ESP, state.Proto)
+				require.Equal(t, netlink.XFRM_MODE_TRANSPORT, state.Mode)
+				require.True(t, state.Src.Equal(net.ParseIP(local)) && state.Dst.Equal(net.ParseIP(peer)) || state.Src.Equal(net.ParseIP(peer)) && state.Dst.Equal(net.ParseIP(local)))
+				count++
+			}
+		}
+		return count
+	}
+	require.GreaterOrEqual(t, stateCount(), 2, "the real monitor must preserve an explicit connection reqid in both directions")
 	require.NoError(t, os.WriteFile("/fixtures/traffic-complete", nil, 0o600))
 	// Keep both peers alive until the harness has collected both outcomes.
 	for {
@@ -182,6 +200,7 @@ func TestCandidateEncryptedTraffic(t *testing.T) {
 		t.Fatal("traffic runtime did not stop for the guard test")
 	}
 	assertGuard()
+	require.Zero(t, stateCount(), "graceful shutdown must remove the synthetic reqid's SAs while preserving the separate guard")
 	probeBlocked()
 	require.NoError(t, os.WriteFile("/fixtures/guard-complete", nil, 0o600))
 	for {
