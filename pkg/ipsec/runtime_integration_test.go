@@ -28,6 +28,8 @@ func TestCandidateRuntime(t *testing.T) {
 		t.Skip("requires the isolated candidate-image runtime harness")
 	}
 	require.NoError(t, checkIKEPorts(), "the test network namespace must be isolated")
+	require.NoError(t, command(t.Context(), "ovs-vsctl", "--timeout=5", "--no-wait", "add-br", "br-fixture"))
+	require.NoError(t, command(t.Context(), "ovs-vsctl", "--timeout=5", "--no-wait", "add-port", "br-fixture", "unrelated-ipsec", "--", "set", "Interface", "unrelated-ipsec", "type=geneve", "options:remote_ip=198.51.100.77", "options:remote_name=external-peer"))
 	cert, key, trust := testIdentity(t, "runtime-test-chassis")
 	client := fake.NewClientset(
 		&corev1.Node{Name: "runtime-node", UID: "runtime-node-uid"},
@@ -70,6 +72,10 @@ func TestCandidateRuntime(t *testing.T) {
 		require.Contains(t, string(output), "CN=test CA", "readiness must follow loading the configured trust")
 	}
 	checkTrust()
+	require.Eventually(t, func() bool {
+		config, err := os.ReadFile("/etc/ipsec.conf")
+		return err == nil && strings.Contains(string(config), "ca ca_auth") && !strings.Contains(string(config), "unrelated-ipsec")
+	}, 10*time.Second, 200*time.Millisecond, "the monitor must recognize the certificate and leave unowned IPsec interfaces out of its configuration")
 	pidBytes, err := os.ReadFile(filepath.Join(a.config.RuntimeDir, "monitor.pid"))
 	require.NoError(t, err)
 	pid, err := strconv.Atoi(strings.TrimSpace(string(pidBytes)))
@@ -78,6 +84,13 @@ func TestCandidateRuntime(t *testing.T) {
 	require.NoError(t, err)
 	// Linux's raw getpriority syscall returns 20 minus the nice value.
 	require.Equal(t, -5, 20-priority, "SYS_NICE must be effective in the minimal-capability IPsec container")
+	charonPIDBytes, err := os.ReadFile("/run/charon.pid")
+	require.NoError(t, err)
+	charonPID, err := strconv.Atoi(strings.TrimSpace(string(charonPIDBytes)))
+	require.NoError(t, err)
+	charonPriority, err := unix.Getpriority(unix.PRIO_PROCESS, charonPID)
+	require.NoError(t, err)
+	require.Equal(t, -5, 20-charonPriority, "charon must inherit the IPsec priority")
 	status, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "status"))
 	require.NoError(t, err)
 	var effective uint64

@@ -20,6 +20,13 @@ an existing valid identity. The monitor and strongSwan starter run as supervised
 foreground processes with private monitor pid/control paths. The monitor does
 not restart the IKE daemon itself.
 
+The image applies small, checked adaptations to the upstream OVS monitor:
+accept CN at the end of an RFC2253 subject, and optionally filter interfaces by
+their owning Port's `ovn-chassis-id`. The IPsec entrypoint enables this filter.
+Image construction fails if the pinned monitor source no longer matches the
+adaptation points. Connection generation and refresh remain in OVS. The filter
+does not prove ownership of orphaned kernel SAs after a crash.
+
 The built-in signer checks the CSR signature, bound Pod identity, live
 DaemonSet ownership, Node UID, and the requested chassis CN/SAN. A shared
 ServiceAccount or a request name alone is not sufficient. Clusters that do not
@@ -45,9 +52,22 @@ provisioned consistently. The issuer must be dedicated to Kube-OVN IPsec.
 Installation creates a fail-closed ValidatingAdmissionPolicy and binding that
 restrict requests to this ClusterIssuer across all namespaces to the controller
 ServiceAccount in its configured namespace. Kubernetes >= 1.30 is required for
-this backend. Generic cert-manager auto-approval cannot admit a different
-requester past this policy. Policy installation and real bound-token signing
+this backend. Metadata-only updates are allowed; other requesters cannot change
+the authorized request's spec. Before forwarding, the controller checks the
+policy scope, observed generation and unconditional Deny binding. Missing or
+weakened policy is retryable and never forwards a request. Generic cert-manager
+auto-approval cannot admit a different requester past this policy.
+Policy installation and real bound-token signing
 still require cluster acceptance testing before this draft is ready.
+
+`hack/test-ipsec-runtime.sh` validates the real candidate's startup, private
+endpoints, priority/capability inheritance, monitor crash recovery, and shutdown.
+`hack/test-ipsec-traffic.sh` runs two private network namespaces with synthetic
+certificate identities and UDP payloads on Geneve/VXLAN ports, for IPv4 and IPv6.
+A separate fixture captures the outer interface and requires ESP packets with
+zero plaintext transport packets. This verifies Linux transport/IKE; it does
+not run `ovn-controller` or Pod overlays, or establish protection during faults
+and rollout.
 
 Local probes use the private status socket with `--check=livez` or
 `--check=readyz`. Readiness includes an unexpired active certificate and runtime

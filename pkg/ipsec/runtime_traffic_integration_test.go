@@ -1,0 +1,143 @@
+package ipsec
+
+import (
+	"bytes"
+	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"fmt"
+	"math/big"
+	"net"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/fake"
+
+	"github.com/kubeovn/kube-ovn/pkg/util"
+)
+
+// These fixtures contain only ephemeral synthetic keys. The harness mounts
+// one node's identity per test container and removes the volume afterwards.
+func TestCandidateTrafficFixtures(t *testing.T) {
+	if os.Getenv("KUBE_OVN_IPSEC_TRAFFIC_FIXTURES") != "true" {
+		t.Skip("requires the isolated candidate traffic harness")
+	}
+	caKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	now := time.Now()
+	ca := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "candidate traffic CA"}, NotBefore: now.Add(-time.Hour), NotAfter: now.Add(24 * time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign}
+	der, err := x509.CreateCertificate(rand.Reader, ca, ca, &caKey.PublicKey, caKey)
+	require.NoError(t, err)
+	trust := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	ca, err = x509.ParseCertificate(der)
+	require.NoError(t, err)
+	for i := range 2 {
+		dir := filepath.Join("/fixtures", fmt.Sprintf("node-%d", i))
+		require.NoError(t, os.MkdirAll(dir, 0o700))
+		key, err := newPrivateKey()
+		require.NoError(t, err)
+		parsed, err := privateKey(key)
+		require.NoError(t, err)
+		chassis := fmt.Sprintf("traffic-chassis-%d", i)
+		leaf := &x509.Certificate{SerialNumber: big.NewInt(int64(i + 2)), Subject: pkix.Name{CommonName: chassis}, DNSNames: []string{chassis}, NotBefore: now.Add(-time.Minute), NotAfter: now.Add(time.Hour), KeyUsage: x509.KeyUsageDigitalSignature, BasicConstraintsValid: true}
+		der, err := x509.CreateCertificate(rand.Reader, leaf, ca, &parsed.PublicKey, caKey)
+		require.NoError(t, err)
+		for name, data := range map[string][]byte{"certificate": pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), "private-key": key, "trust": trust} {
+			require.NoError(t, os.WriteFile(filepath.Join(dir, name), data, 0o600))
+		}
+	}
+}
+
+// This validates real IKE and Linux transport policies with synthetic UDP
+// payloads. It is a prerequisite, not a substitute for actual OVN overlay,
+// rollout, fail-closed protection and cluster identity E2E coverage.
+func TestCandidateEncryptedTraffic(t *testing.T) {
+	if os.Getenv("KUBE_OVN_IPSEC_TRAFFIC_TEST") != "true" {
+		t.Skip("requires the isolated candidate traffic harness")
+	}
+	local, peer := os.Getenv("IPSEC_LOCAL_IP"), os.Getenv("IPSEC_PEER_IP")
+	node, peerNode := os.Getenv("IPSEC_NODE"), os.Getenv("IPSEC_PEER_NODE")
+	tunnel := os.Getenv("IPSEC_TUNNEL")
+	port := map[string]int{"geneve": 6081, "vxlan": 4789}[tunnel]
+	require.NotZero(t, port)
+	cert, err := os.ReadFile("/fixtures/certificate")
+	require.NoError(t, err)
+	key, err := os.ReadFile("/fixtures/private-key")
+	require.NoError(t, err)
+	trust, err := os.ReadFile("/fixtures/trust")
+	require.NoError(t, err)
+	client := fake.NewClientset(
+		&corev1.Node{Name: node, UID: types.UID("traffic-node-" + node)},
+		&corev1.Secret{Name: util.DefaultOVNIPSecCA, Namespace: "kube-system", Data: map[string][]byte{"cacert": trust}},
+	)
+	a, err := New(Configuration{NodeName: node, PodUID: "traffic-pod-" + node, Namespace: "kube-system", Kube: client, KeyDir: t.TempDir(), RuntimeDir: t.TempDir(), OVSSocket: "/run/openvswitch/db.sock", Duration: time.Hour, RequestTimeout: 30 * time.Second, Priority: -5})
+	require.NoError(t, err)
+	g := &generation{ID: digest(key), NodeUID: "traffic-node-" + node, Chassis: "traffic-chassis-" + node}
+	require.NoError(t, a.store.write(g, "private-key", key))
+	require.NoError(t, a.store.write(g, "certificate", cert))
+	require.NoError(t, a.store.save("pending", g))
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- a.Run(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case err := <-done:
+			require.NoError(t, err)
+		case <-time.After(20 * time.Second):
+			t.Error("traffic runtime did not stop")
+		}
+	})
+	require.NoError(t, command(t.Context(), "ovs-vsctl", "--timeout=5", "--no-wait", "add-br", "br-test"))
+	require.NoError(t, command(t.Context(), "ovs-vsctl", "--timeout=5", "--no-wait", "add-port", "br-test", "ovn-peer", "--", "set", "Interface", "ovn-peer", "type="+tunnel, "options:local_ip="+local, "options:remote_ip="+peer, "options:remote_name=traffic-chassis-"+peerNode, "--", "set", "Port", "ovn-peer", "external_ids:ovn-chassis-id=traffic-chassis-"+peerNode))
+	require.Eventually(t, func() bool {
+		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+		defer cancel()
+		output, err := exec.CommandContext(ctx, "/usr/sbin/ipsec", "statusall").Output()
+		return err == nil && bytes.Contains(output, []byte("ROUTED"))
+	}, 60*time.Second, 200*time.Millisecond, "the real monitor must install transport trap policies")
+	socket, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP(local), Port: port})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, socket.Close()) })
+	sender, err := net.Dial("udp", net.JoinHostPort(peer, strconv.Itoa(port)))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, sender.Close()) })
+	payload := "candidate-IPsec-node-" + node
+	want := "candidate-IPsec-node-" + peerNode
+	buffer := make([]byte, 256)
+	require.Eventually(t, func() bool {
+		_, err := sender.Write([]byte(payload))
+		if err != nil {
+			return false
+		}
+		if err := socket.SetReadDeadline(time.Now().Add(150 * time.Millisecond)); err != nil {
+			return false
+		}
+		n, _, err := socket.ReadFromUDP(buffer)
+		return err == nil && string(buffer[:n]) == want
+	}, 60*time.Second, 200*time.Millisecond, "both minimal-capability runtimes must exchange the synthetic payload")
+	require.NoError(t, os.WriteFile("/fixtures/traffic-complete", nil, 0o600))
+	// Keep both peers alive until the harness has collected both outcomes.
+	for {
+		if _, err := os.Stat("/fixtures/finish"); err == nil {
+			return
+		}
+		_, err := sender.Write([]byte(payload))
+		require.NoError(t, err)
+		select {
+		case <-t.Context().Done():
+			t.Fatal("traffic harness did not release the peer")
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+}

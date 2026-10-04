@@ -56,3 +56,4 @@ jobs:
           docker build --build-arg BASE_TAG=v1.17.0@sha256:300011722d58c4c822279b034476d124f6f52d5ba607ddc68939fea1364746c1 --label org.opencontainers.image.revision="$GITHUB_SHA" -t ipsec-candidate:"$GITHUB_SHA" -f dist/images/Dockerfile dist/images
           CGO_ENABLED=0 go test -c -o /tmp/ipsec-runtime-tests ./pkg/ipsec
           bash hack/test-ipsec-runtime.sh ipsec-candidate:"$GITHUB_SHA" /tmp/ipsec-runtime-tests
+          bash hack/test-ipsec-traffic.sh ipsec-candidate:"$GITHUB_SHA" /tmp/ipsec-runtime-tests

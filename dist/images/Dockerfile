@@ -34,6 +34,9 @@ COPY --chmod=0644 logrotate/* /etc/logrotate.d/
 COPY grace_stop_ovn_controller /usr/share/ovn/scripts/grace_stop_ovn_controller
 
 COPY --from=setcap /kube-ovn /kube-ovn
+COPY patch-ovs-monitor-ipsec.py /kube-ovn/patch-ovs-monitor-ipsec.py
+RUN python3 /kube-ovn/patch-ovs-monitor-ipsec.py /usr/share/openvswitch/scripts/ovs-monitor-ipsec && \
+    rm /kube-ovn/patch-ovs-monitor-ipsec.py
 RUN setcap CAP_SYS_ADMIN+ep /kube-ovn/kube-ovn-tproxy && \
     setcap CAP_NET_BIND_SERVICE+eip /kube-ovn/kube-ovn-cmd && \
     setcap CAP_NET_RAW,CAP_NET_BIND_SERVICE+eip /kube-ovn/kube-ovn-controller && \

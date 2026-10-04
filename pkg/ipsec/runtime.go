@@ -41,7 +41,7 @@ type runtimeManager struct {
 }
 
 func command(ctx context.Context, name string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...) // #nosec G204 -- fixed runtime programs, not untrusted requests.
+	cmd := exec.CommandContext(ctx, name, args...) // #nosec G204 G702 -- callers select fixed programs; argv is never interpreted by a shell.
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("%s failed: %w", name, err)
 	}
@@ -160,7 +160,7 @@ func (r *runtimeManager) runPair(ctx context.Context) error {
 		}
 	}
 	monitor, err := r.startChild("/usr/share/openvswitch/scripts/ovs-monitor-ipsec", "unix:"+r.ovsSocket,
-		"--ike-daemon=strongswan", "--no-restart-ike-daemon", "--pidfile="+filepath.Join(r.dir, "monitor.pid"))
+		"--ike-daemon=strongswan", "--no-restart-ike-daemon", "--ovn-owned-only", "--pidfile="+filepath.Join(r.dir, "monitor.pid"))
 	if err != nil {
 		return err
 	}
