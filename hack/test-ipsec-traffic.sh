@@ -170,12 +170,12 @@ for family in 4 6; do
     done
     # tcpdump decodes both native ESP and ESP-in-UDP as ESP(spi=...). IKE on
     # UDP4500 carries a zero non-ESP marker and must not count as encrypted data.
-    esp_count=$(docker exec "${traffic_ovs[0]}" bash -c 'tcpdump -n -r /tmp/traffic.pcap 2>/dev/null | awk "/ESP\\(spi=/{count++} END{print count+0}"')
-    plaintext_count=$(docker exec "${traffic_ovs[0]}" bash -c 'tcpdump -n -r /tmp/traffic.pcap "udp port 6081 or udp port 4789" 2>/dev/null | wc -l')
+    esp_count=$(docker exec "${traffic_ovs[0]}" bash -o pipefail -c 'tcpdump -Z root -n -r /tmp/traffic.pcap | awk "/ESP\\(spi=/{count++} END{print count+0}"')
+    plaintext_count=$(docker exec "${traffic_ovs[0]}" bash -o pipefail -c 'tcpdump -Z root -n -r /tmp/traffic.pcap "udp port 6081 or udp port 4789" | wc -l')
     echo "IPv$family $tunnel: ESP packets=$esp_count plaintext transport packets=$plaintext_count"
     if [[ "$esp_count" == 0 || "$plaintext_count" != 0 ]]; then
       docker exec "${traffic_ovs[0]}" cat /tmp/capture.log >&2
-      docker exec "${traffic_ovs[0]}" tcpdump -n -r /tmp/traffic.pcap -c 8 >&2
+      docker exec "${traffic_ovs[0]}" tcpdump -Z root -n -r /tmp/traffic.pcap -c 8 >&2
       echo 'The capture did not prove encrypted transport without plaintext' >&2
       exit 1
     fi

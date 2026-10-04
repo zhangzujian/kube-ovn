@@ -116,8 +116,8 @@ kubectl -n kube-system exec "$overlay_ovs" -- bash -c '
   exit 1
 '
 wait "$overlay_capture_client"
-overlay_esp=$(kubectl -n kube-system exec "$overlay_ovs" -- bash -c 'tcpdump -n -r /tmp/ipsec-overlay.pcap 2>/dev/null | awk "/ESP\\(spi=/{count++} END{print count+0}"')
-overlay_plaintext=$(kubectl -n kube-system exec "$overlay_ovs" -- bash -c 'tcpdump -n -r /tmp/ipsec-overlay.pcap "udp port 6081 or udp port 4789" 2>/dev/null | wc -l')
+overlay_esp=$(kubectl -n kube-system exec "$overlay_ovs" -- bash -o pipefail -c 'tcpdump -Z root -n -r /tmp/ipsec-overlay.pcap | awk "/ESP\\(spi=/{count++} END{print count+0}"')
+overlay_plaintext=$(kubectl -n kube-system exec "$overlay_ovs" -- bash -o pipefail -c 'tcpdump -Z root -n -r /tmp/ipsec-overlay.pcap "udp port 6081 or udp port 4789" | wc -l')
 echo "Actual cross-node OVN pods: ESP packets=$overlay_esp plaintext transport packets=$overlay_plaintext"
 if [[ "$overlay_esp" == 0 || "$overlay_plaintext" != 0 ]]; then
   echo 'The actual OVN overlay did not prove encryption without plaintext' >&2
