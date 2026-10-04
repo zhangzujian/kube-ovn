@@ -257,5 +257,16 @@ func TestIPsecAPIServerSigningContract(t *testing.T) {
 	issued.Spec.Duration = &metav1.Duration{Duration: 2 * time.Hour}
 	_, err = cmCNI.CertmanagerV1().CertificateRequests(namespace).Update(ctx, issued, metav1.UpdateOptions{})
 	require.True(t, k8serrors.IsInvalid(err) || k8serrors.IsForbidden(err), "another requester must not mutate the authorized spec")
-	t.Log("real bound-token CSR, built-in issuance, issuer admission and cert-manager forwarding passed")
+	// Kubernetes' CSR cleaner owns request retention. The forwarded request
+	// must disappear with its exact parent UID, without node delete privileges
+	// or a second, name-based cleanup controller.
+	require.Equal(t, []metav1.OwnerReference{{APIVersion: "certificates.k8s.io/v1", Kind: "CertificateSigningRequest", Name: external.Name, UID: external.UID}}, issued.OwnerReferences)
+	require.NoError(t, admin.CertificatesV1().CertificateSigningRequests().Delete(ctx, external.Name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: new(external.UID)}}))
+	require.Eventually(t, func() bool {
+		_, err := cmAdmin.CertmanagerV1().CertificateRequests(namespace).Get(ctx, issued.Name, metav1.GetOptions{})
+		return k8serrors.IsNotFound(err)
+	}, time.Minute, time.Second, "forwarded requests must be garbage collected with their CSR parent")
+	_, err = cmAdmin.CertmanagerV1().CertificateRequests(namespace).Get(ctx, unrelated.Name, metav1.GetOptions{})
+	require.NoError(t, err, "garbage collection must preserve the unrelated issuer request")
+	t.Log("real bound-token CSR, built-in issuance, issuer admission, cert-manager forwarding and request garbage collection passed")
 }

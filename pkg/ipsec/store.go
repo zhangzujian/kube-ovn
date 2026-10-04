@@ -178,6 +178,9 @@ func (s store) importLegacy(nodeUID, chassis string, trust []byte, paths map[str
 	if err := s.write(g, "certificate", cert); err != nil {
 		return err
 	}
+	if err := s.recordGeneration(g); err != nil {
+		return err
+	}
 	return s.save("pending", g)
 }
 
@@ -226,6 +229,9 @@ func (s store) prepareGeneration(source *generation, trust []byte) (*generation,
 			return nil, err
 		}
 	}
+	if err := s.recordGeneration(g); err != nil {
+		return nil, err
+	}
 	return g, nil
 }
 
@@ -246,6 +252,9 @@ func (s store) pending(nodeUID, chassis string) (*generation, []byte, error) {
 	}
 	g = &generation{ID: digest(key), NodeUID: nodeUID, Chassis: chassis}
 	if err := s.write(g, "private-key", key); err != nil {
+		return nil, nil, err
+	}
+	if err := s.recordGeneration(g); err != nil {
 		return nil, nil, err
 	}
 	if err := s.save("pending", g); err != nil {

@@ -179,3 +179,20 @@ before changing shared certificate paths or submitting requests. The legacy
 check reads the actual upstream POSIX lock; PID text alone never authorizes
 a takeover or process termination. A stopped legacy monitor's stale, unlocked
 pidfile is harmless. Coordinated legacy service migration remains separate.
+
+Certificate storage retains the current, pending and previous generation, plus
+every generation referenced by local OVSDB. The previous pointer is persisted
+before activation and is not advanced by steady reconciliation. After the owned
+runtime acknowledges the current configuration, collection removes only module
+directories with valid metadata and known regular files, at least 24 hours after
+the last file change. Legacy directories, unknown files and symlink targets are
+never reclaimed. This bounds retired local key storage; it is not SA cleanup or
+an automatic rollback policy.
+
+Kubernetes' standard CSR cleaner owns signing-request retention (issued/denied
+requests after one hour, pending requests after 24 hours, and expired issued
+certificates). Cert-manager requests have an exact CSR UID owner reference so
+the Kubernetes garbage collector reclaims them with the parent. The API harness
+checks this relationship and preservation of an unrelated issuer request. A
+cluster that disables these Kubernetes controllers needs an explicit retention
+policy; the node does not receive delete privileges or delete requests by name.

@@ -223,6 +223,18 @@ func (a *Agent) reconcile(ctx context.Context, secrets listers.SecretLister) err
 			return err
 		}
 	}
+	// Only reclaim files after the owned runtime has loaded the current public
+	// configuration. Retain the database references even if they differ after
+	// an interrupted commit or another writer's update.
+	if a.runtime.healthy.Load() && a.runtime.applied.Load() {
+		row, err := a.ovs.IPsecConfiguration()
+		if err != nil {
+			return err
+		}
+		if err := a.store.collectGenerations(time.Now(), row.OtherConfig); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -233,6 +245,9 @@ func (a *Agent) activate(ctx context.Context, ovsUUID string, g *generation, tru
 	}
 	certs, err := Certificates(certPEM)
 	if err != nil {
+		return err
+	}
+	if err := a.store.retainPrevious(g); err != nil {
 		return err
 	}
 	if err := a.applyTrust(ctx, trust); err != nil {
