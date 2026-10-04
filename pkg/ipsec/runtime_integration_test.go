@@ -101,9 +101,13 @@ func TestCandidateRuntime(t *testing.T) {
 	)
 	secrets := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
 	require.NoError(t, secrets.Add(&corev1.Secret{Name: util.DefaultOVNIPSecCA, Namespace: "kube-system", Data: map[string][]byte{"cacert": trust}}))
+	// TempDir's child directory is created with 0777 before umask. Match the
+	// hostpath initializer explicitly, without weakening the endpoint check.
+	protectionDir := t.TempDir()
+	require.NoError(t, os.Chmod(protectionDir, 0o750))
 	a, err := New(Configuration{
 		NodeName: "runtime-node", PodUID: "runtime-pod-uid", Namespace: "kube-system", Kube: client,
-		KeyDir: t.TempDir(), RuntimeDir: t.TempDir(), ProtectionDir: t.TempDir(), OVSSocket: "/run/openvswitch/db.sock", Duration: time.Hour, RequestTimeout: 30 * time.Second, Priority: -5,
+		KeyDir: t.TempDir(), RuntimeDir: t.TempDir(), ProtectionDir: protectionDir, OVSSocket: "/run/openvswitch/db.sock", Duration: time.Hour, RequestTimeout: 30 * time.Second, Priority: -5,
 	})
 	require.NoError(t, err)
 	g := &generation{ID: digest(key), NodeUID: "runtime-node-uid", Chassis: "runtime-test-chassis"}
