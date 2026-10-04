@@ -20,7 +20,12 @@ trap cleanup EXIT
 
 docker image inspect "$candidate_image" --format '{{.Id}} {{json .Config.Labels}}'
 docker volume create "$runtime_volume" >/dev/null
-docker run --detach --name "$ovs_container" --network none --user 0:0 \
+# Match hostpath-init ownership and exercise the production socket permissions.
+# CHOWN belongs only to this disposable volume setup, never the IPsec agent.
+docker run --rm --network none --user 0:0 --cap-drop ALL --cap-add CHOWN \
+  --mount "type=volume,src=$runtime_volume,dst=/run/openvswitch" \
+  "$candidate_image" chown 65534:65534 /run/openvswitch
+docker run --detach --name "$ovs_container" --network none --user 65534:65534 \
   --cap-drop ALL --cap-add NET_BIND_SERVICE \
   --memory 256m --cpus 1 --security-opt no-new-privileges \
   --mount "type=volume,src=$runtime_volume,dst=/run/openvswitch" \
@@ -28,7 +33,7 @@ docker run --detach --name "$ovs_container" --network none --user 0:0 \
     set -euo pipefail
     ovsdb-tool create /tmp/ipsec-test.db /usr/share/openvswitch/vswitch.ovsschema
     exec ovsdb-server /tmp/ipsec-test.db --remote=punix:/run/openvswitch/db.sock \
-      --pidfile=/run/openvswitch/ovsdb-server.pid --unixctl=/run/openvswitch/db.ctl
+      --pidfile=/run/openvswitch/ovsdb-server.pid --unixctl=/run/openvswitch/db.ctl --umask=0007
   ' >/dev/null
 
 for attempt in {1..30}; do
@@ -48,7 +53,7 @@ for attempt in {1..30}; do
 done
 docker exec "$ovs_container" ovs-vsctl --timeout=5 --no-wait set Open_vSwitch . external_ids:system-id=runtime-test-chassis
 
-docker run --name "$test_container" --network none --pid host --user 0:0 \
+docker run --name "$test_container" --network none --pid host --user 0:65534 \
   --cap-drop ALL --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE --cap-add SYS_NICE \
   --memory 512m --cpus 1 --security-opt no-new-privileges \
   --mount "type=volume,src=$runtime_volume,dst=/run/openvswitch,readonly" \

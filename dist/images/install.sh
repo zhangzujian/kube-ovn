@@ -122,7 +122,7 @@ if [ -n "$DEBUG_WRAPPER" ]; then
   CNI_RUN_AS_USER=0
 fi
 RUN_AS_USER=65534 # run as nobody
-if [ "$ENABLE_OVN_IPSEC" = "true" -o -n "$DEBUG_WRAPPER" ]; then
+if [ -n "$DEBUG_WRAPPER" ]; then
   RUN_AS_USER=0
 fi
 
@@ -8899,7 +8899,7 @@ if [[ "$ENABLE_OVN_IPSEC" == "true" ]]; then
           - --priority=-5
         securityContext:
           runAsUser: 0
-          runAsGroup: 0
+          runAsGroup: ${RUN_AS_USER}
           privileged: false
           allowPrivilegeEscalation: false
           capabilities:

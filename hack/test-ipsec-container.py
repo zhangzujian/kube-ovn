@@ -10,7 +10,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def validate(text, enabled):
+def validate(text, enabled, debug=False):
     documents = [item for item in yaml.safe_load_all(text) if item]
     daemonset = next(item for item in documents if item.get("kind") == "DaemonSet" and item["metadata"]["name"] == "kube-ovn-cni")
     assert daemonset["spec"]["updateStrategy"] == {"type": "RollingUpdate", "rollingUpdate": {"maxSurge": 0, "maxUnavailable": 1}}
@@ -18,7 +18,7 @@ def validate(text, enabled):
     containers = {item["name"]: item for item in pod["containers"]}
     daemon = containers["cni-server"]
     security = daemon["securityContext"]
-    assert security["runAsUser"] == 65534
+    assert security["runAsUser"] == (0 if debug else 65534)
     assert "SYS_NICE" not in security["capabilities"]["add"]
     assert "SYS_NICE" in security["capabilities"]["drop"]
     assert all(not arg.startswith(("--enable-ovn-ipsec", "--cert-manager-ipsec-cert", "--ovn-ipsec-cert-duration", "--cert-manager-issuer-name")) for arg in daemon["args"])
@@ -29,7 +29,9 @@ def validate(text, enabled):
         assert ipsec["image"] == daemon["image"]
         assert ipsec["command"] == ["/kube-ovn/kube-ovn-ipsec"]
         security = ipsec["securityContext"]
-        assert security["runAsUser"] == security["runAsGroup"] == 0
+        assert security["runAsUser"] == 0
+        assert security["runAsGroup"] == (0 if debug else 65534)
+        assert "--ovn-ipsec-cert-duration=63072000" in ipsec["args"]
         assert security["privileged"] is False
         assert security["allowPrivilegeEscalation"] is False
         assert security["capabilities"] == {"drop": ["ALL"], "add": ["NET_ADMIN", "NET_BIND_SERVICE", "SYS_NICE"]}
@@ -79,17 +81,18 @@ def validate_cert_manager(text):
             assert all("certificaterequests" not in rule.get("resources", []) for rule in item["rules"])
 
 
-def installer(enabled):
+def installer(enabled, debug=False):
     source = (ROOT / "dist/images/install.sh").read_text()
     start = source.index('IPSEC_CONTAINER=""')
     end = source.index("cat <<EOF > kube-ovn.yaml", start)
     rendering = source[start:end]
     start = source.index("kind: DaemonSet", end)
     end = source.index("\n---\nkind: Deployment", start)
-    script = rendering + "cat <<EOF\n" + source[start:end] + "\nEOF\n"
+    defaults = source[source.index("# debug\n"):source.index("CNI_SERVER_CAPABILITIES=")]
+    script = defaults + rendering + "cat <<EOF\n" + source[start:end] + "\nEOF\n"
     env = dict(os.environ, ENABLE_OVN_IPSEC=str(enabled).lower(), ENABLE_TPROXY="false",
                REGISTRY="registry.test/kubeovn", VERSION="test", IMAGE_PULL_POLICY="IfNotPresent",
-               RUN_AS_USER="0" if enabled else "65534", CNI_RUN_AS_USER="65534", KUBELET_DIR="/var/lib/kubelet",
+               DEBUG_WRAPPER="valgrind" if debug else "", KUBELET_DIR="/var/lib/kubelet",
                CERT_MANAGER_IPSEC_CERT="false", CERT_MANAGER_ISSUER_NAME="kube-ovn", IPSEC_CERT_DURATION="63072000",
                CNI_SERVER_CAPABILITIES="                - NET_ADMIN\n                - NET_BIND_SERVICE\n                - NET_RAW")
     return subprocess.check_output(["bash", "-c", script], env=env, text=True)
@@ -120,6 +123,12 @@ def main():
         assert chart_policy == installer_issuer_policy()
     for enabled in (False, True):
         validate(installer(enabled), enabled)
+        validate(installer(enabled, debug=True), enabled, debug=True)
+    for chart in ("kube-ovn", "kube-ovn-v2"):
+        rendered = subprocess.check_output(["helm", "template", "ipsec-test", str(ROOT / "charts" / chart), "--set", "func.ENABLE_OVN_IPSEC=true" if chart == "kube-ovn" else "features.enableOvnIpsec=true"], text=True, stderr=subprocess.DEVNULL)
+        documents = [item for item in yaml.safe_load_all(rendered) if item]
+        ovs = next(item for item in documents if item.get("kind") == "DaemonSet" and item["metadata"]["name"] == "ovs-ovn")
+        assert ovs["spec"]["template"]["spec"]["containers"][0]["securityContext"]["runAsUser"] == 65534
     assert "CAP_SYS_NICE" not in (ROOT / "dist/images/Dockerfile").read_text()
     print("IPsec enabled/disabled, CNI UID, nice capability, mount, probe and installer checks passed.")
 

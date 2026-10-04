@@ -322,12 +322,12 @@ spec:
         command:
           - /kube-ovn/kube-ovn-ipsec
         args:
-          - --ovn-ipsec-cert-duration={{ .Values.ipsec.certificateDuration }}
+          - --ovn-ipsec-cert-duration={{ .Values.ipsec.certificateDuration | int64 }}
           - --request-timeout={{ .Values.ipsec.requestTimeout }}
           - --priority={{ .Values.ipsec.priority }}
         securityContext:
           runAsUser: 0
-          runAsGroup: 0
+          runAsGroup: 65534
           privileged: false
           allowPrivilegeEscalation: false
           capabilities:

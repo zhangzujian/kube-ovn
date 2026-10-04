@@ -148,3 +148,5 @@ so a rebuilt Pod can retain its pending private key without waiting on a CSR
 authenticated as a deleted Pod. Storage rejects symlink entries. Reconciliation
 reuses the reconnecting native OVSDB client, and probes check responsive local
 IKE/monitor endpoints and a bounded reconciliation heartbeat.
+
+The IPsec switch no longer changes the UID of OVS, the controller, or other ordinary containers. The agent runs as UID 0 with GID 65534 to access the non-root OVSDB socket without DAC capabilities. The shell installer retains its existing debug-wrapper UID/GID 0 exception for the shared socket. CNI DaemonSet rollouts explicitly use `maxSurge: 0` and `maxUnavailable: 1`.
