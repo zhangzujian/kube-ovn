@@ -117,6 +117,10 @@ fi
 
 # debug
 DEBUG_WRAPPER=${DEBUG_WRAPPER:-}
+CNI_RUN_AS_USER=65534
+if [ -n "$DEBUG_WRAPPER" ]; then
+  CNI_RUN_AS_USER=0
+fi
 RUN_AS_USER=65534 # run as nobody
 if [ "$ENABLE_OVN_IPSEC" = "true" -o -n "$DEBUG_WRAPPER" ]; then
   RUN_AS_USER=0
@@ -8821,6 +8825,73 @@ echo ""
 
 echo "[Step 3/6] Install Kube-OVN"
 
+IPSEC_CONTAINER=""
+if [[ "$ENABLE_OVN_IPSEC" == "true" ]]; then
+  IPSEC_CONTAINER=$(cat <<EOF
+      - name: ipsec
+        image: "$REGISTRY/kube-ovn:$VERSION"
+        imagePullPolicy: $IMAGE_PULL_POLICY
+        command:
+          - /kube-ovn/kube-ovn-ipsec
+        args:
+          - --cert-manager-ipsec-cert=$CERT_MANAGER_IPSEC_CERT
+          - --cert-manager-issuer-name=$CERT_MANAGER_ISSUER_NAME
+          - --ovn-ipsec-cert-duration=$IPSEC_CERT_DURATION
+          - --request-timeout=300s
+          - --priority=-5
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 0
+          privileged: false
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+            add:
+              - NET_ADMIN
+              - NET_BIND_SERVICE
+              - SYS_NICE
+        env:
+          - name: NODE_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+          - name: POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+        volumeMounts:
+          - name: ovs-ipsec-keys
+            mountPath: /etc/ovs_ipsec_keys
+          - name: host-run-ovs
+            mountPath: /run/openvswitch
+            readOnly: true
+        startupProbe:
+          exec:
+            command: [/kube-ovn/kube-ovn-ipsec, --check=livez]
+          failureThreshold: 60
+          periodSeconds: 5
+        livenessProbe:
+          exec:
+            command: [/kube-ovn/kube-ovn-ipsec, --check=livez]
+          periodSeconds: 10
+          timeoutSeconds: 3
+        readinessProbe:
+          exec:
+            command: [/kube-ovn/kube-ovn-ipsec, --check=readyz]
+          periodSeconds: 5
+          timeoutSeconds: 3
+        resources:
+          requests:
+            cpu: 10m
+            memory: 64Mi
+          limits:
+            cpu: 1000m
+            memory: 256Mi
+EOF
+)
+fi
+
 TPROXY_CONTAINER=""
 TPROXY_SECURITY_CONTEXT=""
 TPROXY_SOCKET_MOUNT=""
@@ -9226,21 +9297,19 @@ ${TPROXY_SECURITY_CONTEXT}
           - --enable-tproxy=$ENABLE_TPROXY
           - --ovs-vsctl-concurrency=$OVS_VSCTL_CONCURRENCY
           - --secure-serving=${SECURE_SERVING}
-          - --enable-ovn-ipsec=$ENABLE_OVN_IPSEC
-          - --cert-manager-ipsec-cert=$CERT_MANAGER_IPSEC_CERT
-          - --ovn-ipsec-cert-duration=$IPSEC_CERT_DURATION
-          - --cert-manager-issuer-name=$CERT_MANAGER_ISSUER_NAME
           - --set-vxlan-tx-off=$SET_VXLAN_TX_OFF
           - --host-tunnel-src=$HOST_TUNNEL_SRC
           - --enable-acl-sampling=$ENABLE_ACL_SAMPLING
           - --acl-sampling-set-id=$ACL_SAMPLING_SET_ID
           - --acl-sampling-local-group-id=$ACL_SAMPLING_LOCAL_GROUP_ID
         securityContext:
-          runAsGroup: ${RUN_AS_USER}
-          runAsUser: ${RUN_AS_USER}
+          runAsGroup: ${CNI_RUN_AS_USER}
+          runAsUser: ${CNI_RUN_AS_USER}
           privileged: false
           allowPrivilegeEscalation: true
           capabilities:
+            drop:
+              - SYS_NICE
             add:
 ${CNI_SERVER_CAPABILITIES}
         env:
@@ -9285,8 +9354,6 @@ ${TPROXY_SOCKET_MOUNT}
           - mountPath: /etc/openvswitch
             name: systemid
             readOnly: true
-          - mountPath: /etc/ovs_ipsec_keys
-            name: ovs-ipsec-keys
           - mountPath: /run/openvswitch
             name: host-run-ovs
             mountPropagation: HostToContainer
@@ -9335,6 +9402,7 @@ ${TPROXY_SOCKET_MOUNT}
             memory: 1Gi
             ephemeral-storage: 1Gi
 ${TPROXY_CONTAINER}
+${IPSEC_CONTAINER}
       nodeSelector:
         kubernetes.io/os: "linux"
       volumes:
@@ -9357,6 +9425,7 @@ ${TPROXY_SOCKET_VOLUME}
         - name: ovs-ipsec-keys
           hostPath:
             path: /etc/origin/ovs_ipsec_keys
+            type: DirectoryOrCreate
         - name: host-run-ovs
           hostPath:
             path: /run/openvswitch

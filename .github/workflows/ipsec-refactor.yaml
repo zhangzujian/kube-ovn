@@ -1,0 +1,53 @@
+name: IPsec Refactor Validation
+
+on:
+  push:
+    branches:
+      - codex/ipsec-container
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ipsec-refactor-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: azure/setup-helm@v5
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.x'
+      - name: Install manifest parser
+        run: python3 -m pip install PyYAML
+      - name: Check installation contracts
+        run: |
+          python3 hack/test-ipsec-container.py
+          python3 hack/test-tproxy-container.py
+          bash -n dist/images/install.sh
+          git diff --check
+      - name: Test node module and signing profile
+        run: |
+          go test -race ./pkg/ipsec
+          go test ./pkg/controller -run TestIPsecSigner -count=1
+          go test ./pkg/ovs -run TestIPsecConfiguration -count=1
+      - name: Full repository lint
+        env:
+          CI: 'true'
+        run: |
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
+          make lint
+      - name: Compile candidate binaries and IPsec E2E
+        run: |
+          make build-go
+          go test -c -o /tmp/ipsec-e2e ./test/e2e/ipsec
+          git diff --exit-code

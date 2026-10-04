@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kubeovn/kube-ovn/pkg/ipsec"
+
 	csrv1 "k8s.io/api/certificates/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -25,21 +27,26 @@ import (
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
 
-func (c *Controller) validateCsrName(name string) error {
+func (c *Controller) validateCsrName(csr *csrv1.CertificateSigningRequest) error {
+	name := csr.Name
 	after, found := strings.CutPrefix(name, "ovn-ipsec-")
 	if !found || len(after) == 0 {
 		return fmt.Errorf("CSR name %s is invalid, must be in format ovn-ipsec-<node-name>", name)
 	}
 
-	node, err := c.nodesLister.Get(after)
+	nodeName := after
+	if csr.Annotations[ipsec.NodeNameAnnotation] != "" {
+		nodeName = csr.Annotations[ipsec.NodeNameAnnotation]
+	}
+	node, err := c.nodesLister.Get(nodeName)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
-			return fmt.Errorf("node %s not found for CSR %s", after, name)
+			return fmt.Errorf("node %s not found for CSR %s", nodeName, name)
 		}
-		return fmt.Errorf("failed to get node %s for CSR %s: %w", after, name, err)
+		return fmt.Errorf("failed to get node %s for CSR %s: %w", nodeName, name, err)
 	}
 	if node.Status.NodeInfo.OperatingSystem != "linux" {
-		return fmt.Errorf("node %s is not linux, CSR %s is invalid", after, name)
+		return fmt.Errorf("node %s is not linux, CSR %s is invalid", nodeName, name)
 	}
 
 	return nil
@@ -51,7 +58,7 @@ func (c *Controller) isOVNIPSecCSR(csr *csrv1.CertificateSigningRequest) bool {
 		!slices.Equal(csr.Spec.Usages, []csrv1.KeyUsage{csrv1.UsageIPsecTunnel}) {
 		return false
 	}
-	if err := c.validateCsrName(csr.Name); err != nil {
+	if err := c.validateCsrName(csr); err != nil {
 		klog.Warningf("CSR %s validation failed: %v", csr.Name, err)
 		return false
 	}
@@ -101,10 +108,19 @@ func (c *Controller) handleAddOrUpdateCsr(key string) (err error) {
 		return nil
 	}
 
-	// We will make the assumption that anyone with permission to issue a
-	// certificate signing request to this signer is automatically approved. This
-	// is somewhat protected by permissions on the CSR resource.
-	// TODO: We may need a more robust way to do this later
+	for _, condition := range csr.Status.Conditions {
+		if condition.Type == csrv1.CertificateDenied || condition.Type == csrv1.CertificateFailed {
+			return nil
+		}
+	}
+	csr = csr.DeepCopy()
+	certReq, err := decodeCertificateRequest(csr.Spec.Request)
+	if err != nil {
+		return c.updateCSRStatusConditions(csr, "InvalidRequest", err.Error())
+	}
+	if err := c.validateIPsecRequester(csr, certReq); err != nil {
+		return c.updateCSRStatusConditions(csr, "InvalidIdentity", err.Error())
+	}
 	if !isCertificateRequestApproved(csr) {
 		csr.Status.Conditions = append(csr.Status.Conditions, csrv1.CertificateSigningRequestCondition{
 			Type:    csrv1.CertificateApproved,
@@ -130,17 +146,6 @@ func (c *Controller) handleAddOrUpdateCsr(key string) (err error) {
 		return err
 	}
 
-	// Decode the certificate request from PEM format.
-	certReq, err := decodeCertificateRequest(csr.Spec.Request)
-	if err != nil {
-		// We don't degrade the status of the controller as this is due to a
-		// malformed CSR rather than an issue with the controller.
-		if err := c.updateCSRStatusConditions(csr, "CSRDecodeFailure", fmt.Sprintf("Could not decode Certificate Request: %v", err)); err != nil {
-			klog.Error(err)
-		}
-		return nil
-	}
-
 	// Decode the CA certificate from PEM format.
 	caCert, err := decodeCertificate(caSecret.Data["cacert"])
 	if err != nil {
@@ -158,7 +163,16 @@ func (c *Controller) handleAddOrUpdateCsr(key string) (err error) {
 
 	// Create a new certificate using the certificate template and certificate.
 	// We can then sign this using the CA.
-	signedCert, err := signCSR(newCertificateTemplate(certReq), certReq.PublicKey, caCert, caKey)
+	duration := 2 * 365 * 24 * time.Hour
+	if csr.Spec.ExpirationSeconds != nil {
+		duration = min(duration, time.Duration(*csr.Spec.ExpirationSeconds)*time.Second)
+	}
+	template := newCertificateTemplate(certReq)
+	template.NotAfter = minTime(time.Now().Add(duration), caCert.NotAfter.Add(-time.Minute))
+	if duration < 10*time.Minute || !template.NotAfter.After(time.Now().Add(10*time.Minute)) {
+		return c.updateCSRStatusConditions(csr, "InvalidDuration", "CA or requested lifetime is too short")
+	}
+	signedCert, err := signCSR(template, certReq.PublicKey, caCert, caKey)
 	if err != nil {
 		c.signerFailure(csr, "SigningFailure",
 			fmt.Sprintf("Unable to sign certificate for %v and signer %v: %v", csr.Name, util.SignerName, err))
@@ -247,7 +261,7 @@ func newCertificateTemplate(certReq *x509.CertificateRequest) *x509.Certificate 
 		SignatureAlgorithm: x509.SHA512WithRSA,
 
 		NotBefore:    time.Now().Add(-1 * time.Second),
-		NotAfter:     time.Now().Add(10 * 365 * 24 * time.Hour), // CA expire Time 10 year
+		NotAfter:     time.Now().Add(2 * 365 * 24 * time.Hour),
 		SerialNumber: serialNumber,
 
 		DNSNames:              certReq.DNSNames,
@@ -281,7 +295,14 @@ func decodeCertificateRequest(pemBytes []byte) (*x509.CertificateRequest, error)
 		return nil, err
 	}
 
-	return x509.ParseCertificateRequest(block.Bytes)
+	req, err := x509.ParseCertificateRequest(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	if err := req.CheckSignature(); err != nil {
+		return nil, err
+	}
+	return req, nil
 }
 
 func decodeCertificate(pemBytes []byte) (*x509.Certificate, error) {
