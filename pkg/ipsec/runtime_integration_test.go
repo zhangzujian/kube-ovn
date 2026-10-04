@@ -1,7 +1,10 @@
 package ipsec
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +15,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -42,7 +46,33 @@ func TestCandidateRuntime(t *testing.T) {
 		return output
 	}
 	foreign := foreignPolicy()
-	t.Cleanup(func() { require.Equal(t, foreign, foreignPolicy()) })
+	// An unrelated kernel SA must survive startup, crash recovery, offline
+	// recovery and shutdown. Its synthetic key is never logged or serialized.
+	foreignKey := make([]byte, 20)
+	_, err := rand.Read(foreignKey)
+	require.NoError(t, err)
+	foreignSA := &netlink.XfrmState{
+		Src: net.ParseIP("192.0.2.10"), Dst: net.ParseIP("192.0.2.20"),
+		Proto: netlink.XFRM_PROTO_ESP, Mode: netlink.XFRM_MODE_TRANSPORT,
+		Spi: 0x759801, Reqid: 759821, ReplayWindow: 32,
+		Aead: &netlink.XfrmStateAlgo{Name: "rfc4106(gcm(aes))", Key: foreignKey, ICVLen: 128},
+	}
+	require.NoError(t, netlink.XfrmStateAdd(foreignSA))
+	checkForeignSA := func() {
+		t.Helper()
+		actual, err := netlink.XfrmStateGet(&netlink.XfrmState{Src: foreignSA.Src, Dst: foreignSA.Dst, Proto: foreignSA.Proto, Spi: foreignSA.Spi})
+		require.NoError(t, err, "the runtime must preserve an unrelated ESP state")
+		require.Equal(t, foreignSA.Reqid, actual.Reqid)
+		require.Equal(t, foreignSA.Mode, actual.Mode)
+		require.NotNil(t, actual.Aead)
+		require.Equal(t, foreignSA.Aead.Name, actual.Aead.Name)
+		require.True(t, bytes.Equal(foreignKey, actual.Aead.Key), "the unrelated SA key must remain unchanged")
+	}
+	checkForeignSA()
+	t.Cleanup(func() {
+		require.Equal(t, foreign, foreignPolicy())
+		checkForeignSA()
+	})
 	require.NoError(t, command(t.Context(), "ovs-vsctl", "--timeout=5", "--no-wait", "add-br", "br-fixture"))
 	require.NoError(t, command(t.Context(), "ovs-vsctl", "--timeout=5", "--no-wait", "add-port", "br-fixture", "unrelated-ipsec", "--", "set", "Interface", "unrelated-ipsec", "type=geneve", "options:remote_ip=198.51.100.77", "options:remote_name=external-peer"))
 	cert, key, trust := testIdentity(t, "runtime-test-chassis")
@@ -87,6 +117,7 @@ func TestCandidateRuntime(t *testing.T) {
 		require.Contains(t, string(output), "CN=test CA", "readiness must follow loading the configured trust")
 	}
 	checkTrust()
+	checkForeignSA()
 	require.Eventually(t, func() bool {
 		config, err := os.ReadFile("/etc/ipsec.conf")
 		return err == nil && strings.Contains(string(config), "ca ca_auth") && !strings.Contains(string(config), "unrelated-ipsec")
@@ -125,6 +156,7 @@ func TestCandidateRuntime(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, string(pidBytes), string(newPID))
 	checkTrust()
+	checkForeignSA()
 	current, err := a.store.load("current")
 	require.NoError(t, err)
 	require.Equal(t, a.config.NodeName, current.NodeName)
@@ -152,6 +184,7 @@ func TestCandidateRuntime(t *testing.T) {
 	require.Equal(t, current.ID, a.Status().Generation)
 	checkTrust()
 	require.Equal(t, foreign, foreignPolicy())
+	checkForeignSA()
 	for _, action := range offline.Actions() {
 		require.Equal(t, "secrets", action.GetResource().Resource, "offline recovery must not issue requests or infer a fresh Node identity")
 	}

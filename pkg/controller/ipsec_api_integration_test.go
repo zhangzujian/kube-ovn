@@ -201,6 +201,23 @@ func TestIPsecAPIServerSigningContract(t *testing.T) {
 	cmCNI, err := cmclient.NewForConfig(boundConfig("kube-ovn-cni", true))
 	require.NoError(t, err)
 	cmRequest := &cmv1.CertificateRequest{Name: "unauthorized", Spec: cmv1.CertificateRequestSpec{Request: request, IssuerRef: cmmeta.IssuerReference{Name: issuer, Kind: "ClusterIssuer", Group: "cert-manager.io"}, Usages: []cmv1.KeyUsage{cmv1.UsageIPsecTunnel}}}
+	// Policy type-checking can precede binding enforcement. Establish the
+	// actual rejection barrier before creating the dedicated signing issuer.
+	// Dry-run avoids leaving requests that might be signed after provisioning.
+	initiallyAccepted := 0
+	require.Eventually(t, func() bool {
+		_, err := cmCNI.CertmanagerV1().CertificateRequests(namespace).Create(ctx, cmRequest, metav1.CreateOptions{DryRun: []string{metav1.DryRunAll}})
+		if err == nil {
+			initiallyAccepted++
+			return false
+		}
+		if !(k8serrors.IsInvalid(err) || k8serrors.IsForbidden(err)) || !strings.Contains(err.Error(), "The IPsec ClusterIssuer accepts only authorized") {
+			t.Errorf("unexpected response while establishing issuer admission: %v", err)
+			return false
+		}
+		return true
+	}, time.Minute, 200*time.Millisecond, "the dedicated issuer must remain absent until actual admission rejects its unauthorized requests")
+	t.Logf("issuer admission established after %d accepted dry-run probes", initiallyAccepted)
 	_, err = cmCNI.CertmanagerV1().CertificateRequests(namespace).Create(ctx, cmRequest, metav1.CreateOptions{})
 	require.Error(t, err, "the API Server must reject an unauthorized issuer request")
 	require.True(t, k8serrors.IsInvalid(err) || k8serrors.IsForbidden(err), "unexpected admission response: %v", err)
