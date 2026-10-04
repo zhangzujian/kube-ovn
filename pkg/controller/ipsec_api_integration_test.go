@@ -211,7 +211,7 @@ func TestIPsecAPIServerSigningContract(t *testing.T) {
 			initiallyAccepted++
 			return false
 		}
-		if !(k8serrors.IsInvalid(err) || k8serrors.IsForbidden(err)) || !strings.Contains(err.Error(), "The IPsec ClusterIssuer accepts only authorized") {
+		if !k8serrors.IsInvalid(err) && !k8serrors.IsForbidden(err) || !strings.Contains(err.Error(), "The IPsec ClusterIssuer accepts only authorized") {
 			t.Errorf("unexpected response while establishing issuer admission: %v", err)
 			return false
 		}
