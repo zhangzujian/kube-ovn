@@ -312,7 +312,7 @@ var _ = framework.OrderedDescribe("[group:ipsec]", func() {
 		framework.ExpectNoError(err)
 		updatedCA := initialOVNCA + secondaryCA
 		ovnIpsecSecret.Data["cacert"] = []byte(updatedCA)
-		ovnIpsecSecret, err = cs.CoreV1().Secrets(framework.KubeOvnNamespace).Update(context.Background(), ovnIpsecSecret, metav1.UpdateOptions{})
+		_, err = cs.CoreV1().Secrets(framework.KubeOvnNamespace).Update(context.Background(), ovnIpsecSecret, metav1.UpdateOptions{})
 		framework.ExpectNoError(err)
 
 		ginkgo.By("Verifying new trust bundle distributed")
