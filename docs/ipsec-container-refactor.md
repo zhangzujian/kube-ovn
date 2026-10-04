@@ -173,3 +173,9 @@ in either its effective or bounding set, while IKE must have nice -5 and no
 effective capabilities outside the three production capabilities. The pending
 source-path matrix covers IPv4/IPv6 and Geneve/VXLAN. These added checks must pass
 in CI before they can serve as evidence.
+
+Startup now rejects occupied IKE ports or a locked legacy OVS monitor pidfile
+before changing shared certificate paths or submitting requests. The legacy
+check reads the actual upstream POSIX lock; PID text alone never authorizes
+a takeover or process termination. A stopped legacy monitor's stale, unlocked
+pidfile is harmless. Coordinated legacy service migration remains separate.

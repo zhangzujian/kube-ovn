@@ -42,6 +42,14 @@ jobs:
           python3 hack/test-tproxy-container.py
           bash -n dist/images/install.sh
           git diff --check
+      - name: Restore candidate Go build cache
+        id: ipsec-go-build-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/go-build
+          key: ipsec-go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            ipsec-go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-
       - name: Test node module and signing profile
         run: |
           go test -race ./pkg/ipsec
@@ -52,6 +60,12 @@ jobs:
           make build-go
           go test -c -o /tmp/ipsec-e2e ./test/e2e/ipsec
           git diff --exit-code
+      - name: Save compiled candidate Go build cache
+        if: ${{ always() && !cancelled() && steps.ipsec-go-build-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/go-build
+          key: ipsec-go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
       - name: Build candidate image and validate minimal runtime privileges
         run: |
           docker build --build-arg BASE_TAG=v1.17.0@sha256:300011722d58c4c822279b034476d124f6f52d5ba607ddc68939fea1364746c1 --label org.opencontainers.image.revision="$GITHUB_SHA" -t ipsec-candidate:"$GITHUB_SHA" -f dist/images/Dockerfile dist/images

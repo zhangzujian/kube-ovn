@@ -94,6 +94,14 @@ func (a *Agent) Run(ctx context.Context) error {
 			klog.ErrorS(err, "Close IPsec owner lock")
 		}
 	}()
+	// Reject an existing owner before issuing an identity or changing shared
+	// OVSDB paths; checking only when the IKE pair starts is too late.
+	if err := checkLegacyMonitor(a.config.OVSSocket); err != nil {
+		return err
+	}
+	if err := checkIKEPorts(); err != nil {
+		return err
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	defer func() {

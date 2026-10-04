@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/sys/unix"
 	"k8s.io/klog/v2"
 
 	"github.com/kubeovn/kube-ovn/pkg/fileutil"
@@ -80,6 +81,31 @@ func (r *runtimeManager) prepare() error {
 		}
 	}
 	return nil
+}
+
+// checkLegacyMonitor queries the upstream monitor's POSIX pidfile lock. The
+// file's PID text is not ownership evidence and must never authorize a kill.
+func checkLegacyMonitor(ovsSocket string) error {
+	path := filepath.Join(filepath.Dir(ovsSocket), "ovs-monitor-ipsec.pid")
+	f, err := os.OpenFile(path, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("inspect legacy IPsec monitor lock: %w", err)
+	}
+	info, err := f.Stat()
+	if err == nil && !info.Mode().IsRegular() {
+		err = errors.New("legacy IPsec monitor pidfile must be a regular file")
+	}
+	if err == nil {
+		lock := unix.Flock_t{Type: unix.F_WRLCK, Whence: unix.SEEK_SET}
+		err = unix.FcntlFlock(f.Fd(), unix.F_GETLK, &lock)
+		if err == nil && lock.Type != unix.F_UNLCK {
+			err = errors.New("a legacy IPsec monitor still owns its pidfile lock")
+		}
+	}
+	return errors.Join(err, f.Close())
 }
 
 func checkIKEPorts() error {

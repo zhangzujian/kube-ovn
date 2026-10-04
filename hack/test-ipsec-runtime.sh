@@ -27,12 +27,16 @@ docker volume create "$runtime_volume" >/dev/null
 # Match hostpath-init ownership and exercise the production socket permissions.
 # CHOWN belongs only to this disposable volume setup, never the IPsec agent.
 docker run --rm --network none --user 0:0 --cap-drop ALL --cap-add CHOWN \
-  --mount "type=volume,src=$runtime_volume,dst=/run/openvswitch" \
-  "$candidate_image" chown 65534:65534 /run/openvswitch
+  --mount "type=volume,src=$runtime_volume,dst=/run/openvswitch,volume-nocopy" \
+  "$candidate_image" bash -c '
+    set -euo pipefail
+    chown 65534:65534 /run/openvswitch
+    stat -c "%u:%g %a" /run/openvswitch
+  '
 docker run --detach --name "$ovs_container" --network none --user 65534:65534 \
   --cap-drop ALL --cap-add NET_BIND_SERVICE \
   --memory 256m --cpus 1 \
-  --mount "type=volume,src=$runtime_volume,dst=/run/openvswitch" \
+  --mount "type=volume,src=$runtime_volume,dst=/run/openvswitch,volume-nocopy" \
   "$candidate_image" bash -c '
     exec >/tmp/ovsdb-fixture.log 2>&1
     set -exuo pipefail
@@ -65,7 +69,7 @@ docker exec "$ovs_container" ovs-vsctl --timeout=5 --no-wait set Open_vSwitch . 
 docker run --name "$test_container" --network none --pid host --user 0:65534 \
   --cap-drop ALL --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE --cap-add SYS_NICE \
   --memory 512m --cpus 1 --security-opt no-new-privileges \
-  --mount "type=volume,src=$runtime_volume,dst=/run/openvswitch,readonly" \
+  --mount "type=volume,src=$runtime_volume,dst=/run/openvswitch,volume-nocopy,readonly" \
   --mount "type=bind,src=$runtime_binary,dst=/tmp/ipsec-runtime-tests,readonly" \
   --env KUBE_OVN_IPSEC_RUNTIME_TEST=true \
   "$candidate_image" /tmp/ipsec-runtime-tests -test.run '^TestCandidate(Runtime|MarkedGuard)$' -test.v -test.timeout=180s
