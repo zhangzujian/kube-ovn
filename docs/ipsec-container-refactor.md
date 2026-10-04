@@ -36,6 +36,12 @@ certificate/trust digest acknowledgement as well as responsive processes;
 changed public content invalidates the previous acknowledgement. This confirms
 configuration refresh, not replacement of every established peer SA or a
 cluster CA rotation acknowledgement.
+The private status endpoint reports the validated Node UID, local chassis,
+generation and public certificate/trust digests. `configurationApplied` is
+computed against that exact current configuration under the runtime lock and
+requires a healthy runtime. Activation invalidates the previous confirmation
+before changing trust or OVSDB, so a probe cannot carry confirmation across a
+partially committed generation. These fields contain no PEM or key material.
 Image construction fails if the pinned monitor source no longer matches the
 adaptation points. Connection generation and refresh remain in OVS. The filter
 does not prove ownership of orphaned kernel SAs after a crash.
@@ -175,6 +181,14 @@ encrypted connectivity support. The source harness checks new and existing
 flow-based/EVPN options and a blocked Pod probe in the same physical capture.
 Production must reject these modes before activation; custom EVPN UDP ports,
 userspace datapaths and offload are outside this prototype's acceptance matrix.
+The production agent now checks a synchronous OVSDB snapshot before both
+online activation and offline restoration. It rejects configured flow-based or
+EVPN tunnels, leftover ports carrying those OVN markers, unsupported encapsulation
+types, hardware offload and a userspace integration bridge. Chassis-specific
+external ID overrides follow OVN precedence; unrelated chassis settings and
+ordinary peer ports are preserved. A later mode change degrades the agent on
+reconciliation. This check does not replace persistent output protection or
+prevent another privileged writer from changing the datapath between checks.
 
 The real-overlay acceptance harness also reads the deployed CNI and IKE process
 UID, capability and nice fields: CNI must have UID 65534, nice 0 and no SYS_NICE

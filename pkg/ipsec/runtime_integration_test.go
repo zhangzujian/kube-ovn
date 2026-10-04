@@ -20,7 +20,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
+	corelisters "k8s.io/client-go/listers/core/v1"
 	k8stesting "k8s.io/client-go/testing"
+	"k8s.io/client-go/tools/cache"
 
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
@@ -80,6 +82,8 @@ func TestCandidateRuntime(t *testing.T) {
 		&corev1.Node{Name: "runtime-node", UID: "runtime-node-uid"},
 		&corev1.Secret{Name: util.DefaultOVNIPSecCA, Namespace: "kube-system", Data: map[string][]byte{"cacert": trust}},
 	)
+	secrets := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	require.NoError(t, secrets.Add(&corev1.Secret{Name: util.DefaultOVNIPSecCA, Namespace: "kube-system", Data: map[string][]byte{"cacert": trust}}))
 	a, err := New(Configuration{
 		NodeName: "runtime-node", PodUID: "runtime-pod-uid", Namespace: "kube-system", Kube: client,
 		KeyDir: t.TempDir(), RuntimeDir: t.TempDir(), OVSSocket: "/run/openvswitch/db.sock", Duration: time.Hour, RequestTimeout: 30 * time.Second, Priority: -5,
@@ -101,6 +105,13 @@ func TestCandidateRuntime(t *testing.T) {
 	after, err := exec.CommandContext(t.Context(), "ovs-vsctl", "--format=json", "--columns=other_config", "list", "Open_vSwitch").Output()
 	require.NoError(t, err)
 	require.Equal(t, before, after, "an unrelated IKE owner must not trigger shared OVSDB configuration changes")
+	require.NoError(t, command(t.Context(), "ovs-vsctl", "--timeout=5", "--no-wait", "set", "Open_vSwitch", ".", "external_ids:ovn-enable-flow-based-tunnels=true"))
+	require.ErrorContains(t, a.reconcile(t.Context(), corelisters.NewSecretLister(secrets)), "does not support flow-based tunnels")
+	require.Empty(t, client.Actions(), "an unsupported datapath must be rejected before reading Node identity or issuing a CSR")
+	after, err = exec.CommandContext(t.Context(), "ovs-vsctl", "--format=json", "--columns=other_config", "list", "Open_vSwitch").Output()
+	require.NoError(t, err)
+	require.Equal(t, before, after, "unsupported activation must preserve the active OVSDB identity paths")
+	require.NoError(t, command(t.Context(), "ovs-vsctl", "--timeout=5", "--no-wait", "remove", "Open_vSwitch", ".", "external_ids", "ovn-enable-flow-based-tunnels"))
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
 	go func() { done <- a.Run(ctx) }()
@@ -187,6 +198,11 @@ func TestCandidateRuntime(t *testing.T) {
 	config.Kube, config.PodUID = offline, "replacement-pod-uid"
 	a, err = New(config)
 	require.NoError(t, err)
+	require.NoError(t, command(t.Context(), "ovs-vsctl", "--timeout=5", "--no-wait", "set", "Open_vSwitch", ".", "external_ids:ovn-enable-flow-based-tunnels=true"))
+	require.ErrorContains(t, a.restoreCurrent(t.Context()), "does not support flow-based tunnels", "offline recovery must not bypass datapath validation")
+	require.False(t, a.runtime.enabled.Load())
+	require.Empty(t, offline.Actions())
+	require.NoError(t, command(t.Context(), "ovs-vsctl", "--timeout=5", "--no-wait", "remove", "Open_vSwitch", ".", "external_ids", "ovn-enable-flow-based-tunnels"))
 	offlineCtx, offlineCancel := context.WithCancel(t.Context())
 	t.Cleanup(offlineCancel)
 	done = make(chan error, 1)
@@ -194,6 +210,13 @@ func TestCandidateRuntime(t *testing.T) {
 	require.Eventually(t, ready, 30*time.Second, 200*time.Millisecond, "a valid committed identity must restore without API trust synchronization")
 	require.Equal(t, "Restored", a.Status().Phase)
 	require.Equal(t, current.ID, a.Status().Generation)
+	restored := a.Status()
+	require.Equal(t, current.NodeUID, restored.NodeUID)
+	require.Equal(t, current.Chassis, restored.Chassis)
+	require.Equal(t, digest(cert), restored.CertificateHash)
+	require.Equal(t, digest(trust), restored.TrustHash)
+	require.True(t, restored.ConfigurationApplied)
+	require.True(t, restored.RuntimeHealthy)
 	checkTrust()
 	require.Equal(t, foreign, foreignPolicy())
 	checkForeignSA()

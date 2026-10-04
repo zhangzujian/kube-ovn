@@ -53,10 +53,16 @@ type Agent struct {
 
 // Status deliberately excludes certificate contents, private keys and SA keys.
 type Status struct {
-	Phase      string    `json:"phase"`
-	Reason     string    `json:"reason,omitempty"`
-	Generation string    `json:"generation,omitempty"`
-	Expires    time.Time `json:"expires,omitzero"`
+	Phase                string    `json:"phase"`
+	Reason               string    `json:"reason,omitempty"`
+	NodeUID              string    `json:"nodeUID,omitempty"`
+	Chassis              string    `json:"chassis,omitempty"`
+	Generation           string    `json:"generation,omitempty"`
+	CertificateHash      string    `json:"certificateHash,omitempty"`
+	TrustHash            string    `json:"trustHash,omitempty"`
+	ConfigurationApplied bool      `json:"configurationApplied"`
+	RuntimeHealthy       bool      `json:"runtimeHealthy"`
+	Expires              time.Time `json:"expires,omitzero"`
 }
 
 func New(config Configuration) (*Agent, error) {
@@ -74,8 +80,13 @@ func New(config Configuration) (*Agent, error) {
 
 func (a *Agent) Status() Status {
 	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.status
+	status := a.status
+	a.mu.RUnlock()
+	status.RuntimeHealthy, status.ConfigurationApplied = a.runtime.configurationApplied(status)
+	if status.Phase == "Configured" && status.ConfigurationApplied {
+		status.Phase = "Running"
+	}
+	return status
 }
 
 func (a *Agent) setStatus(status Status) {
@@ -185,7 +196,7 @@ func (a *Agent) reconcile(ctx context.Context, secrets listers.SecretLister) err
 			return err
 		}
 	}
-	row, err := a.ovs.IPsecConfiguration()
+	row, err := a.ovs.IPsecDatapathConfiguration()
 	if err != nil {
 		return err
 	}
@@ -226,7 +237,7 @@ func (a *Agent) reconcile(ctx context.Context, secrets listers.SecretLister) err
 	// Only reclaim files after the owned runtime has loaded the current public
 	// configuration. Retain the database references even if they differ after
 	// an interrupted commit or another writer's update.
-	if a.runtime.healthy.Load() && a.runtime.applied.Load() {
+	if a.Status().ConfigurationApplied {
 		row, err := a.ovs.IPsecConfiguration()
 		if err != nil {
 			return err
@@ -247,6 +258,14 @@ func (a *Agent) activate(ctx context.Context, ovsUUID string, g *generation, tru
 	if err != nil {
 		return err
 	}
+	status := Status{
+		Phase: phase, NodeUID: g.NodeUID, Chassis: g.Chassis, Generation: g.ID,
+		CertificateHash: digest(certPEM), TrustHash: digest(trust), Expires: certs[0].NotAfter,
+	}
+	// Invalidate the old acknowledgement before changing trust or OVSDB. A
+	// failed/interrupted activation must not advertise the old configuration
+	// as acknowledgement of the next generation.
+	a.runtime.expectConfiguration(status)
 	if err := a.store.retainPrevious(g); err != nil {
 		return err
 	}
@@ -260,11 +279,7 @@ func (a *Agent) activate(ctx context.Context, ovsUUID string, g *generation, tru
 	if err := a.store.save("current", g); err != nil {
 		return err
 	}
-	a.runtime.expectIdentity(certPEM, trust)
-	if phase == "Configured" && a.runtime.healthy.Load() && a.runtime.applied.Load() {
-		phase = "Running"
-	}
-	a.setStatus(Status{Phase: phase, Generation: g.ID, Expires: certs[0].NotAfter})
+	a.setStatus(status)
 	a.runtime.enabled.Store(true)
 	return nil
 }
@@ -301,7 +316,7 @@ func (a *Agent) restoreCurrent(ctx context.Context) error {
 			return err
 		}
 	}
-	row, err := a.ovs.IPsecConfiguration()
+	row, err := a.ovs.IPsecDatapathConfiguration()
 	if err != nil {
 		return err
 	}
@@ -449,7 +464,7 @@ func (a *Agent) serveStatus(ctx context.Context) error {
 	})
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
 		status := a.Status()
-		if !a.runtime.healthy.Load() || !a.runtime.applied.Load() || (status.Phase != "Configured" && status.Phase != "Running" && status.Phase != "Restored") || status.Generation == "" || !time.Now().Before(status.Expires) {
+		if !status.ConfigurationApplied || (status.Phase != "Configured" && status.Phase != "Running" && status.Phase != "Restored") || !time.Now().Before(status.Expires) {
 			http.Error(w, "IPsec is not ready", http.StatusServiceUnavailable)
 			return
 		}

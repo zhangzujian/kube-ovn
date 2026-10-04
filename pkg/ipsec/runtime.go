@@ -41,7 +41,7 @@ type runtimeManager struct {
 	enabled        atomic.Bool
 	healthy        atomic.Bool
 	applied        atomic.Bool
-	expected       publicIdentity
+	expected       runtimeConfiguration
 }
 
 type publicIdentity struct {
@@ -49,14 +49,37 @@ type publicIdentity struct {
 	Trust       string `json:"trust"`
 }
 
-func (r *runtimeManager) expectIdentity(certificate, trust []byte) {
+type runtimeConfiguration struct {
+	publicIdentity
+	NodeUID, Chassis, Generation string
+}
+
+func configurationFor(status Status) runtimeConfiguration {
+	return runtimeConfiguration{
+		Certificate: status.CertificateHash, Trust: status.TrustHash,
+		NodeUID: status.NodeUID, Chassis: status.Chassis, Generation: status.Generation,
+	}
+}
+
+func (r *runtimeManager) expectConfiguration(status Status) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	next := publicIdentity{Certificate: digest(certificate), Trust: digest(trust)}
+	next := configurationFor(status)
 	if next != r.expected {
 		r.applied.Store(false)
 		r.expected = next
 	}
+}
+
+func (r *runtimeManager) configurationApplied(status Status) (healthy, applied bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	healthy = r.healthy.Load()
+	current := configurationFor(status)
+	applied = healthy && r.applied.Load() && current == r.expected &&
+		current.NodeUID != "" && current.Chassis != "" && current.Generation != "" &&
+		current.Certificate != "" && current.Trust != ""
+	return healthy, applied
 }
 
 func command(ctx context.Context, name string, args ...string) error {
@@ -280,7 +303,7 @@ func (r *runtimeManager) confirmIdentity(ctx context.Context) {
 		return
 	}
 	var actual publicIdentity
-	if json.Unmarshal(output, &actual) == nil && actual.Certificate != "" && actual == r.expected {
+	if json.Unmarshal(output, &actual) == nil && actual.Certificate != "" && actual == r.expected.publicIdentity {
 		confirmed = true
 	}
 }
