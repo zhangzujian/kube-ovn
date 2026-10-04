@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,6 +21,11 @@ func TestCandidateMarkedGuard(t *testing.T) {
 	if os.Getenv("KUBE_OVN_IPSEC_RUNTIME_TEST") != "true" {
 		t.Skip("requires the isolated candidate-image runtime harness")
 	}
+	// Linux disables XFRM on loopback by default. The harness enables it only
+	// inside this disposable network namespace so the probe reaches the policy.
+	disableXFRM, err := os.ReadFile("/proc/sys/net/ipv4/conf/lo/disable_xfrm")
+	require.NoError(t, err)
+	require.Equal(t, "0", strings.TrimSpace(string(disableXFRM)), "the loopback fixture must perform outbound XFRM lookups")
 	output, err := exec.CommandContext(t.Context(), "ip", "xfrm", "policy", "add", "src", "127.0.0.1", "dst", "0.0.0.0/0", "proto", "udp", "dport", "6081", "dir", "out", "priority", "2147483647", "index", "759833", "action", "block", "mark", "759815", "mask", "0xffffffff").CombinedOutput()
 	require.NoError(t, err, "install the synthetic marked guard: %s", output)
 	t.Cleanup(func() {
