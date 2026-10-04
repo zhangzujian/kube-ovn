@@ -65,6 +65,14 @@ auto-approval cannot admit a different requester past this policy.
 Policy installation and real bound-token signing
 still require cluster acceptance testing before this draft is ready.
 
+The disposable API test has passed the bound-token and issuer rejection/issuance
+contract. This does not establish installation safety across API Server replicas:
+`observedGeneration` confirms policy processing, not that every instance already
+enforces a newly created binding. The admission barrier must be established before
+the dedicated issuer is made available. That rollout barrier remains incomplete
+in this draft; an earlier immediate rejection check failed without sufficient
+response detail to determine its cause.
+
 `hack/test-ipsec-runtime.sh` validates the real candidate's startup, private
 endpoints, priority/capability inheritance, monitor crash recovery, and shutdown.
 `hack/test-ipsec-traffic.sh` runs two private network namespaces with synthetic
