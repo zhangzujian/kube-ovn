@@ -60,8 +60,8 @@ func TestProbesUseThePrivateSocket(t *testing.T) {
 	a.runtime.healthy.Store(true)
 	require.Error(t, Check(t.Context(), a.config.RuntimeDir, "readyz"), "process health is insufficient before the monitor acknowledges this identity")
 	a.runtime.applied.Store(true)
-	require.NoError(t, Check(t.Context(), a.config.RuntimeDir, "readyz"))
-	require.Equal(t, "Running", a.Status().Phase)
+	require.Error(t, Check(t.Context(), a.config.RuntimeDir, "readyz"), "an acknowledged identity without live protection must not be ready")
+	require.Equal(t, "Configured", a.Status().Phase)
 	require.True(t, a.Status().ConfigurationApplied)
 	next := status
 	next.Generation = "replacement"
@@ -72,7 +72,8 @@ func TestProbesUseThePrivateSocket(t *testing.T) {
 	require.Error(t, Check(t.Context(), a.config.RuntimeDir, "readyz"), "even a new monitor acknowledgement must not authorize the old status during activation")
 	a.setStatus(next)
 	a.runtime.expectConfiguration(next)
-	require.NoError(t, Check(t.Context(), a.config.RuntimeDir, "readyz"), "unchanged public content must preserve the acknowledgement")
+	require.True(t, a.Status().ConfigurationApplied, "unchanged public content must preserve the acknowledgement")
+	require.Error(t, Check(t.Context(), a.config.RuntimeDir, "readyz"), "public content confirmation cannot substitute for kernel protection")
 	for _, field := range []string{"nodeUID", "chassis", "generation", "certificate", "trust"} {
 		t.Run(field, func(t *testing.T) {
 			stale := next

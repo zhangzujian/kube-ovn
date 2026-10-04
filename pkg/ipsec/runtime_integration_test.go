@@ -18,6 +18,7 @@ import (
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
 	corelisters "k8s.io/client-go/listers/core/v1"
@@ -26,6 +27,23 @@ import (
 
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
+
+func TestCandidateWithoutProtection(t *testing.T) {
+	if os.Getenv("KUBE_OVN_IPSEC_UNSUPPORTED_TEST") != "true" {
+		t.Skip("requires the isolated unpatched-image fixture")
+	}
+	client := fake.NewClientset()
+	a, err := New(Configuration{
+		NodeName: "unsupported-node", PodUID: "unsupported-pod", Namespace: "kube-system", Kube: client,
+		KeyDir: t.TempDir(), RuntimeDir: t.TempDir(), OVSSocket: "/tmp/missing-ovs/db.sock", Duration: time.Hour, RequestTimeout: time.Second,
+	})
+	require.NoError(t, err)
+	require.ErrorContains(t, a.Run(t.Context()), "does not support IPsec output protection")
+	require.Empty(t, client.Actions(), "unsupported OVN must be rejected before signing or reading cluster identity")
+	require.False(t, a.runtime.enabled.Load())
+	_, err = os.Stat(filepath.Join(a.config.KeyDir, "protection.json"))
+	require.True(t, os.IsNotExist(err), "unsupported OVN must not arm a new protection lease")
+}
 
 // TestCandidateRuntime exercises the actual image programs and host kernel.
 // Kubernetes is simulated here; cluster rollout and encrypted traffic require
@@ -80,13 +98,12 @@ func TestCandidateRuntime(t *testing.T) {
 	cert, key, trust := testIdentity(t, "runtime-test-chassis")
 	client := fake.NewClientset(
 		&corev1.Node{Name: "runtime-node", UID: "runtime-node-uid"},
-		&corev1.Secret{Name: util.DefaultOVNIPSecCA, Namespace: "kube-system", Data: map[string][]byte{"cacert": trust}},
 	)
 	secrets := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
 	require.NoError(t, secrets.Add(&corev1.Secret{Name: util.DefaultOVNIPSecCA, Namespace: "kube-system", Data: map[string][]byte{"cacert": trust}}))
 	a, err := New(Configuration{
 		NodeName: "runtime-node", PodUID: "runtime-pod-uid", Namespace: "kube-system", Kube: client,
-		KeyDir: t.TempDir(), RuntimeDir: t.TempDir(), OVSSocket: "/run/openvswitch/db.sock", Duration: time.Hour, RequestTimeout: 30 * time.Second, Priority: -5,
+		KeyDir: t.TempDir(), RuntimeDir: t.TempDir(), ProtectionDir: t.TempDir(), OVSSocket: "/run/openvswitch/db.sock", Duration: time.Hour, RequestTimeout: 30 * time.Second, Priority: -5,
 	})
 	require.NoError(t, err)
 	g := &generation{ID: digest(key), NodeUID: "runtime-node-uid", Chassis: "runtime-test-chassis"}
@@ -131,7 +148,39 @@ func TestCandidateRuntime(t *testing.T) {
 		defer cancel()
 		return Check(ctx, a.config.RuntimeDir, "readyz") == nil
 	}
+	ovsUUID, err := exec.CommandContext(t.Context(), "ovs-vsctl", "get", "Open_vSwitch", ".", "_uuid").Output()
+	require.NoError(t, err)
+	protected := func() bool {
+		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+		defer cancel()
+		return CheckProtection(ctx, a.config.ProtectionDir, strings.TrimSpace(string(ovsUUID))) == nil
+	}
+	require.Eventually(t, protected, 10*time.Second, 100*time.Millisecond, "protection must bootstrap before trust, certificate activation, or chassis registration")
+	require.False(t, ready())
+	require.False(t, a.runtime.enabled.Load())
+	currentBeforeTrust, err := a.store.load("current")
+	require.NoError(t, err)
+	require.Nil(t, currentBeforeTrust)
+	for _, action := range client.Actions() {
+		require.NotEqual(t, "certificatesigningrequests", action.GetResource().Resource, "bootstrap must not depend on certificate signing")
+	}
+	require.Error(t, CheckProtection(t.Context(), a.config.ProtectionDir, "00000000-0000-0000-0000-000000000000"), "a stale OVS database UUID cannot pass the startup gate")
+	_, err = client.CoreV1().Secrets("kube-system").Create(t.Context(), &corev1.Secret{Name: util.DefaultOVNIPSecCA, Data: map[string][]byte{"cacert": trust}}, metav1.CreateOptions{})
+	require.NoError(t, err)
 	require.Eventually(t, ready, 60*time.Second, 200*time.Millisecond, "candidate monitor and strongSwan must become ready")
+	require.True(t, a.Status().ProtectionArmed)
+	reservation, err := a.store.loadProtection("runtime-node-uid")
+	require.NoError(t, err)
+	require.NotNil(t, reservation)
+	require.True(t, reservation.Required)
+	// Removing a guard in this disposable namespace must revoke readiness.
+	// The recovery loop repairs it with the same persistent lease.
+	fixtureOwner := &protectionOwner{reservation: *reservation}
+	require.NoError(t, netlink.XfrmPolicyDel(fixtureOwner.guard(0, reservation.Indexes[0])))
+	require.False(t, a.Status().ProtectionArmed)
+	require.False(t, ready())
+	require.False(t, protected(), "a live endpoint must reject a missing guard instead of reusing a prior receipt")
+	require.Eventually(t, ready, 45*time.Second, 200*time.Millisecond, "reconcile must restore a missing guard before restoring readiness")
 	checkTrust := func() {
 		ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 		defer cancel()
@@ -217,6 +266,12 @@ func TestCandidateRuntime(t *testing.T) {
 	require.Equal(t, digest(trust), restored.TrustHash)
 	require.True(t, restored.ConfigurationApplied)
 	require.True(t, restored.RuntimeHealthy)
+	require.True(t, restored.ProtectionArmed)
+	restoredReservation, err := a.store.loadProtection(current.NodeUID)
+	require.NoError(t, err)
+	require.Equal(t, reservation.Lease, restoredReservation.Lease, "offline recovery must retain the same Node UID lease")
+	require.Equal(t, reservation.Mark, restoredReservation.Mark)
+	require.Equal(t, reservation.Reqid, restoredReservation.Reqid)
 	checkTrust()
 	require.Equal(t, foreign, foreignPolicy())
 	checkForeignSA()

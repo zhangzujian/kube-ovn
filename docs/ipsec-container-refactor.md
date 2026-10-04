@@ -96,9 +96,8 @@ certificate identities and UDP payloads on Geneve/VXLAN ports, for IPv4 and IPv6
 A separate fixture captures the outer interface and requires ESP packets with
 zero plaintext transport packets. The isolated test also prototypes a
 low-priority XFRM block policy before starting IKE and confirms it survives
-runtime shutdown. Production does not install this policy: its selector would
-reserve an underlay address/UDP port, so ownership and conflicts must be resolved
-before adoption. This verifies synthetic Linux transport/IKE; it does not run
+runtime shutdown. Production uses marked guards described below rather than this unmarked
+address/UDP selector. This verifies synthetic Linux transport/IKE; it does not run
 `ovn-controller` or Pod overlays, or establish production protection during
 faults and rollout.
 
@@ -159,28 +158,38 @@ IKE/monitor endpoints and a bounded reconciliation heartbeat.
 
 The IPsec switch no longer changes the UID of OVS, the controller, or other ordinary containers. The agent runs as UID 0 with GID 65534 to access the non-root OVSDB socket without DAC capabilities. The shell installer retains its existing debug-wrapper UID/GID 0 exception for the shared socket. CNI DaemonSet rollouts explicitly use `maxSurge: 0` and `maxUnavailable: 1`.
 
-The source-path prototype rebuilds only `ovn-controller` from pinned OVN/OVS
-sources in `Dockerfile.ipsec-ovn`. A small candidate patch generates
-`egress_pkt_mark`, `ipsec_mark_out`, and `ipsec_reqid` from paired local
-`ovn-ipsec-protection-mark`/`ovn-ipsec-protection-reqid` external IDs. The output
-mark remains configured when the SB IPsec switch is off, so a future activation
-coordinator can protect the transition. The normal base image and production
-agent do not use this prototype. The disposable Kind harness reserves its own
-synthetic mark/reqid, installs an independent guard before setting the external
-IDs, verifies actual OVN-generated options, and requires marked encrypted Pod
-traffic and ESP SAs using that reservation. It then stops IKE, changes the SB
-switch to plaintext mode, and requires the retained output mark/guard to block
-Pod probes with zero plaintext transport packets. This still needs an actual CI pass
-and is not a production allocator, reboot gate or cleanup ledger.
+The normal base-image build now applies the OVN output-protection extension.
+The fixed-source CI builder rebuilds `ovn-controller` with the same extension,
+checks its exact version against northd, and checks the explicit output-protection
+capability marker. Unpatched images reject protected startup before issuing an
+identity or allocating a lease. The extension generates `egress_pkt_mark`,
+`ipsec_mark_out`, and `ipsec_reqid` from the node-local lease's external IDs.
+The output mark remains configured when the SB IPsec switch is off.
 
-The prototype also marks flow-based and EVPN tunnel outputs and reconciles
-lease changes on existing ports. Upstream flow-based tunnels explicitly ignore
-IPsec settings; EVPN also lacks the per-peer identity used by this runtime.
-Marking these paths makes them block under the fixture guard and does not add
-encrypted connectivity support. The source harness checks new and existing
-flow-based/EVPN options and a blocked Pod probe in the same physical capture.
-Production must reject these modes before activation; custom EVPN UDP ports,
-userspace datapaths and offload are outside this prototype's acceptance matrix.
+The production Agent arms and reads back both address-family guards before
+publishing the lease. A synchronous, compare-and-swap OVSDB transaction marks
+existing OVN-owned tunnels and publishes the external IDs together; bridge
+membership, Port ownership and Interface options are guarded against concurrent
+changes. Foreign leases or protection options are rejected without replacement.
+Other maps and unrelated IPsec interfaces remain untouched. Readiness now also
+requires a fresh readback of the kernel guards, lease and owned tunnel options.
+
+Protection bootstrap runs before trust/identity activation. It requires an OVSDB
+socket and a live Node UID, or the last committed offline binding. It does not
+require chassis registration or CSR signing. The OVS startup script starts
+OVSDB first and waits for this protection before starting/restarting vswitchd
+and ovn-controller. The wait applies while IPsec is enabled or a marked lease
+remains in OVSDB. A root-owned Unix endpoint in
+`/run/kube-ovn-ipsec-protection` serves fresh guard/OVSDB readbacks bound to the
+caller's current OVS UUID. OVS mounts this public directory read-only; identity
+storage and the private runtime/status endpoint remain separate. The probe
+checks the server's Unix peer UID and never accepts a ready file.
+
+The extension also marks flow-based and EVPN outputs, including existing ports.
+These upstream paths lack the per-peer identity needed by this runtime, so this
+marking blocks unsupported output while armed and does not add encrypted
+connectivity support. The isolated failure harness deliberately changes these
+modes only after stopping the owner to check the extension's behavior.
 The production agent now checks a synchronous OVSDB snapshot before both
 online activation and offline restoration. It rejects configured flow-based or
 EVPN tunnels, leftover ports carrying those OVN markers, unsupported encapsulation
@@ -193,9 +202,10 @@ prevent another privileged writer from changing the datapath between checks.
 The real-overlay acceptance harness also reads the deployed CNI and IKE process
 UID, capability and nice fields: CNI must have UID 65534, nice 0 and no SYS_NICE
 in either its effective or bounding set, while IKE must have nice -5 and no
-effective capabilities outside the three production capabilities. The pending
-source-path matrix covers IPv4/IPv6 and Geneve/VXLAN. These added checks must pass
-in CI before they can serve as evidence.
+effective capabilities outside the three production capabilities. The matrix covers IPv4/IPv6 and Geneve/VXLAN. The harness reads production
+leases rather than allocating or overwriting a synthetic lease. The new Agent
+and startup-gate paths still require a passing candidate CI run; earlier
+source-prototype evidence does not validate the integrated production path.
 
 Startup now rejects occupied IKE ports or a locked legacy OVS monitor pidfile
 before changing shared certificate paths or submitting requests. The legacy
@@ -230,7 +240,8 @@ recovers interrupted insertion or lost policies without replacing a conflicting
 entry. Its isolated runtime probe exercises both IP families and both tunnel UDP
 ports. Normal exit does not delete these guards. The candidate runtime test uses
 this module and checks lease recovery, Node replacement rejection, conflict
-preservation and policy restoration in its isolated namespace. The module is not
-yet wired into the production Agent or OVN activation coordinator, and its new
-runtime acceptance is pending. A lease alone never authorizes deleting an SA;
+preservation and policy restoration in its isolated namespace. The production
+Agent now uses the module; global Prepare/Arm/Enable coordination, durable
+cluster-generation receipts and disable cleanup remain incomplete. The new
+integrated runtime/gate acceptance is pending. A lease alone never authorizes deleting an SA;
 connection/SA ownership and coordinated disable remain separate requirements.

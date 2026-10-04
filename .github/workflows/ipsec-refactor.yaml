@@ -54,7 +54,7 @@ jobs:
         run: |
           go test -race ./pkg/ipsec
           go test ./pkg/controller -run TestIPsec -count=1
-          go test ./pkg/ovs -run TestIPsecConfiguration -count=1
+          go test ./pkg/ovs -run TestIPsec -count=1
       - name: Compile candidate binaries and IPsec E2E
         run: |
           make build-go
@@ -68,22 +68,37 @@ jobs:
           key: ipsec-go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
       - name: Build candidate image and validate minimal runtime privileges
         run: |
-          docker build --build-arg BASE_TAG=v1.17.0@sha256:300011722d58c4c822279b034476d124f6f52d5ba607ddc68939fea1364746c1 --label org.opencontainers.image.revision="$GITHUB_SHA" -t ipsec-candidate:"$GITHUB_SHA" -f dist/images/Dockerfile dist/images
+          docker build --build-arg BASE_TAG=v1.17.0@sha256:300011722d58c4c822279b034476d124f6f52d5ba607ddc68939fea1364746c1 --label org.opencontainers.image.revision="$GITHUB_SHA" -t ipsec-unpatched:"$GITHUB_SHA" -f dist/images/Dockerfile dist/images
           CGO_ENABLED=0 go test -c -o /tmp/ipsec-runtime-tests ./pkg/ipsec
+          CGO_ENABLED=0 go test -c -o /tmp/ipsec-ovsdb-tests ./pkg/ovs
+          docker run --rm --network none --user 0:65534 --cap-drop ALL --cap-add NET_BIND_SERVICE --security-opt no-new-privileges \
+            --mount type=bind,src=/tmp/ipsec-runtime-tests,dst=/tmp/ipsec-runtime-tests,readonly \
+            --env KUBE_OVN_IPSEC_UNSUPPORTED_TEST=true ipsec-unpatched:"$GITHUB_SHA" \
+            /tmp/ipsec-runtime-tests -test.run '^TestCandidateWithoutProtection$' -test.v -test.timeout=30s
+          docker build --build-arg CANDIDATE_IMAGE=ipsec-unpatched:"$GITHUB_SHA" --label org.opencontainers.image.revision="$GITHUB_SHA" -t ipsec-candidate:"$GITHUB_SHA" -f dist/images/Dockerfile.ipsec-ovn dist/images
+          docker run --rm --network none --user 0:65534 --cap-drop ALL --cap-add NET_BIND_SERVICE --security-opt no-new-privileges \
+            --memory 512m --cpus 1 --env OVSDB_CNI_TEST_BIN_DIR=/tmp/ovs-tools \
+            --mount type=bind,src=/tmp/ipsec-ovsdb-tests,dst=/tmp/ipsec-ovsdb-tests,readonly \
+            ipsec-candidate:"$GITHUB_SHA" bash -c '
+              set -euo pipefail
+              mkdir /tmp/ovs-tools
+              ln -s "$(command -v ovsdb-tool)" /tmp/ovs-tools/ovsdb-tool
+              ln -s "$(command -v ovsdb-server)" /tmp/ovs-tools/ovsdb-server
+              exec /tmp/ipsec-ovsdb-tests -test.run "^TestIPsec" -test.v -test.timeout=120s
+            '
           bash hack/test-ipsec-runtime.sh ipsec-candidate:"$GITHUB_SHA" /tmp/ipsec-runtime-tests
           bash hack/test-ipsec-traffic.sh ipsec-candidate:"$GITHUB_SHA" /tmp/ipsec-runtime-tests
       - name: Install Kind for actual OVN overlay validation
         run: go install sigs.k8s.io/kind@v0.33.0
       - name: Validate actual cross-node OVN pod encryption
         run: bash hack/test-ipsec-overlay.sh ipsec-candidate:"$GITHUB_SHA"
-      - name: Prove OVN-generated protection mark and reqid path
+      - name: Validate owned OVN protection across address families and tunnels
         env:
-          IPSEC_PROTECTION_PROTOTYPE: 'true'
+          IPSEC_PROTECTION_FAILURES: 'true'
         run: |
-          docker build --build-arg CANDIDATE_IMAGE=ipsec-candidate:"$GITHUB_SHA" --label org.opencontainers.image.revision="$GITHUB_SHA" -t ipsec-source-prototype:"$GITHUB_SHA" -f dist/images/Dockerfile.ipsec-ovn dist/images
           for family in IPv4 IPv6; do
             for tunnel in geneve vxlan; do
-              IPSEC_OVERLAY_FAMILY="$family" IPSEC_OVERLAY_TUNNEL="$tunnel" bash hack/test-ipsec-overlay.sh ipsec-source-prototype:"$GITHUB_SHA"
+              IPSEC_OVERLAY_FAMILY="$family" IPSEC_OVERLAY_TUNNEL="$tunnel" bash hack/test-ipsec-overlay.sh ipsec-candidate:"$GITHUB_SHA"
             done
           done
 

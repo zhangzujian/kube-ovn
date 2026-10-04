@@ -34,6 +34,7 @@ import (
 type Configuration struct {
 	NodeName, Namespace, OVSSocket, KeyDir, RuntimeDir string
 	PodUID                                             string
+	ProtectionDir                                      string
 	Duration, RequestTimeout                           time.Duration
 	Priority                                           int
 	Kube                                               kubernetes.Interface
@@ -49,6 +50,9 @@ type Agent struct {
 	caHash  string
 	beat    atomic.Int64
 	ovs     *ovs.VswitchClient
+
+	protectionMu sync.Mutex
+	protection   *agentProtection
 }
 
 // Status deliberately excludes certificate contents, private keys and SA keys.
@@ -62,10 +66,14 @@ type Status struct {
 	TrustHash            string    `json:"trustHash,omitempty"`
 	ConfigurationApplied bool      `json:"configurationApplied"`
 	RuntimeHealthy       bool      `json:"runtimeHealthy"`
+	ProtectionArmed      bool      `json:"protectionArmed"`
 	Expires              time.Time `json:"expires,omitzero"`
 }
 
 func New(config Configuration) (*Agent, error) {
+	if config.ProtectionDir == "" {
+		config.ProtectionDir = "/run/kube-ovn-ipsec-protection"
+	}
 	if config.NodeName == "" || config.Namespace == "" || config.PodUID == "" || config.Kube == nil {
 		return nil, errors.New("IPsec node, namespace, Pod UID and Kubernetes client are required")
 	}
@@ -83,7 +91,8 @@ func (a *Agent) Status() Status {
 	status := a.status
 	a.mu.RUnlock()
 	status.RuntimeHealthy, status.ConfigurationApplied = a.runtime.configurationApplied(status)
-	if status.Phase == "Configured" && status.ConfigurationApplied {
+	status.ProtectionArmed = a.protectionArmed(status.NodeUID, status.Chassis)
+	if status.Phase == "Configured" && status.ConfigurationApplied && status.ProtectionArmed {
 		status.Phase = "Running"
 	}
 	return status
@@ -113,6 +122,10 @@ func (a *Agent) Run(ctx context.Context) error {
 	if err := checkIKEPorts(); err != nil {
 		return err
 	}
+	if err := checkOVNProtection(ctx); err != nil {
+		return err
+	}
+	defer a.closeProtection()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	defer func() {
@@ -122,6 +135,9 @@ func (a *Agent) Run(ctx context.Context) error {
 	}()
 	a.beat.Store(time.Now().UnixNano())
 	if err := a.serveStatus(ctx); err != nil {
+		return err
+	}
+	if err := a.serveProtection(ctx); err != nil {
 		return err
 	}
 	runtimeDone := make(chan struct{})
@@ -150,13 +166,18 @@ func (a *Agent) Run(ctx context.Context) error {
 	for ctx.Err() == nil {
 		a.beat.Store(time.Now().UnixNano())
 		var err error
-		if secrets.Informer().HasSynced() {
-			err = a.reconcile(ctx, secrets.Lister())
-		} else {
-			// Reuse only the last committed, locally validated generation while
-			// the API is unreachable. Do not issue requests or import legacy files.
-			// Once synchronized, explicit trust changes take precedence immediately.
-			err = a.restoreCurrent(ctx)
+		online := secrets.Informer().HasSynced()
+		// Protection bootstrap is independent of certificate/trust readiness:
+		// OVS can register chassis only after guards, then CSR signing can run.
+		if err = a.bootstrapProtection(ctx, online); err == nil {
+			if online {
+				err = a.reconcile(ctx, secrets.Lister())
+			} else {
+				// Reuse only the last committed, locally validated generation while
+				// the API is unreachable. Do not issue requests or import legacy files.
+				// Once synchronized, explicit trust changes take precedence immediately.
+				err = a.restoreCurrent(ctx)
+			}
 		}
 		a.beat.Store(time.Now().UnixNano())
 		delay := 30 * time.Second
@@ -206,6 +227,9 @@ func (a *Agent) reconcile(ctx context.Context, secrets listers.SecretLister) err
 	}
 	node, err := a.config.Kube.CoreV1().Nodes().Get(ctx, a.config.NodeName, metav1.GetOptions{})
 	if err != nil {
+		return err
+	}
+	if err := a.ensureProtection(string(node.UID), chassis); err != nil {
 		return err
 	}
 	if err := a.store.importLegacy(string(node.UID), chassis, trust, row.OtherConfig); err != nil {
@@ -266,6 +290,9 @@ func (a *Agent) activate(ctx context.Context, ovsUUID string, g *generation, tru
 	// failed/interrupted activation must not advertise the old configuration
 	// as acknowledgement of the next generation.
 	a.runtime.expectConfiguration(status)
+	if err := a.ensureProtection(g.NodeUID, g.Chassis); err != nil {
+		return err
+	}
 	if err := a.store.retainPrevious(g); err != nil {
 		return err
 	}
@@ -464,7 +491,7 @@ func (a *Agent) serveStatus(ctx context.Context) error {
 	})
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
 		status := a.Status()
-		if !status.ConfigurationApplied || (status.Phase != "Configured" && status.Phase != "Running" && status.Phase != "Restored") || !time.Now().Before(status.Expires) {
+		if !status.ProtectionArmed || !status.ConfigurationApplied || (status.Phase != "Configured" && status.Phase != "Running" && status.Phase != "Restored") || !time.Now().Before(status.Expires) {
 			http.Error(w, "IPsec is not ready", http.StatusServiceUnavailable)
 			return
 		}

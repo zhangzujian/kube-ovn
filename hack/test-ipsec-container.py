@@ -17,6 +17,13 @@ def validate(text, enabled, debug=False):
     ovs = next(item for item in documents if item.get("kind") == "DaemonSet" and item["metadata"]["name"] == "ovs-ovn")
     ovs_security = ovs["spec"]["template"]["spec"]["containers"][0]["securityContext"]
     assert ovs_security["runAsUser"] == ovs_security["runAsGroup"] == (0 if debug else 65534)
+    ovs_pod = ovs["spec"]["template"]["spec"]
+    ovs_container = ovs_pod["containers"][0]
+    ovs_env = {item["name"]: item for item in ovs_container["env"]}
+    assert ovs_env["ENABLE_OVN_IPSEC"]["value"] == str(enabled).lower()
+    ovs_mounts = {item["name"]: item for item in ovs_container["volumeMounts"]}
+    assert ovs_mounts["ipsec-protection"]["readOnly"] is True
+    assert ovs_mounts["ipsec-protection"]["mountPath"] == "/run/kube-ovn-ipsec-protection"
     pod = daemonset["spec"]["template"]["spec"]
     containers = {item["name"]: item for item in pod["containers"]}
     daemon = containers["cni-server"]
@@ -26,6 +33,14 @@ def validate(text, enabled, debug=False):
     assert "SYS_NICE" in security["capabilities"]["drop"]
     assert all(not arg.startswith(("--enable-ovn-ipsec", "--cert-manager-ipsec-cert", "--ovn-ipsec-cert-duration", "--cert-manager-issuer-name")) for arg in daemon["args"])
     assert all(mount["name"] != "ovs-ipsec-keys" for mount in daemon["volumeMounts"])
+    assert all(mount["name"] != "ipsec-protection" for mount in daemon["volumeMounts"])
+    for spec in (ovs_pod, pod):
+        volume = next(item for item in spec["volumes"] if item["name"] == "ipsec-protection")
+        assert volume["hostPath"] == {"path": "/run/kube-ovn-ipsec-protection", "type": "DirectoryOrCreate"}
+        init = next(item for item in spec["initContainers"] if item["name"] == "hostpath-init")
+        assert f"chown 0:{0 if debug else 65534} /run/kube-ovn-ipsec-protection" in "\n".join(init["command"])
+        assert "chmod 0750 /run/kube-ovn-ipsec-protection" in "\n".join(init["command"])
+        assert any(item["name"] == "ipsec-protection" for item in init["volumeMounts"])
     assert ("ipsec" in containers) == enabled
     if enabled:
         ipsec = containers["ipsec"]
@@ -39,7 +54,7 @@ def validate(text, enabled, debug=False):
         assert security["allowPrivilegeEscalation"] is False
         assert security["capabilities"] == {"drop": ["ALL"], "add": ["NET_ADMIN", "NET_BIND_SERVICE", "SYS_NICE"]}
         mounts = {item["name"]: item for item in ipsec["volumeMounts"]}
-        assert set(mounts) == {"ovs-ipsec-keys", "host-run-ovs"}
+        assert set(mounts) == {"ovs-ipsec-keys", "host-run-ovs", "ipsec-protection"}
         assert mounts["host-run-ovs"]["readOnly"] is True
         env = {item["name"]: item for item in ipsec["env"]}
         assert env["POD_UID"]["valueFrom"]["fieldRef"]["fieldPath"] == "metadata.uid"

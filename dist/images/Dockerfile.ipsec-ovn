@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Disposable source-path proof; production base builds remain unchanged.
+# CI candidate built from fixed sources with the production output-protection patch.
 ARG CANDIDATE_IMAGE
 FROM ubuntu:26.04 AS builder
 USER 0
@@ -26,4 +26,5 @@ COPY --from=builder /src/ovn/controller/ovn-controller /usr/bin/ovn-controller
 # Keep the internal version check enabled. The pinned source must match the
 # northd package already shipped by the candidate base, including its suffix.
 RUN ovn-controller --version | grep -F '26.03.4+g28ed48957d63' && \
-    ovn-northd --version | grep -F '26.03.4+g28ed48957d63'
+    ovn-northd --version | grep -F '26.03.4+g28ed48957d63' && \
+    ovn-controller --version | grep -Fx 'IPsec output protection version 1'

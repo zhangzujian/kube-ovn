@@ -67,6 +67,8 @@ spec:
           - |
             chmod +t /usr/local/sbin
             chown -R nobody: /var/log/kube-ovn
+            chown 0:65534 /run/kube-ovn-ipsec-protection
+            chmod 0750 /run/kube-ovn-ipsec-protection
             iptables -V
         securityContext:
           allowPrivilegeEscalation: true
@@ -77,6 +79,8 @@ spec:
           runAsUser: 0
           runAsGroup: 0
         volumeMounts:
+          - name: ipsec-protection
+            mountPath: /run/kube-ovn-ipsec-protection
           - name: usr-local-sbin
             mountPath: /usr/local/sbin
           - mountPath: /run/xtables.lock
@@ -351,6 +355,8 @@ spec:
               fieldRef:
                 fieldPath: metadata.uid
         volumeMounts:
+          - name: ipsec-protection
+            mountPath: /run/kube-ovn-ipsec-protection
           - name: ovs-ipsec-keys
             mountPath: /etc/ovs_ipsec_keys
           - name: host-run-ovs
@@ -377,6 +383,10 @@ spec:
       nodeSelector:
         kubernetes.io/os: "linux"
       volumes:
+        - name: ipsec-protection
+          hostPath:
+            path: /run/kube-ovn-ipsec-protection
+            type: DirectoryOrCreate
         {{- if .Values.features.enableTproxy }}
         - name: tproxy-socket
           emptyDir: {}

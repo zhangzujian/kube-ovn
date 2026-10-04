@@ -261,3 +261,34 @@ func (p *protectionOwner) arm() error {
 	}
 	return nil
 }
+
+// verify is read-only: probes must never repair a missing guard and then report
+// the stale receipt as proof that it had remained installed.
+func (p *protectionOwner) verify() error {
+	if !p.reservation.Required {
+		return errors.New("IPsec protection is not required")
+	}
+	policies, err := p.kernel.XfrmPolicyList(netlink.FAMILY_ALL)
+	if err != nil {
+		return err
+	}
+	for _, policy := range policies {
+		if protectionBypassed(p.reservation.Mark, policy) {
+			return errors.New("IPsec protection is preempted by an existing tunnel bypass policy")
+		}
+	}
+	for family, index := range p.reservation.Indexes {
+		if index == 0 {
+			return errors.New("IPsec protection has no confirmed kernel index")
+		}
+		guard := p.guard(family, index)
+		actual, err := p.readGuard(guard)
+		if err != nil {
+			return err
+		}
+		if !sameGuard(actual, guard) {
+			return errors.New("IPsec protection guard conflicts with an existing kernel policy")
+		}
+	}
+	return nil
+}

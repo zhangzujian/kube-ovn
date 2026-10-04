@@ -35,6 +35,8 @@ func run() error {
 	pflag.StringVar(&config.OVSSocket, "ovs-socket", "/run/openvswitch/db.sock", "Local OVSDB socket")
 	pflag.StringVar(&config.KeyDir, "key-dir", "/etc/ovs_ipsec_keys", "Persistent IPsec identity directory")
 	pflag.StringVar(&config.RuntimeDir, "runtime-dir", "/run/kube-ovn-ipsec", "Private runtime directory")
+	pflag.StringVar(&config.ProtectionDir, "protection-dir", "/run/kube-ovn-ipsec-protection", "Public node protection endpoint directory")
+	ovsUUID := pflag.String("ovs-uuid", "", "Current local OVS row UUID required by the protection probe")
 	duration := pflag.Int("ovn-ipsec-cert-duration", 2*365*24*60*60, "Requested certificate duration in seconds")
 	pflag.DurationVar(&config.RequestTimeout, "request-timeout", 300*time.Second, "Certificate request timeout")
 	pflag.IntVar(&config.Priority, "priority", -5, "IPsec subprocess nice priority")
@@ -46,6 +48,9 @@ func run() error {
 	if *check != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
+		if *check == "protection" {
+			return ipsec.CheckProtection(ctx, config.ProtectionDir, *ovsUUID)
+		}
 		return ipsec.Check(ctx, config.RuntimeDir, *check)
 	}
 	config.Duration = time.Duration(*duration) * time.Second

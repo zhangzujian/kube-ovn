@@ -8503,6 +8503,8 @@ spec:
             - |
               chmod +t /usr/local/sbin
               chown -R nobody: /var/run/ovn /var/log/ovn /etc/openvswitch /var/run/openvswitch /var/log/openvswitch
+              chown 0:${RUN_AS_USER} /run/kube-ovn-ipsec-protection
+              chmod 0750 /run/kube-ovn-ipsec-protection
               iptables -V
               /usr/share/openvswitch/scripts/ovs-ctl load-kmod
           securityContext:
@@ -8524,6 +8526,8 @@ spec:
               name: host-run-ovn
             - mountPath: /etc/openvswitch
               name: host-config-openvswitch
+            - mountPath: /run/kube-ovn-ipsec-protection
+              name: ipsec-protection
             - mountPath: /var/run/openvswitch
               name: host-run-ovs
             - mountPath: /var/log/openvswitch
@@ -8546,6 +8550,8 @@ spec:
                 - SYS_NICE
                 - SYS_ADMIN
           env:
+            - name: ENABLE_OVN_IPSEC
+              value: "$ENABLE_OVN_IPSEC"
             - name: ENABLE_SSL
               value: "$ENABLE_SSL"
             - name: POD_IP
@@ -8581,6 +8587,9 @@ spec:
               name: usr-local-sbin
             - mountPath: /lib/modules
               name: host-modules
+              readOnly: true
+            - mountPath: /run/kube-ovn-ipsec-protection
+              name: ipsec-protection
               readOnly: true
             - mountPath: /var/run/openvswitch
               name: host-run-ovs
@@ -8628,6 +8637,10 @@ spec:
       nodeSelector:
         kubernetes.io/os: "linux"
       volumes:
+        - name: ipsec-protection
+          hostPath:
+            path: /run/kube-ovn-ipsec-protection
+            type: DirectoryOrCreate
         - name: usr-local-sbin
           emptyDir: {}
         - name: host-modules
@@ -8924,6 +8937,8 @@ if [[ "$ENABLE_OVN_IPSEC" == "true" ]]; then
               fieldRef:
                 fieldPath: metadata.uid
         volumeMounts:
+          - name: ipsec-protection
+            mountPath: /run/kube-ovn-ipsec-protection
           - name: ovs-ipsec-keys
             mountPath: /etc/ovs_ipsec_keys
           - name: host-run-ovs
@@ -9299,6 +9314,8 @@ ${TPROXY_SECURITY_CONTEXT}
           - |
             chmod +t /usr/local/sbin
             chown -R nobody: /var/log/kube-ovn
+            chown 0:${RUN_AS_USER} /run/kube-ovn-ipsec-protection
+            chmod 0750 /run/kube-ovn-ipsec-protection
             iptables -V
         securityContext:
           allowPrivilegeEscalation: true
@@ -9308,6 +9325,8 @@ ${TPROXY_SECURITY_CONTEXT}
           privileged: true
           runAsUser: 0
         volumeMounts:
+          - name: ipsec-protection
+            mountPath: /run/kube-ovn-ipsec-protection
           - name: usr-local-sbin
             mountPath: /usr/local/sbin
           - mountPath: /run/xtables.lock
@@ -9476,6 +9495,10 @@ ${IPSEC_CONTAINER}
       nodeSelector:
         kubernetes.io/os: "linux"
       volumes:
+        - name: ipsec-protection
+          hostPath:
+            path: /run/kube-ovn-ipsec-protection
+            type: DirectoryOrCreate
 ${TPROXY_SOCKET_VOLUME}
         - name: usr-local-sbin
           emptyDir: {}
