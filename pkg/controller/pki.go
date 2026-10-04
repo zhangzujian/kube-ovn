@@ -46,7 +46,11 @@ func (c *Controller) InitDefaultOVNIPsecCA() error {
 			if len(trust.Data["cakey"]) == 0 {
 				return errors.New("existing IPsec trust has no private signer; refusing to replace the CA")
 			}
-			cert, key = trust.Data["cacert"], trust.Data["cakey"]
+			key = trust.Data["cakey"]
+			cert, err = matchingIPsecCA(trust.Data["cacert"], key)
+			if err != nil {
+				return err
+			}
 		} else {
 			cert, key, err = newIPsecCA()
 			if err != nil {
@@ -56,7 +60,7 @@ func (c *Controller) InitDefaultOVNIPsecCA() error {
 		if err := validateIPsecCA(cert, key); err != nil {
 			return err
 		}
-		signer, err = secrets.Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: util.DefaultOVNIPSecSigner, Namespace: c.config.PodNamespace}, Data: map[string][]byte{"cacert": cert, "cakey": key}}, metav1.CreateOptions{})
+		signer, err = secrets.Create(ctx, &corev1.Secret{Name: util.DefaultOVNIPSecSigner, Namespace: c.config.PodNamespace, Data: map[string][]byte{"cacert": cert, "cakey": key}}, metav1.CreateOptions{})
 		if k8serrors.IsAlreadyExists(err) {
 			signer, err = secrets.Get(ctx, util.DefaultOVNIPSecSigner, metav1.GetOptions{})
 		}
@@ -68,7 +72,7 @@ func (c *Controller) InitDefaultOVNIPsecCA() error {
 		return err
 	}
 	if k8serrors.IsNotFound(trustErr) {
-		trust, err = secrets.Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: util.DefaultOVNIPSecCA, Namespace: c.config.PodNamespace}, Data: map[string][]byte{"cacert": signer.Data["cacert"]}}, metav1.CreateOptions{})
+		trust, err = secrets.Create(ctx, &corev1.Secret{Name: util.DefaultOVNIPSecCA, Namespace: c.config.PodNamespace, Data: map[string][]byte{"cacert": signer.Data["cacert"]}}, metav1.CreateOptions{})
 		if k8serrors.IsAlreadyExists(err) {
 			trust, err = secrets.Get(ctx, util.DefaultOVNIPSecCA, metav1.GetOptions{})
 		}
@@ -99,6 +103,29 @@ func (c *Controller) InitDefaultOVNIPsecCA() error {
 	}
 	klog.Info("IPsec private signer and public trust are ready")
 	return nil
+}
+
+func matchingIPsecCA(bundle, keyPEM []byte) ([]byte, error) {
+	key, err := decodePrivateKey(keyPEM)
+	if err != nil {
+		return nil, err
+	}
+	certs, err := ipsec.Certificates(bundle)
+	if err != nil {
+		return nil, err
+	}
+	for _, cert := range certs {
+		pub, ok := cert.PublicKey.(*rsa.PublicKey)
+		if !ok || !pub.Equal(&key.PublicKey) {
+			continue
+		}
+		certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw})
+		if err := validateIPsecCA(certPEM, keyPEM); err != nil {
+			return nil, err
+		}
+		return certPEM, nil
+	}
+	return nil, errors.New("IPsec trust has no CA matching the legacy signing key")
 }
 
 func validateIPsecCA(certPEM, keyPEM []byte) error {

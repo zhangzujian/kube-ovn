@@ -108,7 +108,7 @@ func (c *Controller) handleAddOrUpdateCsr(key string) (err error) {
 	}
 
 	for _, condition := range csr.Status.Conditions {
-		if condition.Type == csrv1.CertificateDenied || condition.Type == csrv1.CertificateFailed {
+		if condition.Status == "True" && (condition.Type == csrv1.CertificateDenied || condition.Type == csrv1.CertificateFailed) {
 			return nil
 		}
 	}
@@ -118,7 +118,12 @@ func (c *Controller) handleAddOrUpdateCsr(key string) (err error) {
 		return c.updateCSRStatusConditions(csr, "InvalidRequest", err.Error())
 	}
 	if err := c.validateIPsecRequester(csr, certReq); err != nil {
-		return c.updateCSRStatusConditions(csr, "InvalidIdentity", err.Error())
+		if _, invalid := errors.AsType[*ipsecIdentityError](err); invalid {
+			return c.updateCSRStatusConditions(csr, "InvalidIdentity", err.Error())
+		}
+		// API/authentication lookup failures are retryable. Never make a
+		// temporary API outage terminal for a persisted pending private key.
+		return err
 	}
 	if !isCertificateRequestApproved(csr) {
 		csr.Status.Conditions = append(csr.Status.Conditions, csrv1.CertificateSigningRequestCondition{
@@ -140,28 +145,21 @@ func (c *Controller) handleAddOrUpdateCsr(key string) (err error) {
 	// Read the private CA from the controller-only signer Secret.
 	caSecret, err := c.config.KubeClient.CoreV1().Secrets(c.config.PodNamespace).Get(context.TODO(), util.DefaultOVNIPSecSigner, metav1.GetOptions{})
 	if err != nil {
-		c.signerFailure(csr, "CAFailure",
-			fmt.Sprintf("Could not get CA certificate and key: %v", err))
 		return err
 	}
 
 	// Decode the CA certificate from PEM format.
 	if err := validateIPsecCA(caSecret.Data["cacert"], caSecret.Data["cakey"]); err != nil {
-		c.signerFailure(csr, "InvalidCA", err.Error())
-		return nil
+		return err
 	}
 	caCert, err := decodeCertificate(caSecret.Data["cacert"])
 	if err != nil {
-		c.signerFailure(csr, "CorruptCACert",
-			fmt.Sprintf("Unable to decode CA certificate for %v: %v", util.SignerName, err))
-		return nil
+		return err
 	}
 
 	caKey, err := decodePrivateKey(caSecret.Data["cakey"])
 	if err != nil {
-		c.signerFailure(csr, "CorruptCAKey",
-			fmt.Sprintf("Unable to decode CA private key for %v: %v", util.SignerName, err))
-		return nil
+		return err
 	}
 
 	// Create a new certificate using the certificate template and certificate.
@@ -170,16 +168,17 @@ func (c *Controller) handleAddOrUpdateCsr(key string) (err error) {
 	if csr.Spec.ExpirationSeconds != nil {
 		duration = min(duration, time.Duration(*csr.Spec.ExpirationSeconds)*time.Second)
 	}
-	template := newCertificateTemplate(certReq)
+	template, err := newCertificateTemplate(certReq)
+	if err != nil {
+		return err
+	}
 	template.NotAfter = minTime(time.Now().Add(duration), caCert.NotAfter.Add(-time.Minute))
 	if duration < 10*time.Minute || !template.NotAfter.After(time.Now().Add(10*time.Minute)) {
 		return c.updateCSRStatusConditions(csr, "InvalidDuration", "CA or requested lifetime is too short")
 	}
 	signedCert, err := signCSR(template, certReq.PublicKey, caCert, caKey)
 	if err != nil {
-		c.signerFailure(csr, "SigningFailure",
-			fmt.Sprintf("Unable to sign certificate for %v and signer %v: %v", csr.Name, util.SignerName, err))
-		return nil
+		return err
 	}
 
 	// Encode the certificate into PEM format and add to the status of the CSR
@@ -191,15 +190,6 @@ func (c *Controller) handleAddOrUpdateCsr(key string) (err error) {
 
 	klog.Infof("Certificate signed, issued and approved for %s by %s", csr.Name, util.SignerName)
 	return nil
-}
-
-// Something has gone wrong with the signer controller so we update the statusmanager, the csr
-// and log.
-func (c *Controller) signerFailure(csr *csrv1.CertificateSigningRequest, reason, message string) {
-	klog.Errorf("%s: %s", reason, message)
-	if err := c.updateCSRStatusConditions(csr, reason, message); err != nil {
-		klog.Error(err)
-	}
 }
 
 // Update the status conditions on the CSR object
@@ -236,6 +226,9 @@ func isCertificateRequestApproved(csr *csrv1.CertificateSigningRequest) bool {
 
 func getCertApprovalCondition(status *csrv1.CertificateSigningRequestStatus) (approved, denied bool) {
 	for _, c := range status.Conditions {
+		if c.Status != "True" {
+			continue
+		}
 		if c.Type == csrv1.CertificateApproved {
 			approved = true
 		}
@@ -246,11 +239,11 @@ func getCertApprovalCondition(status *csrv1.CertificateSigningRequestStatus) (ap
 	return approved, denied
 }
 
-func newCertificateTemplate(certReq *x509.CertificateRequest) *x509.Certificate {
+func newCertificateTemplate(certReq *x509.CertificateRequest) (*x509.Certificate, error) {
 	serialNumber, err := rand.Int(rand.Reader, big.NewInt(1<<62))
 	if err != nil {
 		klog.Errorf("failed to generate serial number: %v", err)
-		return nil
+		return nil, err
 	}
 
 	template := &x509.Certificate{
@@ -264,9 +257,10 @@ func newCertificateTemplate(certReq *x509.CertificateRequest) *x509.Certificate 
 
 		DNSNames:              certReq.DNSNames,
 		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageDigitalSignature,
 	}
 
-	return template
+	return template, nil
 }
 
 func signCSR(template *x509.Certificate, requestKey c.PublicKey, issuer *x509.Certificate, issuerKey c.PrivateKey) (*x509.Certificate, error) {

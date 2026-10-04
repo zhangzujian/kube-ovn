@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/kubeovn/kube-ovn/pkg/util"
@@ -30,8 +29,8 @@ func TestCandidateRuntime(t *testing.T) {
 	require.NoError(t, checkIKEPorts(), "the test network namespace must be isolated")
 	cert, key, trust := testIdentity(t, "runtime-test-chassis")
 	client := fake.NewClientset(
-		&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "runtime-node", UID: "runtime-node-uid"}},
-		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: util.DefaultOVNIPSecCA, Namespace: "kube-system"}, Data: map[string][]byte{"cacert": trust}},
+		&corev1.Node{Name: "runtime-node", UID: "runtime-node-uid"},
+		&corev1.Secret{Name: util.DefaultOVNIPSecCA, Namespace: "kube-system", Data: map[string][]byte{"cacert": trust}},
 	)
 	a, err := New(Configuration{
 		NodeName: "runtime-node", PodUID: "runtime-pod-uid", Namespace: "kube-system", Kube: client,
