@@ -2,6 +2,7 @@ package ipsec
 
 import (
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net"
@@ -38,6 +39,23 @@ type runtimeManager struct {
 	mu             sync.Mutex
 	enabled        atomic.Bool
 	healthy        atomic.Bool
+	applied        atomic.Bool
+	expected       publicIdentity
+}
+
+type publicIdentity struct {
+	Certificate string `json:"certificate"`
+	Trust       string `json:"trust"`
+}
+
+func (r *runtimeManager) expectIdentity(certificate, trust []byte) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	next := publicIdentity{Certificate: digest(certificate), Trust: digest(trust)}
+	if next != r.expected {
+		r.applied.Store(false)
+		r.expected = next
+	}
 }
 
 func command(ctx context.Context, name string, args ...string) error {
@@ -166,6 +184,7 @@ func (r *runtimeManager) runPair(ctx context.Context) error {
 	}
 	defer monitor.stop()
 	defer r.healthy.Store(false)
+	defer r.applied.Store(false)
 	// Starting the Python process does not prove its OVSDB/event loop is
 	// responding. Confirm both private control endpoints and keep checking
 	// them so a hung process is recovered without waiting for Pod restart.
@@ -177,6 +196,9 @@ func (r *runtimeManager) runPair(ctx context.Context) error {
 			if err := r.confirmTrust(ctx); err != nil {
 				return err
 			}
+			// A responsive process can still be using the previous OVSDB
+			// generation. Wait for its safe public-content acknowledgement.
+			r.confirmIdentity(ctx)
 		} else if r.healthy.Load() || startupCtx.Err() != nil {
 			return fmt.Errorf("IPsec runtime health check failed: %w", err)
 		}
@@ -192,21 +214,49 @@ func (r *runtimeManager) runPair(ctx context.Context) error {
 	}
 }
 
+func (r *runtimeManager) monitorSocket() (string, error) {
+	pidBytes, err := os.ReadFile(filepath.Join(r.dir, "monitor.pid"))
+	if err != nil {
+		return "", err
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(pidBytes)))
+	if err != nil || pid <= 0 {
+		return "", errors.New("invalid private IPsec monitor PID")
+	}
+	return filepath.Join(r.dir, fmt.Sprintf("ovs-monitor-ipsec.%d.ctl", pid)), nil
+}
+
 func (r *runtimeManager) check(ctx context.Context) error {
 	if err := command(ctx, "/usr/sbin/ipsec", "status"); err != nil {
 		return err
 	}
-	// list-commands is a harmless liveness request; tunnels/show and
-	// xfrm/state may expose keys and must not be used in health probes.
-	pidBytes, err := os.ReadFile(filepath.Join(r.dir, "monitor.pid"))
+	socket, err := r.monitorSocket()
 	if err != nil {
 		return err
 	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(pidBytes)))
-	if err != nil || pid <= 0 {
-		return errors.New("invalid private IPsec monitor PID")
+	// Never invoke tunnels/show or xfrm/state: they can expose SA keys.
+	return command(ctx, "ovs-appctl", "-t", socket, "list-commands")
+}
+
+func (r *runtimeManager) confirmIdentity(ctx context.Context) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	confirmed := false
+	defer func() { r.applied.Store(confirmed) }()
+	socket, err := r.monitorSocket()
+	if err != nil {
+		return
 	}
-	return command(ctx, "ovs-appctl", "-t", filepath.Join(r.dir, fmt.Sprintf("ovs-monitor-ipsec.%d.ctl", pid)), "list-commands")
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	output, err := exec.CommandContext(ctx, "ovs-appctl", "-t", socket, "configuration/get").Output()
+	if err != nil {
+		return
+	}
+	var actual publicIdentity
+	if json.Unmarshal(output, &actual) == nil && actual.Certificate != "" && actual == r.expected {
+		confirmed = true
+	}
 }
 
 func (r *runtimeManager) run(ctx context.Context) {

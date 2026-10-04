@@ -26,8 +26,14 @@ Repeated runtime startup failures back off from one to thirty seconds; a runtime
 that remained up for a minute resets that delay before recovery.
 
 The image applies small, checked adaptations to the upstream OVS monitor:
-accept CN at the end of an RFC2253 subject, and optionally filter interfaces by
-their owning Port's `ovn-chassis-id`. The IPsec entrypoint enables this filter.
+accept CN at the end of an RFC2253 subject, optionally filter interfaces by
+their owning Port's `ovn-chassis-id`, and report public configuration digests
+through `configuration/get` after successful strongSwan update/secret reload.
+The IPsec entrypoint enables the filter. Readiness waits for the current
+certificate/trust digest acknowledgement as well as responsive processes;
+changed public content invalidates the previous acknowledgement. This confirms
+configuration refresh, not replacement of every established peer SA or a
+cluster CA rotation acknowledgement.
 Image construction fails if the pinned monitor source no longer matches the
 adaptation points. Connection generation and refresh remain in OVS. The filter
 does not prove ownership of orphaned kernel SAs after a crash.
@@ -62,8 +68,8 @@ the authorized request's spec. Before forwarding, the controller checks the
 policy scope, observed generation and unconditional Deny binding. Missing or
 weakened policy is retryable and never forwards a request. Generic cert-manager
 auto-approval cannot admit a different requester past this policy.
-Policy installation and real bound-token signing
-still require cluster acceptance testing before this draft is ready.
+Policy installation propagation still requires cluster acceptance testing
+before this draft is ready.
 
 The disposable API test has passed the bound-token and issuer rejection/issuance
 contract. This does not establish installation safety across API Server replicas:
@@ -93,6 +99,12 @@ CertificateRequest privileges to verify admission independently of RBAC;
 production CNI does not have those privileges. The test also checks namespace
 restriction, unrelated issuers and metadata-only updates. This is an API
 contract test, not a full Kube-OVN deployment or migration test.
+
+`hack/test-ipsec-overlay.sh` installs the candidate in a disposable two-node
+Kind cluster, exchanges actual cross-node Pod traffic in both directions, and
+checks the underlay capture for ESP and absence of plaintext tunnel packets.
+Its outcome must be recorded against the tested image and revision; the harness
+itself is not evidence of a successful deployment or fault-safe migration.
 
 Local probes use the private status socket with `--check=livez` or
 `--check=readyz`. Readiness includes an unexpired active certificate and runtime

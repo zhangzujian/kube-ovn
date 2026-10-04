@@ -237,7 +237,8 @@ func (a *Agent) activate(ctx context.Context, ovsUUID string, g *generation, tru
 	if err := a.store.save("current", g); err != nil {
 		return err
 	}
-	if phase == "Configured" && a.runtime.healthy.Load() {
+	a.runtime.expectIdentity(certPEM, trust)
+	if phase == "Configured" && a.runtime.healthy.Load() && a.runtime.applied.Load() {
 		phase = "Running"
 	}
 	a.setStatus(Status{Phase: phase, Generation: g.ID, Expires: certs[0].NotAfter})
@@ -425,7 +426,7 @@ func (a *Agent) serveStatus(ctx context.Context) error {
 	})
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
 		status := a.Status()
-		if !a.runtime.healthy.Load() || (status.Phase != "Configured" && status.Phase != "Running" && status.Phase != "Restored") || status.Generation == "" || !time.Now().Before(status.Expires) {
+		if !a.runtime.healthy.Load() || !a.runtime.applied.Load() || (status.Phase != "Configured" && status.Phase != "Running" && status.Phase != "Restored") || status.Generation == "" || !time.Now().Before(status.Expires) {
 			http.Error(w, "IPsec is not ready", http.StatusServiceUnavailable)
 			return
 		}
