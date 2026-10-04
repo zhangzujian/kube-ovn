@@ -202,7 +202,8 @@ func TestIPsecAPIServerSigningContract(t *testing.T) {
 	require.NoError(t, err)
 	cmRequest := &cmv1.CertificateRequest{Name: "unauthorized", Spec: cmv1.CertificateRequestSpec{Request: request, IssuerRef: cmmeta.IssuerReference{Name: issuer, Kind: "ClusterIssuer", Group: "cert-manager.io"}, Usages: []cmv1.KeyUsage{cmv1.UsageIPsecTunnel}}}
 	_, err = cmCNI.CertmanagerV1().CertificateRequests(namespace).Create(ctx, cmRequest, metav1.CreateOptions{})
-	require.True(t, k8serrors.IsInvalid(err) || k8serrors.IsForbidden(err), "the API Server must reject an unauthorized issuer request")
+	require.Error(t, err, "the API Server must reject an unauthorized issuer request")
+	require.True(t, k8serrors.IsInvalid(err) || k8serrors.IsForbidden(err), "unexpected admission response: %v", err)
 	require.ErrorContains(t, err, "The IPsec ClusterIssuer accepts only authorized")
 	_, err = cmController.CertmanagerV1().CertificateRequests("default").Create(ctx, cmRequest, metav1.CreateOptions{})
 	require.True(t, k8serrors.IsInvalid(err) || k8serrors.IsForbidden(err), "controller identity must not bypass the namespace constraint")

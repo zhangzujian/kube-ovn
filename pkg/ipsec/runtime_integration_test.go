@@ -33,7 +33,11 @@ func TestCandidateRuntime(t *testing.T) {
 	require.NoError(t, command(t.Context(), "ip", "xfrm", "policy", "add", "src", "192.0.2.10", "dst", "192.0.2.20", "dir", "out", "priority", "99", "index", "759809", "action", "block"))
 	foreignPolicy := func() []byte {
 		t.Helper()
-		output, err := exec.CommandContext(t.Context(), "ip", "xfrm", "policy", "get", "index", "759809", "dir", "out").Output()
+		// testing cancels t.Context before running cleanup; the post-shutdown
+		// kernel check needs its own bounded context to remain meaningful.
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		output, err := exec.CommandContext(ctx, "ip", "xfrm", "policy", "get", "index", "759809", "dir", "out").Output()
 		require.NoError(t, err, "the runtime must preserve an unrelated kernel policy")
 		return output
 	}
