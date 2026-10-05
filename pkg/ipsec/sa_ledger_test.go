@@ -160,3 +160,53 @@ func TestSALedgerRejectsDifferentNodeLeaseSessionAndBoot(t *testing.T) {
 		require.Error(t, err)
 	}
 }
+
+func TestSALedgerTransportRolesAndUDPEncapsulation(t *testing.T) {
+	for _, tunnel := range []string{"geneve", "vxlan"} {
+		for _, role := range []string{"in", "out"} {
+			t.Run(tunnel+"/"+role, func(t *testing.T) {
+				_, intent, name := saIntentFixture(t, "192.0.2.1", "192.0.2.2")
+				claim := intent.Connections[name]
+				claim.TunnelType = tunnel
+				delete(intent.Connections, name)
+				name = strings.ReplaceAll(name, "out-3", role+"-3")
+				intent.Connections[name] = claim
+				children, err := intent.installedChildren([]byte(name + "{11}:  INSTALLED, TRANSPORT, reqid 759811, ESP in UDP SPIs: 11223344_i aabbccdd_o"))
+				require.NoError(t, err)
+				states := saStatesFixture("192.0.2.1", "192.0.2.2")
+				port := 6081
+				if tunnel == "vxlan" {
+					port = 4789
+				}
+				states[0].Selector.SrcPort, states[1].Selector.DstPort = port, port
+				if role == "in" {
+					for _, state := range states {
+						state.Selector.SrcPort, state.Selector.DstPort = state.Selector.DstPort, state.Selector.SrcPort
+					}
+				}
+				for i := range states {
+					states[i].Encap = &netlink.XfrmStateEncap{Type: netlink.XFRM_ENCAP_ESPINUDP, SrcPort: 4500, DstPort: 4500}
+				}
+				bindings, err := intent.bindChildren(children, states)
+				require.NoError(t, err)
+				require.Len(t, bindings, 2)
+				for _, binding := range bindings {
+					require.True(t, binding.Instance.HasEncapsulation)
+					require.Equal(t, 4500, binding.Instance.Encapsulation.DestinationPort)
+				}
+				states = append(states, states[1])
+				_, err = intent.bindChildren(children, states)
+				require.ErrorContains(t, err, "ambiguous", "indexing cannot overwrite a duplicate kernel candidate")
+			})
+		}
+	}
+}
+
+func TestSALedgerRejectsMultipleChildrenClaimingOneInstance(t *testing.T) {
+	_, intent, name := saIntentFixture(t, "192.0.2.1", "192.0.2.2")
+	child := childAssociation{Connection: name, UniqueID: 11, InboundSPI: 0x11223344, OutboundSPI: 0xaabbccdd}
+	other := child
+	other.UniqueID++
+	_, err := intent.bindChildren(map[string]childAssociation{"first": child, "second": other}, saStatesFixture("192.0.2.1", "192.0.2.2"))
+	require.ErrorContains(t, err, "multiple CHILD_SAs")
+}

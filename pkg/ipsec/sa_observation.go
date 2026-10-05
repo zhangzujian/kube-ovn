@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"maps"
+	"net"
 	"os/exec"
-	"slices"
 	"time"
 
 	"github.com/vishvananda/netlink"
@@ -75,26 +75,48 @@ func (r *runtimeManager) observeSAs(ctx context.Context, session connectionSessi
 }
 
 func (ledger *saLedger) record(bindings []saBinding) {
+	seen := make(map[saBinding]struct{}, len(ledger.Bindings)+len(bindings))
+	for _, binding := range ledger.Bindings {
+		seen[binding] = struct{}{}
+	}
 	for _, binding := range bindings {
-		if !slices.Contains(ledger.Bindings, binding) {
+		if _, exists := seen[binding]; !exists {
 			ledger.Bindings = append(ledger.Bindings, binding)
+			seen[binding] = struct{}{}
 		}
 	}
 }
 
+type saLookup struct {
+	Source, Destination string
+	SPI                 uint32
+}
+
 func (intent *connectionIntent) bindChildren(children map[string]childAssociation, states []netlink.XfrmState) ([]saBinding, error) {
+	// Index only public lookup fields, keeping duplicate candidates so an
+	// ambiguous SPI is rejected rather than silently overwritten in a map.
+	inventory := make(map[saLookup][]netlink.XfrmState, len(states))
+	for _, state := range states {
+		key := saLookup{Source: state.Src.String(), Destination: state.Dst.String(), SPI: stateSPI(state)}
+		inventory[key] = append(inventory[key], state)
+	}
 	bindings := make([]saBinding, 0, 2*len(children))
-	instances := make(map[saInstance]string)
+	instances := make(map[saInstance]struct{})
 	for _, child := range children {
+		claim := intent.Connections[child.Connection]
 		for _, direction := range []string{"in", "out"} {
-			binding, err := intent.bindChild(child, direction, states)
+			key := saLookup{Source: net.ParseIP(claim.RemoteIP).String(), Destination: net.ParseIP(claim.LocalIP).String(), SPI: child.InboundSPI}
+			if direction == "out" {
+				key.Source, key.Destination, key.SPI = key.Destination, key.Source, child.OutboundSPI
+			}
+			binding, err := intent.bindChild(child, direction, inventory[key])
 			if err != nil {
 				return nil, err
 			}
 			if _, exists := instances[binding.Instance]; exists {
 				return nil, errors.New("multiple CHILD_SAs claim the same kernel instance")
 			}
-			instances[binding.Instance] = child.Connection
+			instances[binding.Instance] = struct{}{}
 			bindings = append(bindings, binding)
 		}
 	}

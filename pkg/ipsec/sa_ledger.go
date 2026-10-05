@@ -156,7 +156,7 @@ type saLedger struct {
 }
 
 func kernelInstance(state netlink.XfrmState) saInstance {
-	instance := saInstance{Source: state.Src.String(), Destination: state.Dst.String(), SPI: uint32(state.Spi), Reqid: uint32(state.Reqid), Protocol: int(state.Proto), Mode: int(state.Mode), InterfaceID: state.Ifid, Added: state.Statistics.AddTime}
+	instance := saInstance{Source: state.Src.String(), Destination: state.Dst.String(), SPI: stateSPI(state), Reqid: uint32(state.Reqid), Protocol: int(state.Proto), Mode: int(state.Mode), InterfaceID: state.Ifid, Added: state.Statistics.AddTime} // #nosec G115 -- reqid is validated against the positive 31-bit lease before persistence.
 	if state.Mark != nil {
 		instance.HasMark, instance.Mark, instance.MarkMask = true, state.Mark.Value, state.Mark.Mask
 	}
@@ -184,9 +184,10 @@ func (intent *connectionIntent) bindChild(child childAssociation, direction stri
 	if direction == "out" {
 		source, destination, spi = claim.LocalIP, claim.RemoteIP, child.OutboundSPI
 	}
+	sourceIP, destinationIP := net.ParseIP(source), net.ParseIP(destination)
 	var matched *saInstance
 	for _, state := range states {
-		if uint32(state.Spi) != spi || !state.Src.Equal(net.ParseIP(source)) || !state.Dst.Equal(net.ParseIP(destination)) {
+		if stateSPI(state) != spi || !state.Src.Equal(sourceIP) || !state.Dst.Equal(destinationIP) {
 			continue
 		}
 		if state.Proto != netlink.XFRM_PROTO_ESP || state.Mode != netlink.XFRM_MODE_TRANSPORT || state.Reqid != int(intent.Reqid) || state.Ifid != 0 || state.Statistics.AddTime == 0 || (state.Encap != nil) != child.UDPEncap {
@@ -214,6 +215,12 @@ func (intent *connectionIntent) bindChild(child childAssociation, direction stri
 		return saBinding{}, errors.New("CHILD_SA kernel instance changed during observation")
 	}
 	return saBinding{Connection: child.Connection, ChildID: child.UniqueID, Direction: direction, Instance: *matched}, nil
+}
+
+func stateSPI(state netlink.XfrmState) uint32 {
+	// Netlink exposes the unsigned 32-bit SPI in an int. On 32-bit systems,
+	// converting it back must preserve the original wire representation.
+	return uint32(state.Spi) // #nosec G115 -- restores an unsigned 32-bit netlink field, not an arithmetic result.
 }
 
 func matchesTransportSelector(selector saSelector, claim connectionClaim, connection, direction string) bool {

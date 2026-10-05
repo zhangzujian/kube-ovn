@@ -207,7 +207,9 @@ for direction in control-plane worker; do
     destination=worker
   fi
   overlay_pod_ip=$(kubectl -n ipsec-overlay get pod "$destination" -o jsonpath='{.status.podIP}')
-  kubectl -n ipsec-overlay exec "$direction" -- "$overlay_ping" -c 20 -W 2 "$overlay_pod_ip"
+  # The image's inetutils ping6 does not implement iputils' -W option.
+  # Bound the whole invocation with the same coreutils timeout for both tools.
+  kubectl -n ipsec-overlay exec "$direction" -- timeout 45 "$overlay_ping" -c 20 "$overlay_pod_ip"
 done
 kubectl -n kube-system exec "$overlay_ovs" -- bash -c '
   kill -INT "$(cat /tmp/ipsec-overlay-capture.pid)"
@@ -303,7 +305,7 @@ if [[ "$overlay_protection" == true ]]; then
   pod_id=$(docker exec "$overlay_control_plane" crictl ps --name '^control-plane$' -q)
   [[ -n "$pod_id" && "$pod_id" != *$'\n'* ]]
   overlay_pod_ip=$(kubectl -n ipsec-overlay get pod worker -o jsonpath='{.status.podIP}')
-  if docker exec "$overlay_control_plane" crictl exec "$pod_id" "$overlay_ping" -c 5 -W 1 "$overlay_pod_ip"; then
+  if docker exec "$overlay_control_plane" crictl exec "$pod_id" timeout 10 "$overlay_ping" -c 5 "$overlay_pod_ip"; then
     echo 'Protected cross-node traffic was delivered with IKE stopped and SB encryption disabled' >&2
     exit 1
   fi
@@ -336,7 +338,7 @@ if [[ "$overlay_protection" == true ]]; then
       done
     done
   done
-  if docker exec "$overlay_control_plane" crictl exec "$pod_id" "$overlay_ping" -c 5 -W 1 "$overlay_pod_ip"; then
+  if docker exec "$overlay_control_plane" crictl exec "$pod_id" timeout 10 "$overlay_ping" -c 5 "$overlay_pod_ip"; then
     echo 'Unsupported flow-based output bypassed the armed protection' >&2
     exit 1
   fi
