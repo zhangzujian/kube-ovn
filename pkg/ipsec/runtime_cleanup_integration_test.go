@@ -74,9 +74,11 @@ func TestCandidateCleanup(t *testing.T) {
 	require.NoError(t, owner.arm())
 	reservation := owner.reservation
 	require.NoError(t, lock.Close())
-	state := Coordination{Version: 1, Generation: "cleanup-generation", Epoch: "cleanup-epoch", Phase: CleanupPhase,
+	state := Coordination{
+		Version: 1, Generation: "cleanup-generation", Epoch: "cleanup-epoch", Phase: CleanupPhase,
 		DaemonSetUID: "cleanup-daemonset", TemplateHash: strings.Repeat("a", 64), TrustHash: strings.Repeat("b", 64),
-		Targets: map[string]string{"cleanup-node": "cleanup-node-uid"}, NBGlobalUUID: uuid.New().String(), SBGlobalUUID: uuid.New().String()}
+		Targets: map[string]string{"cleanup-node": "cleanup-node-uid"}, NBGlobalUUID: uuid.New().String(), SBGlobalUUID: uuid.New().String(),
+	}
 	data, err := json.Marshal(state)
 	require.NoError(t, err)
 	_, err = client.CoreV1().ConfigMaps(config.Namespace).Create(t.Context(), &corev1.ConfigMap{Name: CoordinationConfigMap, Data: map[string]string{"state": string(data)}}, metav1.CreateOptions{})
