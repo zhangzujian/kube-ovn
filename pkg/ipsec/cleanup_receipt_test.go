@@ -29,7 +29,7 @@ func TestCleanupReceiptRejectsForgeryPurposeAndReplay(t *testing.T) {
 	base := CleanupReceipt{
 		Generation: state.Generation, Epoch: state.Epoch, Phase: state.Phase, DaemonSetUID: state.DaemonSetUID, TemplateHash: state.TemplateHash,
 		NBGlobalUUID: state.NBGlobalUUID, SBGlobalUUID: state.SBGlobalUUID, NodeName: "node", NodeUID: "node-uid", PodUID: "pod-uid", CSRName: "binding", CSRUID: "binding-uid",
-		Chassis: "chassis", Lease: "owned-lease", Mark: 42, Reqid: 99, OVSUUID: uuid.New().String(), BootID: uuid.New().String(), Observed: now,
+		Chassis: "chassis", Lease: "owned-lease", Mark: 42, Reqid: 99, OVSUUID: uuid.New().String(), BootID: uuid.New().String(), IdentityCleared: true, Observed: now,
 	}
 	data, err := signCleanupReceipt(base, key)
 	require.NoError(t, err)
@@ -74,6 +74,7 @@ func TestCleanupReceiptRejectsForgeryPurposeAndReplay(t *testing.T) {
 		func(r *CleanupReceipt) { r.Mark = 0 },
 		func(r *CleanupReceipt) { r.Reqid = 1 << 31 },
 		func(r *CleanupReceipt) { r.CSRUID = "" },
+		func(r *CleanupReceipt) { r.IdentityCleared = false },
 	} {
 		r := base
 		change(&r)

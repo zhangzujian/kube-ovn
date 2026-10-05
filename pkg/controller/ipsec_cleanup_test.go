@@ -62,7 +62,7 @@ func TestIPsecCleanupReceiptRequiresCurrentNativePod(t *testing.T) {
 	state := &ipsec.Coordination{Version: 1, Generation: "gen", Epoch: "epoch", Phase: ipsec.CleanupPhase, DaemonSetUID: string(ds.UID), TemplateHash: ipsecPublicHash(template), TrustHash: ipsecPublicHash([]byte("unused trust")), Targets: map[string]string{node.Name: string(node.UID)}, NBGlobalUUID: uuid.New().String(), SBGlobalUUID: uuid.New().String()}
 	claim := ipsec.CleanupReceipt{
 		Generation: state.Generation, Epoch: state.Epoch, Phase: state.Phase, DaemonSetUID: state.DaemonSetUID, TemplateHash: state.TemplateHash, NBGlobalUUID: state.NBGlobalUUID, SBGlobalUUID: state.SBGlobalUUID,
-		NodeName: node.Name, NodeUID: string(node.UID), PodUID: string(pod.UID), CSRName: csr.Name, CSRUID: string(csr.UID), Chassis: "chassis", Lease: "lease", Mark: 42, Reqid: 99, OVSUUID: uuid.New().String(), BootID: uuid.New().String(), Observed: time.Now(),
+		NodeName: node.Name, NodeUID: string(node.UID), PodUID: string(pod.UID), CSRName: csr.Name, CSRUID: string(csr.UID), Chassis: "chassis", Lease: "lease", Mark: 42, Reqid: 99, OVSUUID: uuid.New().String(), BootID: uuid.New().String(), IdentityCleared: true, Observed: time.Now(),
 	}
 	node.Annotations[ipsec.CleanupReceiptAnnotation] = cleanupTestSignature(t, claim, key)
 	verify := func(node *corev1.Node, pod *corev1.Pod, csr *certv1.CertificateSigningRequest) error {

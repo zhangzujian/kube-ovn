@@ -184,6 +184,14 @@ kernel boot identity and local OVS instance. Its independent local attestation
 key uses a purpose-separated signature and a `kubeovn.io/ipsec-cleanup` CSR
 with API-authenticated bound Pod identity. That CSR is never approved or issued;
 cleanup needs neither an encryption identity nor a CA or cert-manager client.
+Before attesting, cleanup removes only a complete content-addressed identity
+triple proven by private generation metadata and the current Node/chassis.
+The native OVSDB transaction compares the live paths, lease, tunnel options
+and bridge membership before removing the three identity keys; unrelated
+configuration, private files and output protection remain intact. A crash
+between OVSDB activation and current.json publication is recoverable through
+generation metadata. Foreign, legacy, incomplete or corrupted evidence blocks
+cleanup. An expired owned certificate does not block removing its reference.
 The node repeats its live drain after the CSR API round trip and refuses a
 changed challenge before publication. The controller verifies all frozen nodes
 against live Pods and binding CSRs; a missing or replaced member blocks progress.

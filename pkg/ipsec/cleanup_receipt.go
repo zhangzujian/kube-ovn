@@ -34,25 +34,26 @@ const (
 // completed disable. The CSR supplies API-authenticated current Pod identity;
 // no CA signature, encryption certificate or runtime acknowledgement is used.
 type CleanupReceipt struct {
-	Generation   string    `json:"generation"`
-	Epoch        string    `json:"epoch"`
-	Phase        string    `json:"phase"`
-	DaemonSetUID string    `json:"daemonSetUID"`
-	TemplateHash string    `json:"templateHash"`
-	NBGlobalUUID string    `json:"nbGlobalUUID"`
-	SBGlobalUUID string    `json:"sbGlobalUUID"`
-	NodeName     string    `json:"nodeName"`
-	NodeUID      string    `json:"nodeUID"`
-	PodUID       string    `json:"podUID"`
-	CSRName      string    `json:"csrName"`
-	CSRUID       string    `json:"csrUID"`
-	Chassis      string    `json:"chassis"`
-	Lease        string    `json:"lease"`
-	OVSUUID      string    `json:"ovsUUID"`
-	BootID       string    `json:"bootID"`
-	Mark         uint32    `json:"mark"`
-	Reqid        uint32    `json:"reqid"`
-	Observed     time.Time `json:"observed"`
+	Generation      string    `json:"generation"`
+	Epoch           string    `json:"epoch"`
+	Phase           string    `json:"phase"`
+	DaemonSetUID    string    `json:"daemonSetUID"`
+	TemplateHash    string    `json:"templateHash"`
+	NBGlobalUUID    string    `json:"nbGlobalUUID"`
+	SBGlobalUUID    string    `json:"sbGlobalUUID"`
+	NodeName        string    `json:"nodeName"`
+	NodeUID         string    `json:"nodeUID"`
+	PodUID          string    `json:"podUID"`
+	CSRName         string    `json:"csrName"`
+	CSRUID          string    `json:"csrUID"`
+	Chassis         string    `json:"chassis"`
+	Lease           string    `json:"lease"`
+	OVSUUID         string    `json:"ovsUUID"`
+	BootID          string    `json:"bootID"`
+	Mark            uint32    `json:"mark"`
+	Reqid           uint32    `json:"reqid"`
+	IdentityCleared bool      `json:"identityCleared"`
+	Observed        time.Time `json:"observed"`
 }
 
 func cleanupReceiptHash(payload []byte) [32]byte {
@@ -94,7 +95,7 @@ func VerifyCleanupReceipt(data []byte, key *rsa.PublicKey, state *Coordination, 
 	if receipt.Generation != state.Generation || receipt.Epoch != state.Epoch || receipt.Phase != state.Phase || receipt.DaemonSetUID != state.DaemonSetUID || receipt.TemplateHash != state.TemplateHash || receipt.NBGlobalUUID != state.NBGlobalUUID || receipt.SBGlobalUUID != state.SBGlobalUUID || receipt.NodeName != nodeName || receipt.NodeUID != nodeUID || nodeUID == "" || state.Targets[nodeName] != nodeUID {
 		return nil, errors.New("IPsec cleanup receipt does not bind the current barrier and node")
 	}
-	if receipt.PodUID == "" || receipt.CSRName == "" || receipt.CSRUID == "" || receipt.Chassis == "" || receipt.Lease == "" || receipt.Mark == 0 || receipt.Reqid == 0 || receipt.Reqid > 1<<31-1 || !ovsdb.IsValidUUID(receipt.OVSUUID) {
+	if !receipt.IdentityCleared || receipt.PodUID == "" || receipt.CSRName == "" || receipt.CSRUID == "" || receipt.Chassis == "" || receipt.Lease == "" || receipt.Mark == 0 || receipt.Reqid == 0 || receipt.Reqid > 1<<31-1 || !ovsdb.IsValidUUID(receipt.OVSUUID) {
 		return nil, errors.New("IPsec cleanup receipt lacks a live protection binding")
 	}
 	boot, err := uuid.Parse(receipt.BootID)

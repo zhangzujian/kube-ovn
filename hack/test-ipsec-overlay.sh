@@ -401,7 +401,10 @@ with open("/proc/self/status") as f:
     status=dict(line.split(":",1) for line in f if ":" in line)
 assert int(status["CapBnd"],16)&(1<<23)==0 and int(status["CapEff"],16)&(1<<23)==0
 assert subprocess.run(["pidof","charon"],stdout=subprocess.DEVNULL).returncode!=0, "cleanup restarted IKE"
-print("Disabled native init sidecar: original lease, guards retained, no IKE or SYS_NICE")' "${cleanup_lease[$node]}"
+database=json.loads(subprocess.check_output(["ovs-vsctl","--timeout=5","--format=json","--columns=other_config","list","Open_vSwitch"],text=True))
+config=dict(database["data"][0][0][1])
+assert all(not config.get(key) for key in ("certificate","private_key","ca_cert")), "cleanup retained identity references"
+print("Disabled native init sidecar: owned identity references cleared, original lease and guards retained, no IKE or SYS_NICE")' "${cleanup_lease[$node]}"
     ovs_pod=$(kubectl -n kube-system get pod -l app=ovs --field-selector "spec.nodeName=$node" -o name)
     kubectl -n kube-system exec "$ovs_pod" -- bash -c '
       set -euo pipefail

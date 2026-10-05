@@ -21,6 +21,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
+
+	"github.com/kubeovn/kube-ovn/pkg/ovs"
 )
 
 func TestCandidateCleanup(t *testing.T) {
@@ -85,6 +87,21 @@ func TestCandidateCleanup(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, owner.arm())
 	reservation := owner.reservation
+	keyPEM, err := newPrivateKey()
+	require.NoError(t, err)
+	source := &generation{ID: digest(keyPEM), NodeName: config.NodeName, Namespace: config.Namespace, NodeUID: reservation.NodeUID, Chassis: "fixture-chassis"}
+	database, err := ovs.NewCNIVswitchClient("unix:" + config.OVSSocket)
+	require.NoError(t, err)
+	row, err := database.IPsecConfiguration()
+	require.NoError(t, err)
+	source.Chassis = row.ExternalIDs["system-id"]
+	require.NoError(t, storage.write(source, "private-key", keyPEM))
+	require.NoError(t, storage.write(source, "certificate", []byte("expired owned identity")))
+	g, err := storage.prepareGeneration(source, []byte("committed public trust"))
+	require.NoError(t, err)
+	identityPaths := map[string]string{"certificate": storage.path(g, "certificate"), "private_key": storage.path(g, "private-key"), "ca_cert": storage.path(g, "ca-bundle")}
+	require.NoError(t, database.SetIPsecConfiguration(row.UUID, identityPaths))
+	database.Close()
 	require.NoError(t, lock.Close())
 	state := Coordination{
 		Version: 1, Generation: "cleanup-generation", Epoch: "cleanup-epoch", Phase: CleanupPhase,
@@ -101,8 +118,13 @@ func TestCandidateCleanup(t *testing.T) {
 	require.True(t, a.Status().ProtectionArmed)
 	require.False(t, a.runtime.enabled.Load())
 	require.NoError(t, checkIKEPorts())
-	row, err := a.ovs.IPsecDatapathConfiguration()
+	row, err = a.ovs.IPsecDatapathConfiguration()
 	require.NoError(t, err)
+	for key, path := range identityPaths {
+		require.Empty(t, row.OtherConfig[key], "guarded cleanup must remove its owned database reference")
+		_, err := os.Stat(path)
+		require.NoError(t, err, "this stage must preserve private evidence and committed files")
+	}
 	require.NoError(t, CheckProtection(t.Context(), dir, row.UUID), "the disabled helper must unblock protected OVS startup")
 	actual, err := storage.loadProtection("cleanup-node-uid")
 	require.NoError(t, err)
@@ -117,7 +139,7 @@ func TestCandidateCleanup(t *testing.T) {
 	require.Empty(t, requests.Items[0].Status.Certificate)
 	node, err := client.CoreV1().Nodes().Get(t.Context(), config.NodeName, metav1.GetOptions{})
 	require.NoError(t, err)
-	keyPEM, err := storage.cleanupKey(reservation)
+	keyPEM, err = storage.cleanupKey(reservation)
 	require.NoError(t, err)
 	key, err := privateKey(keyPEM)
 	require.NoError(t, err)

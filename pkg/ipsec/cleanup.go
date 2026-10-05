@@ -181,10 +181,36 @@ func (a *Agent) observeCleanup(state *Coordination) (CleanupReceipt, error) {
 	if err != nil {
 		return CleanupReceipt{}, err
 	}
+	paths, err := a.store.cleanupIdentity(row.OtherConfig, a.config.NodeName, a.config.Namespace, lease.NodeUID, lease.Chassis)
+	if err != nil {
+		return CleanupReceipt{}, err
+	}
+	if err := p.ovs.ClearIPsecIdentity(lease, paths); err != nil {
+		return CleanupReceipt{}, err
+	}
+	row, err = p.ovs.IPsecDatapathConfiguration()
+	if err != nil {
+		return CleanupReceipt{}, err
+	}
+	for _, key := range []string{"certificate", "private_key", "ca_cert"} {
+		if row.OtherConfig[key] != "" {
+			return CleanupReceipt{}, errors.New("IPsec cleanup identity removal did not converge")
+		}
+	}
+	if err := p.ovs.VerifyIPsecTunnelQuiescence(lease); err != nil {
+		return CleanupReceipt{}, err
+	}
+	finalBootID, err := a.store.liveDrainInventory(p.owner.reservation, p.owner.kernel)
+	if err != nil {
+		return CleanupReceipt{}, err
+	}
+	if finalBootID != bootID {
+		return CleanupReceipt{}, errors.New("IPsec cleanup kernel boot changed during identity removal")
+	}
 	return CleanupReceipt{
 		Generation: state.Generation, Epoch: state.Epoch, Phase: state.Phase, DaemonSetUID: state.DaemonSetUID, TemplateHash: state.TemplateHash,
 		NBGlobalUUID: state.NBGlobalUUID, SBGlobalUUID: state.SBGlobalUUID,
 		NodeName: a.config.NodeName, NodeUID: lease.NodeUID, PodUID: a.config.PodUID, Chassis: lease.Chassis,
-		Lease: lease.Lease, Mark: lease.Mark, Reqid: lease.Reqid, OVSUUID: lease.OVSUUID, BootID: bootID,
+		Lease: lease.Lease, Mark: lease.Mark, Reqid: lease.Reqid, OVSUUID: lease.OVSUUID, BootID: bootID, IdentityCleared: true,
 	}, nil
 }

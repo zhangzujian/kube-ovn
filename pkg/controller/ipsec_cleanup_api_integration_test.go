@@ -108,7 +108,7 @@ func TestIPsecAPIServerCleanupBinding(t *testing.T) {
 	state := &ipsec.Coordination{Version: 1, Generation: "cleanup-api", Epoch: "cleanup-epoch", Phase: ipsec.CleanupPhase, DaemonSetUID: string(ds.UID), TemplateHash: ipsecPublicHash(template), TrustHash: ipsecPublicHash([]byte("unused trust")), Targets: map[string]string{node.Name: string(node.UID)}, NBGlobalUUID: uuid.New().String(), SBGlobalUUID: uuid.New().String()}
 	claim := ipsec.CleanupReceipt{
 		Generation: state.Generation, Epoch: state.Epoch, Phase: state.Phase, DaemonSetUID: state.DaemonSetUID, TemplateHash: state.TemplateHash, NBGlobalUUID: state.NBGlobalUUID, SBGlobalUUID: state.SBGlobalUUID,
-		NodeName: node.Name, NodeUID: string(node.UID), PodUID: string(pod.UID), CSRName: csr.Name, CSRUID: string(csr.UID), Chassis: chassis, Lease: "cleanup-api-lease", Mark: 42, Reqid: 99, OVSUUID: uuid.New().String(), BootID: uuid.New().String(), Observed: time.Now(),
+		NodeName: node.Name, NodeUID: string(node.UID), PodUID: string(pod.UID), CSRName: csr.Name, CSRUID: string(csr.UID), Chassis: chassis, Lease: "cleanup-api-lease", Mark: 42, Reqid: 99, OVSUUID: uuid.New().String(), BootID: uuid.New().String(), IdentityCleared: true, Observed: time.Now(),
 	}
 	node.Annotations[ipsec.CleanupReceiptAnnotation] = cleanupTestSignature(t, claim, key)
 	require.NoError(t, verifyIPsecCleanupReceipt(node, ds, state, map[string]*corev1.Pod{pod.Name: pod}, map[string]*certv1.CertificateSigningRequest{csr.Name: csr}))

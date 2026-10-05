@@ -37,7 +37,7 @@ type ipsecProtectionSnapshot struct {
 
 func (c *VswitchClient) ipsecProtectionSnapshot() (*ipsecProtectionSnapshot, error) {
 	tables := []string{vswitch.OpenvSwitchTable, vswitch.PortTable, vswitch.InterfaceTable, vswitch.BridgeTable}
-	columns := [][]string{{"_uuid", "external_ids", "bridges"}, {"_uuid", "interfaces", "external_ids"}, {"_uuid", "type", "options"}, {"_uuid", "ports"}}
+	columns := [][]string{{"_uuid", "external_ids", "other_config", "bridges"}, {"_uuid", "interfaces", "external_ids"}, {"_uuid", "type", "options"}, {"_uuid", "ports"}}
 	ops := make([]ovsdb.Operation, len(tables))
 	for i, table := range tables {
 		ops[i] = selectVswitch(table, nil)
@@ -170,6 +170,10 @@ func (c *VswitchClient) VerifyIPsecTunnelQuiescence(p IPsecProtection) error {
 	if err != nil {
 		return err
 	}
+	return snapshot.verifyTunnelQuiescence(p)
+}
+
+func (snapshot *ipsecProtectionSnapshot) verifyTunnelQuiescence(p IPsecProtection) error {
 	owned, err := snapshot.tunnelOptions(p, true)
 	if err != nil {
 		return err
@@ -185,4 +189,37 @@ func (c *VswitchClient) VerifyIPsecTunnelQuiescence(p IPsecProtection) error {
 		}
 	}
 	return nil
+}
+
+// ClearIPsecIdentity removes exactly one proven identity triple while retaining
+// the output lease and guards. A changed database, tunnel or path aborts the
+// transaction. Callers must stop their runtime and establish live kernel drain
+// first; an identity path alone does not authorize disable or guard withdrawal.
+func (c *VswitchClient) ClearIPsecIdentity(p IPsecProtection, paths map[string]string) error {
+	snapshot, err := c.ipsecProtectionSnapshot()
+	if err != nil {
+		return err
+	}
+	if err := snapshot.verifyTunnelQuiescence(p); err != nil {
+		return err
+	}
+	keys := []string{"certificate", "private_key", "ca_cert"}
+	populated := 0
+	for _, key := range keys {
+		if paths[key] != "" {
+			populated++
+		}
+		if snapshot.root.OtherConfig[key] != paths[key] {
+			return errors.New("IPsec cleanup identity changed before its guarded removal")
+		}
+	}
+	if populated == 0 {
+		return nil // Repeat after an already committed removal.
+	}
+	if populated != len(keys) {
+		return errors.New("IPsec cleanup requires a complete identity triple")
+	}
+	ops := append(snapshot.guards, cniMapPatch(vswitch.OpenvSwitchTable, snapshot.root.UUID, "other_config", nil, keys))
+	_, err = c.transactVswitchOperations(ops)
+	return err
 }

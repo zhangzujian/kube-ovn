@@ -178,3 +178,51 @@ func TestIPsecDisableTunnelConvergence(t *testing.T) {
 		})
 	}
 }
+
+func TestIPsecCleanupIdentityPreservesProtectionAndForeignFields(t *testing.T) {
+	c, lease, iface := protectionFixture(t)
+	require.NoError(t, c.PublishIPsecProtection(lease))
+	paths := map[string]string{"certificate": "owned-cert", "private_key": "owned-key", "ca_cert": "owned-ca"}
+	row, err := c.IPsecConfiguration()
+	require.NoError(t, err)
+	lease.OVSUUID = row.UUID
+	require.NoError(t, c.SetIPsecConfiguration(row.UUID, paths))
+	require.NoError(t, c.patchCNIMap(vswitch.OpenvSwitchTable, row.UUID, "other_config", map[string]string{"other-module": "preserve"}, nil))
+	require.Error(t, c.ClearIPsecIdentity(lease, paths), "a live encrypted peer must block removal")
+	require.NoError(t, c.patchCNIMap(vswitch.InterfaceTable, iface.UUID, "options", nil, []string{"remote_name", "ipsec_mark_out", "ipsec_reqid"}))
+	wrong := lease
+	wrong.Lease = "replacement"
+	require.Error(t, c.ClearIPsecIdentity(wrong, paths))
+	wrong = lease
+	wrong.OVSUUID = "75980000-0000-0000-0000-000000000099"
+	require.Error(t, c.ClearIPsecIdentity(wrong, paths))
+	require.NoError(t, c.patchCNIMap(vswitch.OpenvSwitchTable, row.UUID, "other_config", map[string]string{"certificate": "foreign"}, nil))
+	require.ErrorContains(t, c.ClearIPsecIdentity(lease, paths), "identity changed")
+	got, err := c.IPsecConfiguration()
+	require.NoError(t, err)
+	require.Equal(t, "foreign", got.OtherConfig["certificate"])
+	require.NoError(t, c.SetIPsecConfiguration(row.UUID, paths))
+	// An intervening writer must invalidate the same transaction snapshot that
+	// protects tunnels; otherwise old evidence could erase a replacement path.
+	snapshot, err := c.ipsecProtectionSnapshot()
+	require.NoError(t, err)
+	require.NoError(t, c.patchCNIMap(vswitch.OpenvSwitchTable, row.UUID, "other_config", map[string]string{"certificate": "concurrent"}, nil))
+	_, err = c.transactVswitchOperations(append(snapshot.guards, cniMapPatch(vswitch.OpenvSwitchTable, row.UUID, "other_config", nil, []string{"certificate", "private_key", "ca_cert"})))
+	require.Error(t, err)
+	got, err = c.IPsecConfiguration()
+	require.NoError(t, err)
+	require.Equal(t, "concurrent", got.OtherConfig["certificate"])
+	require.NoError(t, c.SetIPsecConfiguration(row.UUID, paths))
+	require.NoError(t, c.ClearIPsecIdentity(lease, paths))
+	require.NoError(t, c.ClearIPsecIdentity(lease, nil), "recovery after commit must be idempotent")
+	require.NoError(t, c.VerifyIPsecProtection(lease))
+	got, err = c.IPsecConfiguration()
+	require.NoError(t, err)
+	require.Equal(t, "preserve", got.OtherConfig["other-module"])
+	for key := range paths {
+		require.NotContains(t, got.OtherConfig, key)
+	}
+	tunnel, err := c.CNIInterface(iface.Name)
+	require.NoError(t, err)
+	require.Equal(t, "759815", tunnel.Options["egress_pkt_mark"], "identity removal cannot withdraw protection")
+}
