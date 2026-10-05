@@ -25,7 +25,7 @@ func TestCandidateDrainInventory(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, lock.Close()) })
 	kernel, err := netlink.NewHandle(unix.NETLINK_XFRM)
 	require.NoError(t, err)
-	t.Cleanup(kernel.Close)
+	t.Cleanup(func() { require.NoError(t, kernel.Close()) })
 	require.NoError(t, kernel.SetSocketTimeout(3*time.Second))
 	owner, err := prepareProtection(storage, "drain-node-uid", kernel)
 	require.NoError(t, err)

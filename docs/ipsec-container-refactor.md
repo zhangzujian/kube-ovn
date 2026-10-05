@@ -70,6 +70,17 @@ kernel lifetime granularity, later tuple reuse, unobserved installs and the
 coordination cleanup protocol must still be handled before orphan deletion is
 safe. This draft does not yet delete kernel SAs based on the ledger.
 
+After stopping both process groups of a supervised pair, the runtime checks the
+live kernel before recording a private `drain.json` observation. Both unchanged
+guards must remain installed. Remaining SAs or policies using the lease's reqid
+or an overlapping mark block the observation, including installations missed
+by periodic IKE snapshots. A current-boot historical endpoint/SPI collision also
+blocks completion even when AddTime or key material has changed. A previous
+boot's tuple cannot identify the new kernel; live lease conflicts still count.
+These checks never delete an SA or policy. Disjoint foreign resources remain
+untouched. The observation is historical evidence, not a cleanup receipt or
+authorization to remove protection: coordinated disable must repeat live checks.
+
 The strongSwan status parser also matches complete connection suffixes. Its
 previous greedy interface match could classify `ovn-peer-in-3{11}` as interface
 `ovn-peer-in`, causing a currently configured child to be treated as obsolete.
@@ -235,6 +246,13 @@ Chassis cache. This is global convergence evidence only: node cleanup still
 needs current challenge/UUID checks, local tunnel convergence, proven connection
 and SA ownership, and a completed Disabled receipt. Those operations and the
 cleanup init container remain incomplete in this draft.
+
+The node now separately checks local OVSDB tunnel convergence during `Cleanup`:
+the same lease/output marks must remain published, while every OVN-owned tunnel
+has lost `remote_name`, `ipsec_mark_out`, and `ipsec_reqid`. A fresh synchronous
+snapshot rejects a changed OVS identity, delayed local updates, or a new peer;
+foreign encrypted interfaces are preserved. This read-only preflight neither
+issues a Disabled receipt nor withdraws the output lease or kernel guards.
 
 The agent signs public status claims with its existing node identity key and
 references a CSR authenticated as its current bound Pod. This also binds a
