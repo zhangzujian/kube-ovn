@@ -27,6 +27,29 @@ overlay_created=false
 diagnose() {
   kubectl get pods -A -o wide || true
   kubectl get events -A --sort-by=.lastTimestamp | tail -60 || true
+  # Coordination objects and these fields contain only public state. Do not
+  # print Secrets, certificate requests or complete XFRM state/SA keys.
+  kubectl -n kube-system get configmap ovn-ipsec-coordination -o jsonpath='{.data.state}' || true
+  kubectl get nodes -o json | python3 -c '
+import base64,json,sys
+for node in json.load(sys.stdin)["items"]:
+    raw=node["metadata"].get("annotations",{}).get("kube-ovn.io/ipsec-receipt")
+    if not raw:
+        print(node["metadata"]["name"], "no IPsec receipt")
+        continue
+    try:
+        claim=json.loads(base64.b64decode(json.loads(raw)["payload"]))
+        status=claim["status"]
+        print(node["metadata"]["name"], claim["phase"], claim["observed"],
+              {key:status.get(key) for key in ("phase","reason","runtimeHealthy","configurationApplied","protectionArmed")})
+    except (ValueError,KeyError,TypeError):
+        print(node["metadata"]["name"], "invalid IPsec receipt envelope")
+' || true
+  while read -r central; do
+    [[ -n "$central" ]] || continue
+    kubectl -n kube-system exec "$central" -- ovn-nbctl get NB_Global . ipsec || true
+    kubectl -n kube-system exec "$central" -- ovn-sbctl get SB_Global . ipsec || true
+  done < <(kubectl -n kube-system get pods -l app=ovn-central -o name)
   for component in ovs kube-ovn-controller kube-ovn-cni; do
     while read -r pod; do
       [[ -n "$pod" ]] || continue
