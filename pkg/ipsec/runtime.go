@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 	"k8s.io/klog/v2"
 
@@ -208,6 +209,14 @@ func (r *runtimeManager) runPair(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	kernel, err := netlink.NewHandle(unix.NETLINK_XFRM)
+	if err != nil {
+		return err
+	}
+	defer kernel.Close()
+	if err := kernel.SetSocketTimeout(3 * time.Second); err != nil {
+		return err
+	}
 	starter, err := r.startChild("/usr/sbin/ipsec", "start", "--nofork")
 	if err != nil {
 		return err
@@ -234,6 +243,7 @@ func (r *runtimeManager) runPair(ctx context.Context) error {
 	monitor, err := r.startChild("/usr/share/openvswitch/scripts/ovs-monitor-ipsec", "unix:"+r.ovsSocket,
 		"--ike-daemon=strongswan", "--no-restart-ike-daemon", "--ovn-owned-only", "--pidfile="+filepath.Join(r.dir, "monitor.pid"),
 		"--connection-prefix="+session.Prefix, "--connection-owner-node-uid="+session.NodeUID,
+		"--connection-owner-boot-id="+session.BootID,
 		"--connection-owner-lease="+session.Lease, "--connection-intent="+session.intentPath(r.store),
 		"--connection-owner-mark="+strconv.FormatUint(uint64(session.Mark), 10),
 		"--connection-owner-reqid="+strconv.FormatUint(uint64(session.Reqid), 10))
@@ -257,6 +267,13 @@ func (r *runtimeManager) runPair(ctx context.Context) error {
 			// A responsive process can still be using the previous OVSDB
 			// generation. Wait for its safe public-content acknowledgement.
 			r.confirmIdentity(ctx)
+			if r.applied.Load() {
+				if err := r.observeSAs(ctx, *session, kernel); err != nil && ctx.Err() == nil {
+					// Missing ownership evidence must prevent later cleanup. It
+					// does not justify stopping an otherwise protected runtime.
+					klog.ErrorS(err, "IPsec SA ownership snapshot unavailable")
+				}
+			}
 		} else if r.healthy.Load() || startupCtx.Err() != nil {
 			return fmt.Errorf("IPsec runtime health check failed: %w", err)
 		}

@@ -24,6 +24,7 @@ def patch(path):
         self.connection_intent_file = args.connection_intent
         self.connection_intent = {}
         self.connection_owner = {"version": 1,
+                                 "bootID": args.connection_owner_boot_id,
                                  "nodeUID": args.connection_owner_node_uid,
                                  "lease": args.connection_owner_lease,
                                  "mark": args.connection_owner_mark,
@@ -82,6 +83,7 @@ def unixctl_refresh(conn, unused_argv, unused_aux):
     parser.add_argument("--connection-prefix", default="")
     parser.add_argument("--connection-intent")
     parser.add_argument("--connection-owner-node-uid")
+    parser.add_argument("--connection-owner-boot-id")
     parser.add_argument("--connection-owner-lease")
     parser.add_argument("--connection-owner-mark", type=int, default=0)
     parser.add_argument("--connection-owner-reqid", type=int, default=0)
@@ -92,6 +94,7 @@ def unixctl_refresh(conn, unused_argv, unused_aux):
         if (args.ike_daemon != "strongswan"
                 or not re.fullmatch(r"ko[A-Za-z0-9]{20,64}-", args.connection_prefix)
                 or not args.connection_intent or not args.connection_owner_node_uid
+                or not args.connection_owner_boot_id
                 or not args.connection_owner_lease
                 or not 0 < args.connection_owner_mark < (1 << 32)
                 or not 0 < args.connection_owner_reqid < (1 << 31)):

@@ -54,9 +54,21 @@ underlay addresses, tunnel type, reqid and output mark before configuration is
 loaded. Older sessions and obsolete versions remain recorded, so a restart
 cannot silently reuse names or overwrite earlier evidence. The monitor refuses
 connection selectors from a different lease. These files contain no PEM,
-private-key paths, PSKs or SA keys. Intent alone still cannot authorize an
-orphaned SA deletion: the connection-to-SPI/kernel-lifetime evidence and cleanup
-operations remain incomplete.
+private-key paths, PSKs or SA keys. Intent alone cannot authorize an orphaned SA
+deletion.
+
+The supervisor also records a private `sa-ledger.json` per runtime session.
+It brackets a kernel snapshot with two private IKE status reads and accepts
+only unchanged installed CHILD_SA names with durable intent. Both SPIs must
+match exact kernel endpoints, ESP transport mode, reqid, output mark and UDP
+selectors. The ledger contains explicit public metadata, including host boot
+identity, kernel installation time and NAT-T encapsulation; it never embeds or
+serializes a netlink `XfrmState`, which contains SA keys. Rekeyed/retired
+instances remain recorded. A conflicting, ambiguous or unsupported observation
+produces no new binding. These observations are not a deletion transaction:
+kernel lifetime granularity, later tuple reuse, unobserved installs and the
+coordination cleanup protocol must still be handled before orphan deletion is
+safe. This draft does not yet delete kernel SAs based on the ledger.
 
 The strongSwan status parser also matches complete connection suffixes. Its
 previous greedy interface match could classify `ovn-peer-in-3{11}` as interface

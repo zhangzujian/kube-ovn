@@ -7,6 +7,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json/v2"
 	"encoding/pem"
 	"fmt"
 	"math/big"
@@ -213,6 +214,29 @@ func TestCandidateEncryptedTraffic(t *testing.T) {
 		return count
 	}
 	require.GreaterOrEqual(t, stateCount(), 2, "the real monitor must preserve an explicit connection reqid in both directions")
+	require.EventuallyWithT(t, func(collect *assert.CollectT) {
+		paths, err := filepath.Glob(filepath.Join(a.store.dir, "connections", "*", "sa-ledger.json"))
+		require.NoError(collect, err)
+		observed := 0
+		for _, path := range paths {
+			data, err := readRegularFile(path)
+			require.NoError(collect, err)
+			var ledger saLedger
+			require.NoError(collect, json.Unmarshal(data, &ledger))
+			require.Equal(collect, lease.NodeUID, ledger.NodeUID)
+			require.Equal(collect, lease.Lease, ledger.Lease)
+			require.Equal(collect, lease.Mark, ledger.Mark)
+			require.Equal(collect, lease.Reqid, ledger.Reqid)
+			require.NotEmpty(collect, ledger.BootID)
+			for _, binding := range ledger.Bindings {
+				require.Equal(collect, lease.Reqid, binding.Instance.Reqid)
+				require.NotZero(collect, binding.Instance.SPI)
+				require.NotZero(collect, binding.Instance.Added)
+				observed++
+			}
+		}
+		require.GreaterOrEqual(collect, observed, 2, "the actual IKE SPIs must bind to durable kernel instance evidence")
+	}, 30*time.Second, 200*time.Millisecond)
 	require.NoError(t, os.WriteFile("/fixtures/traffic-complete", nil, 0o600))
 	// Keep both peers alive until the harness has collected both outcomes.
 	for {

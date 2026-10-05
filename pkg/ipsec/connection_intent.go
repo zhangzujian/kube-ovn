@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/kubeovn/kube-ovn/pkg/fileutil"
 )
@@ -20,6 +21,7 @@ type connectionSession struct {
 	Prefix  string `json:"prefix"`
 	Mark    uint32 `json:"mark"`
 	Reqid   uint32 `json:"reqid"`
+	BootID  string `json:"bootID"`
 }
 
 func (s connectionSession) intentPath(owner store) string {
@@ -40,7 +42,11 @@ func (r *runtimeManager) prepareConnectionSession() (*connectionSession, error) 
 	if lease == nil || !lease.Required || lease.Indexes[0] == 0 || lease.Indexes[1] == 0 {
 		return nil, errors.New("IPsec connection intent requires the armed protection lease")
 	}
-	session := &connectionSession{Version: 1, NodeUID: nodeUID, Lease: lease.Lease, Prefix: "ko" + rand.Text() + "-", Mark: lease.Mark, Reqid: lease.Reqid}
+	bootID, err := os.ReadFile("/proc/sys/kernel/random/boot_id")
+	if err != nil {
+		return nil, err
+	}
+	session := &connectionSession{Version: 1, NodeUID: nodeUID, Lease: lease.Lease, Prefix: "ko" + rand.Text() + "-", Mark: lease.Mark, Reqid: lease.Reqid, BootID: strings.TrimSpace(string(bootID))}
 	path := session.intentPath(r.store)
 	if err := secureDirectory(filepath.Join(r.store.dir, "connections")); err != nil {
 		return nil, err
