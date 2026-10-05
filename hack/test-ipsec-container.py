@@ -42,6 +42,29 @@ def validate(text, enabled, debug=False):
         assert "chmod 0750 /run/kube-ovn-ipsec-protection" in "\n".join(init["command"])
         assert any(item["name"] == "ipsec-protection" for item in init["volumeMounts"])
     assert ("ipsec" in containers) == enabled
+
+    cleanup = [item for item in pod["initContainers"] if item["name"] == "ipsec-cleanup"]
+    assert bool(cleanup) == (not enabled)
+    assert any(item["name"] == "ovs-ipsec-keys" for item in pod["volumes"])
+    if cleanup:
+        agent = cleanup[0]
+        assert agent["restartPolicy"] == "Always"
+        assert agent["image"] == daemon["image"]
+        assert agent["command"] == ["/kube-ovn/kube-ovn-ipsec"]
+        assert agent["args"] == ["--cleanup-only"]
+        assert "startupProbe" not in agent and "readinessProbe" not in agent
+        security = agent["securityContext"]
+        assert security["runAsUser"] == 0
+        assert security["runAsGroup"] == (0 if debug else 65534)
+        assert security["privileged"] is False
+        assert security["allowPrivilegeEscalation"] is False
+        assert security["capabilities"] == {"drop": ["ALL"], "add": ["NET_ADMIN", "NET_BIND_SERVICE"]}
+        mounts = {item["name"]: item for item in agent["volumeMounts"]}
+        assert set(mounts) == {"ovs-ipsec-keys", "host-run-ovs", "ipsec-protection"}
+        assert mounts["host-run-ovs"]["readOnly"] is True
+        env = {item["name"]: item for item in agent["env"]}
+        assert env["POD_UID"]["valueFrom"]["fieldRef"]["fieldPath"] == "metadata.uid"
+        assert agent["livenessProbe"]["exec"]["command"] == ["/kube-ovn/kube-ovn-ipsec", "--check=livez"]
     if enabled:
         ipsec = containers["ipsec"]
         assert ipsec["image"] == daemon["image"]

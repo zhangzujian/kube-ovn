@@ -165,6 +165,21 @@ Local probes use the private status socket with `--check=livez` or
 health; API outages do not directly fail liveness. An IPsec readiness failure
 still makes the whole Pod unready, although its CNI container is not restarted.
 
+With the feature disabled, both Charts and the installer keep a restartable
+`ipsec-cleanup` init sidecar and the persistent key/protection directories. Native
+sidecars require Kubernetes >= 1.29, already the Charts' minimum. It has only
+`NET_ADMIN` and `NET_BIND_SERVICE`, with no `SYS_NICE`. It runs concurrently with
+OVS, without a startup or readiness barrier that could deadlock registration or
+the zero-surge cohort rollout. It never starts IKE/monitor, issues certificates,
+reads a CA, imports a legacy identity, or allocates a fresh lease. A fresh disabled
+installation creates no required intent. Existing Node-UID-bound reservations
+are restored under the owner lock and can serve the live OVS startup gate before
+the controller's Cleanup barrier is available. Lost ownership evidence, replaced
+nodes and foreign IKE owners fail closed. Cleanup then checks the live controller
+challenge, local tunnel convergence and kernel drain while retaining protection.
+`CleanupDrained` is a local preflight status, not a signed cleanup receipt or a
+Disabled completion. Withdrawal and controller completion remain unimplemented.
+
 Before the trust informer synchronizes, cold startup may restore the last
 committed generation. Recovery requires the same Node name, namespace and local
 OVS chassis, a recorded Node UID, intact content digest, matching key/certificate
@@ -245,7 +260,7 @@ cleanup challenge. The SB read adds no monitor and cannot purge the existing
 Chassis cache. This is global convergence evidence only: node cleanup still
 needs current challenge/UUID checks, local tunnel convergence, proven connection
 and SA ownership, and a completed Disabled receipt. Those operations and the
-cleanup init container remain incomplete in this draft.
+protection withdrawal and Disabled completion remain incomplete in this draft.
 
 The node now separately checks local OVSDB tunnel convergence during `Cleanup`:
 the same lease/output marks must remain published, while every OVN-owned tunnel

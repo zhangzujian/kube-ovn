@@ -75,6 +75,56 @@ spec:
             readOnly: false
           - name: kube-ovn-log
             mountPath: /var/log/kube-ovn
+      {{- if not .Values.func.ENABLE_OVN_IPSEC }}
+      - name: ipsec-cleanup
+        image: {{ .Values.global.registry.address }}/{{ .Values.global.images.kubeovn.repository }}:{{ .Values.global.images.kubeovn.tag }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        command:
+          - /kube-ovn/kube-ovn-ipsec
+        restartPolicy: Always
+        args:
+          - --cleanup-only
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 65534
+          privileged: false
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+            add:
+              - NET_ADMIN
+              - NET_BIND_SERVICE
+        env:
+          - name: NODE_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+          - name: POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          - name: POD_UID
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.uid
+        volumeMounts:
+          - name: ipsec-protection
+            mountPath: /run/kube-ovn-ipsec-protection
+          - name: ovs-ipsec-keys
+            mountPath: /etc/ovs_ipsec_keys
+          - name: host-run-ovs
+            mountPath: /run/openvswitch
+            readOnly: true
+        livenessProbe:
+          exec:
+            command: [/kube-ovn/kube-ovn-ipsec, --check=livez]
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 3
+        resources:
+          {{- toYaml .Values.ipsec.resources | nindent 10 }}
+      {{- end }}
       - name: install-cni
         image: {{ .Values.global.registry.address }}/{{ .Values.global.images.kubeovn.repository }}:{{ .Values.global.images.kubeovn.tag }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
@@ -419,11 +469,9 @@ spec:
           hostPath:
             path: {{ .Values.cni_conf.LOCAL_BIN_DIR }}
         {{- end }}
-        {{- if .Values.func.ENABLE_OVN_IPSEC }}
         - name: ovs-ipsec-keys
           hostPath:
             path: {{ .Values.OVN_IPSEC_KEY_DIR }}
             type: DirectoryOrCreate
-        {{- end }}
 
 {{- end }}

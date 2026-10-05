@@ -7,6 +7,7 @@ set -euo pipefail
 # Capture the actual underlay interface, not the decrypted pod interface.
 overlay_image=${1:?candidate image is required}
 overlay_protection=${IPSEC_PROTECTION_FAILURES:-false}
+overlay_cleanup=${IPSEC_CLEANUP_STARTUP:-false}
 overlay_family=${IPSEC_OVERLAY_FAMILY:-IPv4}
 overlay_tunnel=${IPSEC_OVERLAY_TUNNEL:-geneve}
 case "$overlay_family" in
@@ -56,6 +57,7 @@ for node in json.load(sys.stdin)["items"]:
       if [[ "$component" == kube-ovn-cni ]]; then
         kubectl -n kube-system logs "$pod" -c cni-server --tail=80 || true
         kubectl -n kube-system logs "$pod" -c ipsec --tail=80 || true
+        kubectl -n kube-system logs "$pod" -c ipsec-cleanup --tail=80 || true
       else
         kubectl -n kube-system logs "$pod" --tail=80 || true
       fi
@@ -347,4 +349,64 @@ if [[ "$overlay_protection" == true ]]; then
   protected_plaintext=$(docker exec "$overlay_control_plane" crictl exec "$ovs_id" bash -o pipefail -c 'tcpdump -Z root -n -r /tmp/ipsec-protected.pcap | wc -l')
   echo "OVN $overlay_family $overlay_tunnel retained-mark protection after IKE stop/SB disable: plaintext transport packets=$protected_plaintext"
   [[ "$protected_plaintext" == 0 ]]
+fi
+
+if [[ "$overlay_cleanup" == true ]]; then
+  [[ "$overlay_protection" == false ]]
+  declare -A cleanup_lease
+  for node in "$overlay_control_plane" "$overlay_worker"; do
+    cni_pod=$(kubectl -n kube-system get pod -l app=kube-ovn-cni --field-selector "spec.nodeName=$node" -o name)
+    cleanup_lease[$node]=$(kubectl -n kube-system exec "$cni_pod" -c ipsec -- python3 -c '
+import json
+with open("/etc/ovs_ipsec_keys/protection.json") as f:
+    lease=json.load(f)
+print(lease["lease"],lease["mark"],lease["reqid"])')
+  done
+  # Exercise the real disabled template and restart both DaemonSets. The native
+  # init sidecar must allow OVS to progress without restarting IKE or signing.
+  helm upgrade kube-ovn charts/kube-ovn-v2 --namespace kube-system --reuse-values \
+    --set features.enableOvnIpsec=false
+  kubectl -n kube-system rollout status deployment/kube-ovn-controller --timeout=240s
+  kubectl -n kube-system rollout status daemonset/kube-ovn-cni --timeout=300s
+  kubectl -n kube-system rollout status daemonset/ovs-ovn --timeout=300s
+  for node in "$overlay_control_plane" "$overlay_worker"; do
+    cni_pod=$(kubectl -n kube-system get pod -l app=kube-ovn-cni --field-selector "spec.nodeName=$node" -o name)
+    for attempt in {1..60}; do
+      if kubectl -n kube-system exec "$cni_pod" -c ipsec-cleanup -- python3 -c '
+import http.client,json,socket,sys
+connection=http.client.HTTPConnection("localhost",timeout=3)
+connection.sock=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
+connection.sock.settimeout(3)
+connection.sock.connect("/run/kube-ovn-ipsec/status.sock")
+connection.request("GET","/status")
+response=connection.getresponse()
+status=json.load(response)
+connection.close()
+sys.exit(response.status!=200 or status["phase"]!="CleanupDrained" or not status["protectionArmed"] or status["runtimeHealthy"])'; then
+        break
+      fi
+      if [[ "$attempt" == 60 ]]; then
+        echo 'Disabled init sidecar did not reach live guarded cleanup preflight' >&2
+        exit 1
+      fi
+      sleep 2
+    done
+    kubectl -n kube-system exec "$cni_pod" -c ipsec-cleanup -- python3 -c '
+import json,os,subprocess,sys
+with open("/etc/ovs_ipsec_keys/protection.json") as f:
+    lease=json.load(f)
+assert " ".join(str(lease[key]) for key in ("lease","mark","reqid"))==sys.argv[1], "cleanup replaced its lease"
+assert lease["required"] and os.path.isfile("/run/kube-ovn-ipsec-protection/required")
+with open("/proc/self/status") as f:
+    status=dict(line.split(":",1) for line in f if ":" in line)
+assert int(status["CapBnd"],16)&(1<<23)==0 and int(status["CapEff"],16)&(1<<23)==0
+assert subprocess.run(["pidof","charon"],stdout=subprocess.DEVNULL).returncode!=0, "cleanup restarted IKE"
+print("Disabled native init sidecar: original lease, guards retained, no IKE or SYS_NICE")' "${cleanup_lease[$node]}"
+    ovs_pod=$(kubectl -n kube-system get pod -l app=ovs --field-selector "spec.nodeName=$node" -o name)
+    kubectl -n kube-system exec "$ovs_pod" -- bash -c '
+      set -euo pipefail
+      ovs_uuid=$(ovs-vsctl get Open_vSwitch . _uuid)
+      /kube-ovn/kube-ovn-ipsec --check=protection --ovs-uuid="$ovs_uuid"
+    '
+  done
 fi

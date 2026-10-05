@@ -143,14 +143,6 @@ func drainedInventory(reservation protectionReservation, bootID string, ledgers 
 // with the node owner lock still held. It neither flushes nor deletes XFRM
 // resources. The private observation is written only after successful readback.
 func (r *runtimeManager) recordDrain(session connectionSession, kernel *netlink.Handle) error {
-	boot, err := os.ReadFile("/proc/sys/kernel/random/boot_id")
-	if err != nil {
-		return err
-	}
-	bootID := strings.TrimSpace(string(boot))
-	if bootID != session.BootID {
-		return errors.New("kernel boot changed before IPsec drain observation")
-	}
 	reservation, err := r.store.loadProtection(session.NodeUID)
 	if err != nil {
 		return err
@@ -158,15 +150,42 @@ func (r *runtimeManager) recordDrain(session connectionSession, kernel *netlink.
 	if reservation == nil || reservation.Lease != session.Lease || reservation.Mark != session.Mark || reservation.Reqid != session.Reqid {
 		return errors.New("protection owner changed before IPsec drain observation")
 	}
-	ledgers, err := r.store.drainLedgers(*reservation)
+	bootID, err := r.store.liveDrainInventory(*reservation, kernel)
 	if err != nil {
 		return err
+	}
+	if bootID != session.BootID {
+		return errors.New("kernel boot changed before IPsec drain observation")
+	}
+	data, err := json.Marshal(drainObservation{connectionSession: session, Observed: time.Now()})
+	if err != nil {
+		return err
+	}
+	return fileutil.AtomicWriteFile(filepath.Join(filepath.Dir(session.intentPath(r.store)), "drain.json"), data, 0o600)
+}
+
+func (s store) liveDrainInventory(reservation protectionReservation, kernel *netlink.Handle) (string, error) {
+	boot, err := os.ReadFile("/proc/sys/kernel/random/boot_id")
+	if err != nil {
+		return "", err
+	}
+	bootID := strings.TrimSpace(string(boot))
+	ledgers, err := s.drainLedgers(reservation)
+	if errors.Is(err, os.ErrNotExist) {
+		// An owner can crash after Arm and before its first runtime session.
+		// Only a missing parent is an empty history; a damaged session is not.
+		if _, parentErr := os.Lstat(filepath.Join(s.dir, "connections")); errors.Is(parentErr, os.ErrNotExist) {
+			ledgers, err = nil, nil
+		}
+	}
+	if err != nil {
+		return "", err
 	}
 	// Keep key material transient. Neither these structs nor their String
 	// methods may cross the persistence or diagnostic seam.
 	states, err := kernel.XfrmStateList(netlink.FAMILY_ALL)
 	if err != nil {
-		return err
+		return "", err
 	}
 	// FAMILY_ALL normalizes an IPv6 wildcard selector to IPv4 in netlink's
 	// policy parser. Preserve each family exactly, as readGuard does; never
@@ -175,16 +194,12 @@ func (r *runtimeManager) recordDrain(session connectionSession, kernel *netlink.
 	for _, family := range []int{netlink.FAMILY_V4, netlink.FAMILY_V6} {
 		familyPolicies, err := kernel.XfrmPolicyList(family)
 		if err != nil {
-			return err
+			return "", err
 		}
 		policies = append(policies, familyPolicies...)
 	}
-	if err := drainedInventory(*reservation, bootID, ledgers, states, policies); err != nil {
-		return err
+	if err := drainedInventory(reservation, bootID, ledgers, states, policies); err != nil {
+		return "", err
 	}
-	data, err := json.Marshal(drainObservation{connectionSession: session, Observed: time.Now()})
-	if err != nil {
-		return err
-	}
-	return fileutil.AtomicWriteFile(filepath.Join(filepath.Dir(session.intentPath(r.store)), "drain.json"), data, 0o600)
+	return bootID, nil
 }

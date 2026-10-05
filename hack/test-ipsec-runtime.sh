@@ -66,6 +66,14 @@ for attempt in {1..30}; do
 done
 docker exec "$ovs_container" ovs-vsctl --timeout=5 --no-wait set Open_vSwitch . external_ids:system-id=runtime-test-chassis
 
+docker run --rm --network none --user 0:65534 \
+  --cap-drop ALL --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE \
+  --memory 256m --cpus 1 --security-opt no-new-privileges \
+  --mount "type=volume,src=$runtime_volume,dst=/run/openvswitch,volume-nocopy,readonly" \
+  --mount "type=bind,src=$runtime_binary,dst=/tmp/ipsec-runtime-tests,readonly" \
+  --env KUBE_OVN_IPSEC_RUNTIME_TEST=true \
+  "$candidate_image" /tmp/ipsec-runtime-tests -test.run '^TestCandidateCleanup$' -test.v -test.timeout=60s
+
 docker run --name "$test_container" --network none --pid host --user 0:65534 \
   --sysctl net.ipv4.conf.lo.disable_xfrm=0 \
   --sysctl net.ipv6.conf.all.disable_ipv6=0 --sysctl net.ipv6.conf.lo.disable_ipv6=0 \

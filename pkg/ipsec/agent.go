@@ -37,6 +37,7 @@ type Configuration struct {
 	ProtectionDir                                      string
 	Duration, RequestTimeout                           time.Duration
 	Priority                                           int
+	CleanupOnly                                        bool
 	Kube                                               kubernetes.Interface
 }
 
@@ -114,6 +115,9 @@ func (a *Agent) Run(ctx context.Context) error {
 			klog.ErrorS(err, "Close IPsec owner lock")
 		}
 	}()
+	if a.config.CleanupOnly {
+		return a.runCleanup(ctx)
+	}
 	// Reject an existing owner before issuing an identity or changing shared
 	// OVSDB paths; checking only when the IKE pair starts is too late.
 	if err := checkLegacyMonitor(a.config.OVSSocket); err != nil {

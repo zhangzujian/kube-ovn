@@ -8970,6 +8970,66 @@ EOF
 )
 fi
 
+IPSEC_CLEANUP_CONTAINER=""
+if [[ "$ENABLE_OVN_IPSEC" != "true" ]]; then
+  IPSEC_CLEANUP_CONTAINER=$(cat <<EOF
+      - name: ipsec-cleanup
+        image: "$REGISTRY/kube-ovn:$VERSION"
+        imagePullPolicy: $IMAGE_PULL_POLICY
+        command:
+          - /kube-ovn/kube-ovn-ipsec
+        restartPolicy: Always
+        args:
+          - --cleanup-only
+        securityContext:
+          runAsUser: 0
+          runAsGroup: ${RUN_AS_USER}
+          privileged: false
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+            add:
+              - NET_ADMIN
+              - NET_BIND_SERVICE
+        env:
+          - name: NODE_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+          - name: POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          - name: POD_UID
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.uid
+        volumeMounts:
+          - name: ipsec-protection
+            mountPath: /run/kube-ovn-ipsec-protection
+          - name: ovs-ipsec-keys
+            mountPath: /etc/ovs_ipsec_keys
+          - name: host-run-ovs
+            mountPath: /run/openvswitch
+            readOnly: true
+        livenessProbe:
+          exec:
+            command: [/kube-ovn/kube-ovn-ipsec, --check=livez]
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 3
+        resources:
+          requests:
+            cpu: 10m
+            memory: 64Mi
+          limits:
+            cpu: 1000m
+            memory: 256Mi
+EOF
+)
+fi
+
 TPROXY_CONTAINER=""
 TPROXY_SECURITY_CONTEXT=""
 TPROXY_SOCKET_MOUNT=""
@@ -9337,6 +9397,7 @@ ${TPROXY_SECURITY_CONTEXT}
             readOnly: false
           - name: kube-ovn-log
             mountPath: /var/log/kube-ovn
+${IPSEC_CLEANUP_CONTAINER}
       - name: install-cni
         image: "$REGISTRY/kube-ovn:$VERSION"
         imagePullPolicy: $IMAGE_PULL_POLICY

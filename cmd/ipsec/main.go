@@ -40,6 +40,7 @@ func run() error {
 	duration := pflag.Int("ovn-ipsec-cert-duration", 2*365*24*60*60, "Requested certificate duration in seconds")
 	pflag.DurationVar(&config.RequestTimeout, "request-timeout", 300*time.Second, "Certificate request timeout")
 	pflag.IntVar(&config.Priority, "priority", -5, "IPsec subprocess nice priority")
+	pflag.BoolVar(&config.CleanupOnly, "cleanup-only", false, "Restore existing protection and reconcile coordinated cleanup without starting IKE or issuing certificates")
 	kubeconfig := pflag.String("kubeconfig", "", "Kubernetes client configuration; empty uses in-cluster credentials")
 	check := pflag.String("check", "", "Probe the private livez or readyz endpoint")
 	klog.InitFlags(flag.CommandLine)
