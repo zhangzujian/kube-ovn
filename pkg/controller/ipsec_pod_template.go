@@ -27,13 +27,13 @@ func isIPsecAPITokenVolume(volume corev1.Volume) bool {
 	if token == nil || token.ExpirationSeconds == nil || *token.ExpirationSeconds < 600 {
 		return false
 	}
-	expected := corev1.Volume{Name: volume.Name, VolumeSource: corev1.VolumeSource{Projected: &corev1.ProjectedVolumeSource{
+	expected := corev1.Volume{Name: volume.Name, Projected: &corev1.ProjectedVolumeSource{
 		DefaultMode: new(int32(0o644)), Sources: []corev1.VolumeProjection{
 			{ServiceAccountToken: &corev1.ServiceAccountTokenProjection{Path: "token", ExpirationSeconds: token.ExpirationSeconds}},
-			{ConfigMap: &corev1.ConfigMapProjection{LocalObjectReference: corev1.LocalObjectReference{Name: "kube-root-ca.crt"}, Items: []corev1.KeyToPath{{Key: "ca.crt", Path: "ca.crt"}}}},
+			{ConfigMap: &corev1.ConfigMapProjection{Name: "kube-root-ca.crt", Items: []corev1.KeyToPath{{Key: "ca.crt", Path: "ca.crt"}}}},
 			{DownwardAPI: &corev1.DownwardAPIProjection{Items: []corev1.DownwardAPIVolumeFile{{Path: "namespace", FieldRef: &corev1.ObjectFieldSelector{APIVersion: "v1", FieldPath: "metadata.namespace"}}}}},
 		},
-	}}}
+	}}
 	return equality.Semantic.DeepEqual(volume, expected)
 }
 

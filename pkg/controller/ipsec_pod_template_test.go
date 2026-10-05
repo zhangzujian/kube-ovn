@@ -9,13 +9,13 @@ import (
 )
 
 func ipsecTestAPITokenVolume(name string) corev1.Volume {
-	return corev1.Volume{Name: name, VolumeSource: corev1.VolumeSource{Projected: &corev1.ProjectedVolumeSource{
+	return corev1.Volume{Name: name, Projected: &corev1.ProjectedVolumeSource{
 		DefaultMode: new(int32(0o644)), Sources: []corev1.VolumeProjection{
 			{ServiceAccountToken: &corev1.ServiceAccountTokenProjection{Path: "token", ExpirationSeconds: new(int64(3607))}},
-			{ConfigMap: &corev1.ConfigMapProjection{LocalObjectReference: corev1.LocalObjectReference{Name: "kube-root-ca.crt"}, Items: []corev1.KeyToPath{{Key: "ca.crt", Path: "ca.crt"}}}},
+			{ConfigMap: &corev1.ConfigMapProjection{Name: "kube-root-ca.crt", Items: []corev1.KeyToPath{{Key: "ca.crt", Path: "ca.crt"}}}},
 			{DownwardAPI: &corev1.DownwardAPIProjection{Items: []corev1.DownwardAPIVolumeFile{{Path: "namespace", FieldRef: &corev1.ObjectFieldSelector{APIVersion: "v1", FieldPath: "metadata.namespace"}}}}},
 		},
-	}}}
+	}}
 }
 
 func TestIPsecPodTemplateRejectsPrivateAccessChanges(t *testing.T) {
@@ -25,7 +25,7 @@ func TestIPsecPodTemplateRejectsPrivateAccessChanges(t *testing.T) {
 			Name: "ipsec-cleanup", Image: "candidate", RestartPolicy: new(corev1.ContainerRestartPolicyAlways),
 			VolumeMounts: []corev1.VolumeMount{{Name: "private", MountPath: "/var/lib/kube-ovn/ipsec"}},
 		}},
-		Volumes: []corev1.Volume{{Name: "private", VolumeSource: corev1.VolumeSource{HostPath: &corev1.HostPathVolumeSource{Path: "/var/lib/kube-ovn/ipsec", Type: new(corev1.HostPathDirectoryOrCreate)}}}},
+		Volumes: []corev1.Volume{{Name: "private", HostPath: &corev1.HostPathVolumeSource{Path: "/var/lib/kube-ovn/ipsec", Type: new(corev1.HostPathDirectoryOrCreate)}}},
 	}}}}
 	pod := &corev1.Pod{Spec: *ds.Spec.Template.Spec.DeepCopy()}
 	pod.Spec.Volumes = append(pod.Spec.Volumes, ipsecTestAPITokenVolume("kube-api-access-test"))
@@ -47,7 +47,7 @@ func TestIPsecPodTemplateRejectsPrivateAccessChanges(t *testing.T) {
 		}},
 		{"ephemeral-reader", func(p *corev1.Pod) { p.Spec.EphemeralContainers = []corev1.EphemeralContainer{{Name: "reader"}} }},
 		{"fake-token-secret", func(p *corev1.Pod) {
-			p.Spec.Volumes[1].Projected.Sources = append(p.Spec.Volumes[1].Projected.Sources, corev1.VolumeProjection{Secret: &corev1.SecretProjection{LocalObjectReference: corev1.LocalObjectReference{Name: "foreign"}}})
+			p.Spec.Volumes[1].Projected.Sources = append(p.Spec.Volumes[1].Projected.Sources, corev1.VolumeProjection{Secret: &corev1.SecretProjection{Name: "foreign"}})
 		}},
 		{"token-writable", func(p *corev1.Pod) { p.Spec.InitContainers[0].VolumeMounts[1].ReadOnly = false }},
 		{"token-sub-path", func(p *corev1.Pod) { p.Spec.InitContainers[0].VolumeMounts[1].SubPath = "token" }},
