@@ -100,6 +100,9 @@ func TestDrainInventoryRejectsRemainingPoliciesAndChangedGuards(t *testing.T) {
 		{"unknown-marked-policy", func(policies []netlink.XfrmPolicy, lease protectionReservation) []netlink.XfrmPolicy {
 			return append(policies, netlink.XfrmPolicy{Mark: &netlink.XfrmMark{Value: lease.Mark, Mask: 0xff}})
 		}},
+		{"unmarked-bypass-with-intact-guards", func(policies []netlink.XfrmPolicy, _ protectionReservation) []netlink.XfrmPolicy {
+			return append(policies, netlink.XfrmPolicy{Dir: netlink.XFRM_DIR_OUT, Action: netlink.XFRM_POLICY_ALLOW, Priority: 1})
+		}},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			reservation, policies, ledger := drainFixture(t)

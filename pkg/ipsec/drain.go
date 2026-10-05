@@ -110,6 +110,9 @@ func drainedInventory(reservation protectionReservation, bootID string, ledgers 
 	owner := protectionOwner{reservation: reservation}
 	var guards [2]bool
 	for _, policy := range policies {
+		if protectionBypassed(reservation.Mark, policy) {
+			return errors.New("IPsec drain found a policy that bypasses output protection")
+		}
 		family := 0
 		if policy.Src != nil && policy.Src.IP.To4() == nil {
 			family = 1
@@ -154,10 +157,6 @@ func (r *runtimeManager) recordDrain(session connectionSession, kernel *netlink.
 	}
 	if reservation == nil || reservation.Lease != session.Lease || reservation.Mark != session.Mark || reservation.Reqid != session.Reqid {
 		return errors.New("protection owner changed before IPsec drain observation")
-	}
-	owner := protectionOwner{store: r.store, reservation: *reservation, kernel: kernel}
-	if err := owner.verify(); err != nil {
-		return err
 	}
 	ledgers, err := r.store.drainLedgers(*reservation)
 	if err != nil {
