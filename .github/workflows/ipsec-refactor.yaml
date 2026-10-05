@@ -40,6 +40,7 @@ jobs:
         run: |
           python3 hack/test-ipsec-container.py
           python3 hack/test-tproxy-container.py
+          bash dist/images/install-cni-security_test.sh
           bash -n dist/images/install.sh
           git diff --check
       - name: Restore candidate Go build cache
