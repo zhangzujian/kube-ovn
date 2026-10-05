@@ -21,4 +21,4 @@ helm install cert-manager oci://quay.io/jetstack/charts/cert-manager \
   --version v1.21.2 --namespace cert-manager --create-namespace \
   --set crds.enabled=true --wait --timeout 180s
 export KUBE_OVN_IPSEC_API_TEST=true
-go test ./pkg/controller -run '^TestIPsecAPIServerSigningContract$' -count=1 -v -timeout 8m
+go test ./pkg/controller -run '^TestIPsecAPIServer(SigningContract|CleanupBinding)$' -count=1 -v -timeout 8m

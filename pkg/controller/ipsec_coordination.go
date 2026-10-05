@@ -10,13 +10,11 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	certv1 "k8s.io/api/certificates/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/component-helpers/scheduling/corev1/nodeaffinity"
@@ -307,13 +305,26 @@ func (c *Controller) reconcileIPsecDisable(ctx context.Context, cm *corev1.Confi
 		}
 		return errors.New("IPsec disable is waiting for live NB/SB switch convergence")
 	}
-	if state.Phase == ipsec.CleanupPhase && state.NBGlobalUUID == nb.UUID && state.SBGlobalUUID == sb.UUID {
-		return nil
+	ds, err := c.config.KubeClient.AppsV1().DaemonSets(c.config.PodNamespace).Get(ctx, "kube-ovn-cni", metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	if !hasIPsecCleanupTemplate(ds) {
+		return errors.New("IPsec disable is waiting for the native cleanup init template")
+	}
+	template, err := json.Marshal(ds.Spec.Template, json.Deterministic(true))
+	if err != nil {
+		return err
+	}
+	hash := ipsecPublicHash(template)
+	if state.Phase == ipsec.CleanupPhase && state.NBGlobalUUID == nb.UUID && state.SBGlobalUUID == sb.UUID && state.DaemonSetUID == string(ds.UID) && state.TemplateHash == hash {
+		return c.verifyIPsecCleanupBarrier(ctx, ds, state)
 	}
 	// This phase confirms only the global switch. Each node must additionally
 	// prove local tunnel convergence and exact connection/SA ownership while
 	// guards remain installed. It is not a completed Disabled receipt.
 	state.NBGlobalUUID, state.SBGlobalUUID = nb.UUID, sb.UUID
+	state.DaemonSetUID, state.TemplateHash = string(ds.UID), hash
 	return update(ipsec.CleanupPhase)
 }
 
@@ -374,25 +385,11 @@ func verifyIPsecReceipt(node *corev1.Node, ds *appsv1.DaemonSet, state *ipsec.Co
 		return errors.New("IPsec receipt is bound to another Pod or node")
 	}
 	owner := metav1.GetControllerOf(pod)
-	if owner == nil || owner.UID != ds.UID || pod.DeletionTimestamp != nil || !equality.Semantic.DeepEqual(pod.Spec.SecurityContext, ds.Spec.Template.Spec.SecurityContext) || pod.Spec.HostNetwork != ds.Spec.Template.Spec.HostNetwork || pod.Spec.HostPID != ds.Spec.Template.Spec.HostPID {
+	if owner == nil || owner.UID != ds.UID || pod.DeletionTimestamp != nil {
 		return errors.New("IPsec receipt Pod does not match the frozen owner or security context")
 	}
-	for _, expected := range ds.Spec.Template.Spec.Containers {
-		if expected.Name != "ipsec" {
-			continue
-		}
-		if !slices.ContainsFunc(pod.Spec.Containers, func(actual corev1.Container) bool {
-			// ServiceAccount admission injects a read-only token mount into Pods
-			// after the DaemonSet template has been stored. Ignore only that
-			// well-known injection when comparing the current IPsec container.
-			actual.VolumeMounts = slices.DeleteFunc(slices.Clone(actual.VolumeMounts), func(mount corev1.VolumeMount) bool {
-				return strings.HasPrefix(mount.Name, "kube-api-access-") && mount.MountPath == "/var/run/secrets/kubernetes.io/serviceaccount" && mount.ReadOnly
-			})
-			return equality.Semantic.DeepEqual(actual, expected)
-		}) {
-			return errors.New("IPsec receipt Pod does not use the frozen container template")
-		}
-		return nil
+	if !slices.ContainsFunc(ds.Spec.Template.Spec.Containers, func(container corev1.Container) bool { return container.Name == "ipsec" }) {
+		return errors.New("frozen CNI template has no IPsec container")
 	}
-	return errors.New("frozen CNI template has no IPsec container")
+	return verifyIPsecPodTemplate(pod, ds)
 }

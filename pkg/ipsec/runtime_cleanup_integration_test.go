@@ -14,9 +14,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
+	certv1 "k8s.io/api/certificates/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 )
 
 func TestCandidateCleanup(t *testing.T) {
@@ -36,6 +40,14 @@ func TestCandidateCleanup(t *testing.T) {
 		KeyDir: t.TempDir(), RuntimeDir: t.TempDir(), ProtectionDir: dir,
 		OVSSocket: "/run/openvswitch/db.sock", Duration: time.Hour, RequestTimeout: time.Second, CleanupOnly: true,
 	}
+	client.PrependReactor("create", "certificatesigningrequests", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		req := action.(k8stesting.CreateAction).GetObject().(*certv1.CertificateSigningRequest).DeepCopy()
+		req.UID = types.UID(digest([]byte(req.Name)))
+		req.Spec.Username = "system:serviceaccount:kube-system:kube-ovn-cni"
+		req.Spec.Extra = map[string]certv1.ExtraValue{"authentication.kubernetes.io/pod-name": {"cleanup-cni"}, "authentication.kubernetes.io/pod-uid": {config.PodUID}}
+		err := client.Tracker().Create(certv1.SchemeGroupVersion.WithResource("certificatesigningrequests"), req, "")
+		return true, req, err
+	})
 	start := func(config Configuration) (*Agent, func()) {
 		t.Helper()
 		a, err := New(config)
@@ -97,8 +109,21 @@ func TestCandidateCleanup(t *testing.T) {
 	require.Equal(t, reservation, *actual, "cleanup must reuse its existing durable lease")
 	for _, action := range client.Actions() {
 		require.NotEqual(t, "secrets", action.GetResource().Resource, "cleanup cannot access a CA")
-		require.NotEqual(t, "certificatesigningrequests", action.GetResource().Resource, "preflight cannot issue a certificate")
 	}
+	requests, err := client.CertificatesV1().CertificateSigningRequests().List(t.Context(), metav1.ListOptions{})
+	require.NoError(t, err)
+	require.Len(t, requests.Items, 1)
+	require.Equal(t, CleanupSignerName, requests.Items[0].Spec.SignerName)
+	require.Empty(t, requests.Items[0].Status.Certificate)
+	node, err := client.CoreV1().Nodes().Get(t.Context(), config.NodeName, metav1.GetOptions{})
+	require.NoError(t, err)
+	keyPEM, err := storage.cleanupKey(reservation)
+	require.NoError(t, err)
+	key, err := privateKey(keyPEM)
+	require.NoError(t, err)
+	receipt, err := VerifyCleanupReceipt([]byte(node.Annotations[CleanupReceiptAnnotation]), &key.PublicKey, &state, config.NodeName, reservation.NodeUID, time.Now())
+	require.NoError(t, err, "the real guarded preflight must produce a signed current-Pod observation")
+	require.Equal(t, config.PodUID, receipt.PodUID)
 	// A changed frozen target revokes the preflight without withdrawing guards.
 	state.Targets["cleanup-node"] = "replaced-node-uid"
 	data, err = json.Marshal(state)

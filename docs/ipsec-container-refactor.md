@@ -177,8 +177,18 @@ are restored under the owner lock and can serve the live OVS startup gate before
 the controller's Cleanup barrier is available. Lost ownership evidence, replaced
 nodes and foreign IKE owners fail closed. Cleanup then checks the live controller
 challenge, local tunnel convergence and kernel drain while retaining protection.
-`CleanupDrained` is a local preflight status, not a signed cleanup receipt or a
-Disabled completion. Withdrawal and controller completion remain unimplemented.
+`CleanupDrained` records a live guarded drain and publishes a signed cleanup
+receipt. The receipt binds the frozen generation/epoch, cleanup Pod and complete
+DaemonSet execution template, database identities, Node UID, chassis, lease,
+kernel boot identity and local OVS instance. Its independent local attestation
+key uses a purpose-separated signature and a `kubeovn.io/ipsec-cleanup` CSR
+with API-authenticated bound Pod identity. That CSR is never approved or issued;
+cleanup needs neither an encryption identity nor a CA or cert-manager client.
+The node repeats its live drain after the CSR API round trip and refuses a
+changed challenge before publication. The controller verifies all frozen nodes
+against live Pods and binding CSRs; a missing or replaced member blocks progress.
+Successful receipts retain protection at `Cleanup`. They do not authorize
+withdrawal or prove Disabled completion; those remain unimplemented.
 
 Before the trust informer synchronizes, cold startup may restore the last
 committed generation. Recovery requires the same Node name, namespace and local
@@ -261,6 +271,11 @@ Chassis cache. This is global convergence evidence only: node cleanup still
 needs current challenge/UUID checks, local tunnel convergence, proven connection
 and SA ownership, and a completed Disabled receipt. Those operations and the
 protection withdrawal and Disabled completion remain incomplete in this draft.
+The signed guarded-drain barrier checks every ordinary/init container, host
+execution setting and private/shared volume against the frozen template. Only
+the standard read-only service-account projection is ignored. Extra siblings,
+ephemeral containers, changed host paths and token-like Secret projections
+invalidate both enable and cleanup receipts.
 
 The node now separately checks local OVSDB tunnel convergence during `Cleanup`:
 the same lease/output marks must remain published, while every OVN-owned tunnel

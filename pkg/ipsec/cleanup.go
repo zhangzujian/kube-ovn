@@ -145,18 +145,46 @@ func (a *Agent) cleanupPreflight(ctx context.Context) error {
 	if state.Phase != CleanupPhase {
 		return errors.New("IPsec cleanup is waiting for the controller's live NB/SB barrier")
 	}
+	claim, err := a.observeCleanup(state)
+	if err != nil {
+		return err
+	}
+	return a.publishCleanupReceipt(ctx, cm, state, claim)
+}
+
+func (a *Agent) observeCleanup(state *Coordination) (CleanupReceipt, error) {
+	if err := checkLegacyMonitor(a.config.OVSSocket); err != nil {
+		return CleanupReceipt{}, err
+	}
+	if err := checkIKEPorts(); err != nil {
+		return CleanupReceipt{}, err
+	}
 	a.protectionMu.Lock()
 	defer a.protectionMu.Unlock()
 	p := a.protection
 	if p == nil || state.Targets[a.config.NodeName] != p.owner.reservation.NodeUID {
-		return errors.New("IPsec cleanup target does not bind the local protection owner")
+		return CleanupReceipt{}, errors.New("IPsec cleanup target does not bind the local protection owner")
 	}
 	if err := p.verify(); err != nil {
-		return err
+		return CleanupReceipt{}, err
 	}
-	if err := p.ovs.VerifyIPsecTunnelQuiescence(p.publicLease()); err != nil {
-		return err
+	row, err := p.ovs.IPsecDatapathConfiguration()
+	if err != nil {
+		return CleanupReceipt{}, err
 	}
-	_, err = a.store.liveDrainInventory(p.owner.reservation, p.owner.kernel)
-	return err
+	lease := p.publicLease()
+	lease.OVSUUID = row.UUID
+	if err := p.ovs.VerifyIPsecTunnelQuiescence(lease); err != nil {
+		return CleanupReceipt{}, err
+	}
+	bootID, err := a.store.liveDrainInventory(p.owner.reservation, p.owner.kernel)
+	if err != nil {
+		return CleanupReceipt{}, err
+	}
+	return CleanupReceipt{
+		Generation: state.Generation, Epoch: state.Epoch, Phase: state.Phase, DaemonSetUID: state.DaemonSetUID, TemplateHash: state.TemplateHash,
+		NBGlobalUUID: state.NBGlobalUUID, SBGlobalUUID: state.SBGlobalUUID,
+		NodeName: a.config.NodeName, NodeUID: lease.NodeUID, PodUID: a.config.PodUID, Chassis: lease.Chassis,
+		Lease: lease.Lease, Mark: lease.Mark, Reqid: lease.Reqid, OVSUUID: lease.OVSUUID, BootID: bootID,
+	}, nil
 }

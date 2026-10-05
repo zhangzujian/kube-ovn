@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
@@ -20,7 +21,8 @@ func TestIPsecDisableWaitsForLiveNorthboundAndSouthbound(t *testing.T) {
 	state := &ipsec.Coordination{Version: 1, Generation: "generation", Epoch: "enable-epoch", Phase: ipsec.EnabledPhase, DaemonSetUID: "ds-uid", TemplateHash: ipsecPublicHash([]byte("template")), TrustHash: ipsecPublicHash([]byte("trust")), Targets: map[string]string{"offline": "offline-uid", "online": "online-uid"}}
 	cm := &corev1.ConfigMap{Name: ipsec.CoordinationConfigMap, Namespace: "kube-system"}
 	require.NoError(t, encodeIPsecCoordination(cm, state))
-	kube := fake.NewClientset(cm)
+	ds := &appsv1.DaemonSet{Name: "kube-ovn-cni", Namespace: "kube-system", UID: "ds-uid", Spec: appsv1.DaemonSetSpec{Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{InitContainers: []corev1.Container{{Name: "ipsec-cleanup", RestartPolicy: new(corev1.ContainerRestartPolicyAlways), Command: []string{"/kube-ovn/kube-ovn-ipsec"}, Args: []string{"--cleanup-only"}}}}}}}
+	kube := fake.NewClientset(cm, ds)
 	ctrl := gomock.NewController(t)
 	nb, sb := mockovs.NewMockNbClient(ctrl), mockovs.NewMockSbClient(ctrl)
 	c := &Controller{config: &Configuration{KubeClient: kube, PodNamespace: "kube-system"}, OVNNbClient: nb, OVNSbClient: sb}
@@ -62,7 +64,7 @@ func TestIPsecDisableWaitsForLiveNorthboundAndSouthbound(t *testing.T) {
 	require.Equal(t, state.Targets, cleanup.Targets)
 	require.Equal(t, nbState.UUID, cleanup.NBGlobalUUID)
 	require.Equal(t, sbState.UUID, cleanup.SBGlobalUUID)
-	require.NoError(t, c.reconcileIPsecDisable(t.Context(), cm))
+	require.ErrorContains(t, c.reconcileIPsecDisable(t.Context(), cm), "missing or replaced")
 	cm, retained = read()
 	require.Equal(t, cleanup.Epoch, retained.Epoch, "stable convergence preserves the cleanup challenge")
 	sbState.UUID = "75980000-0000-0000-0000-000000000003"
