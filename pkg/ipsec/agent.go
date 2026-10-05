@@ -83,7 +83,7 @@ func New(config Configuration) (*Agent, error) {
 	if config.Priority < -20 || config.Priority > 19 {
 		return nil, errors.New("IPsec process priority must be between -20 and 19")
 	}
-	return &Agent{config: config, store: store{dir: config.KeyDir}, runtime: &runtimeManager{dir: config.RuntimeDir, ovsSocket: config.OVSSocket, priority: config.Priority}, status: Status{Phase: "WaitingTrust"}}, nil
+	return &Agent{config: config, store: store{dir: config.KeyDir}, runtime: &runtimeManager{dir: config.RuntimeDir, store: store{dir: config.KeyDir}, ovsSocket: config.OVSSocket, priority: config.Priority}, status: Status{Phase: "WaitingTrust"}}, nil
 }
 
 func (a *Agent) Status() Status {

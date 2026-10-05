@@ -46,6 +46,25 @@ Image construction fails if the pinned monitor source no longer matches the
 adaptation points. Connection generation and refresh remain in OVS. The filter
 does not prove ownership of orphaned kernel SAs after a crash.
 
+Each supervised IKE/monitor pair now gets a fresh random connection namespace,
+bound to the current Node UID and protection lease. The private persistent
+`connections/<namespace>/session.json` is committed before starting IKE;
+`intent.json` records exact generated connection names, Interface UUIDs,
+underlay addresses, tunnel type, reqid and output mark before configuration is
+loaded. Older sessions and obsolete versions remain recorded, so a restart
+cannot silently reuse names or overwrite earlier evidence. The monitor refuses
+connection selectors from a different lease. These files contain no PEM,
+private-key paths, PSKs or SA keys. Intent alone still cannot authorize an
+orphaned SA deletion: the connection-to-SPI/kernel-lifetime evidence and cleanup
+operations remain incomplete.
+
+The strongSwan status parser also matches complete connection suffixes. Its
+previous greedy interface match could classify `ovn-peer-in-3{11}` as interface
+`ovn-peer-in`, causing a currently configured child to be treated as obsolete.
+The installed-monitor contract checks that only the exact obsolete owned
+connection is terminated and that foreign namespaces are ignored. Real IKE
+and candidate traffic tests must additionally confirm the adapted naming.
+
 The built-in signer checks the CSR signature, bound Pod identity, live
 DaemonSet ownership, Node UID, and the requested chassis CN/SAN. A shared
 ServiceAccount or a request name alone is not sufficient. Clusters that do not

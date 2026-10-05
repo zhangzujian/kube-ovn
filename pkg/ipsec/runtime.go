@@ -36,6 +36,7 @@ const strongSwanConfig = `charon {
 
 type runtimeManager struct {
 	dir, ovsSocket string
+	store          store
 	priority       int
 	mu             sync.Mutex
 	enabled        atomic.Bool
@@ -203,6 +204,10 @@ func (r *runtimeManager) runPair(ctx context.Context) error {
 	if err := r.prepare(); err != nil {
 		return err
 	}
+	session, err := r.prepareConnectionSession()
+	if err != nil {
+		return err
+	}
 	starter, err := r.startChild("/usr/sbin/ipsec", "start", "--nofork")
 	if err != nil {
 		return err
@@ -227,7 +232,11 @@ func (r *runtimeManager) runPair(ctx context.Context) error {
 		}
 	}
 	monitor, err := r.startChild("/usr/share/openvswitch/scripts/ovs-monitor-ipsec", "unix:"+r.ovsSocket,
-		"--ike-daemon=strongswan", "--no-restart-ike-daemon", "--ovn-owned-only", "--pidfile="+filepath.Join(r.dir, "monitor.pid"))
+		"--ike-daemon=strongswan", "--no-restart-ike-daemon", "--ovn-owned-only", "--pidfile="+filepath.Join(r.dir, "monitor.pid"),
+		"--connection-prefix="+session.Prefix, "--connection-owner-node-uid="+session.NodeUID,
+		"--connection-owner-lease="+session.Lease, "--connection-intent="+session.intentPath(r.store),
+		"--connection-owner-mark="+strconv.FormatUint(uint64(session.Mark), 10),
+		"--connection-owner-reqid="+strconv.FormatUint(uint64(session.Reqid), 10))
 	if err != nil {
 		return err
 	}

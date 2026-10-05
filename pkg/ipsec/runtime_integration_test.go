@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/json/v2"
 	"net"
 	"os"
 	"os/exec"
@@ -225,12 +226,46 @@ func TestCandidateRuntime(t *testing.T) {
 	for _, capability := range []uint{unix.CAP_NET_ADMIN, unix.CAP_NET_BIND_SERVICE, unix.CAP_SYS_NICE} {
 		require.NotZero(t, effective&(uint64(1)<<capability), "the nice launcher must preserve runtime capabilities")
 	}
+	connectionIntent := func(pid int) (string, []byte) {
+		t.Helper()
+		cmdline, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "cmdline"))
+		require.NoError(t, err)
+		var path string
+		for argument := range strings.SplitSeq(string(cmdline), "\x00") {
+			if value, found := strings.CutPrefix(argument, "--connection-intent="); found {
+				path = value
+			}
+		}
+		require.NotEmpty(t, path, "the actual monitor must use a persistent connection namespace")
+		data, err := readRegularFile(path)
+		require.NoError(t, err)
+		var actual struct {
+			connectionSession
+			Connections map[string]any `json:"connections"`
+		}
+		require.NoError(t, json.Unmarshal(data, &actual))
+		require.Equal(t, reservation.NodeUID, actual.NodeUID)
+		require.Equal(t, reservation.Lease, actual.Lease)
+		require.Equal(t, reservation.Mark, actual.Mark)
+		require.Equal(t, reservation.Reqid, actual.Reqid)
+		require.NotEmpty(t, actual.Prefix)
+		require.NotNil(t, actual.Connections)
+		return path, data
+	}
+	previousIntentPath, previousIntent := connectionIntent(pid)
 	require.NoError(t, syscall.Kill(pid, syscall.SIGKILL))
 	require.Eventually(t, func() bool { return !a.runtime.healthy.Load() }, 10*time.Second, 50*time.Millisecond)
 	require.Eventually(t, ready, 60*time.Second, 200*time.Millisecond, "the runtime must recover after a monitor crash")
 	newPID, err := os.ReadFile(filepath.Join(a.config.RuntimeDir, "monitor.pid"))
 	require.NoError(t, err)
 	require.NotEqual(t, string(pidBytes), string(newPID))
+	newMonitorPID, err := strconv.Atoi(strings.TrimSpace(string(newPID)))
+	require.NoError(t, err)
+	newIntentPath, _ := connectionIntent(newMonitorPID)
+	require.NotEqual(t, previousIntentPath, newIntentPath, "a monitor crash must create a new namespace")
+	retainedIntent, err := readRegularFile(previousIntentPath)
+	require.NoError(t, err)
+	require.Equal(t, previousIntent, retainedIntent, "restart must retain previous connection evidence")
 	checkTrust()
 	checkForeignSA()
 	current, err := a.store.load("current")
