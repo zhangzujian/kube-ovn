@@ -221,7 +221,12 @@ func (r *runtimeManager) runPair(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer starter.stop()
+	defer func() {
+		starter.stop()
+		if err := r.recordDrain(*session, kernel); err != nil {
+			klog.ErrorS(err, "IPsec shutdown lacks a complete drain observation; protection retained")
+		}
+	}()
 	// The monitor's update/reread commands require a running IKE daemon.
 	startupCtx, startupCancel := context.WithTimeout(ctx, 30*time.Second)
 	defer startupCancel()

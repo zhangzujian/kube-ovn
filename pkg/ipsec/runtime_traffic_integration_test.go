@@ -261,6 +261,18 @@ func TestCandidateEncryptedTraffic(t *testing.T) {
 	}
 	assertGuard()
 	require.Zero(t, stateCount(), "graceful shutdown must remove the synthetic reqid's SAs while preserving the separate guard")
+	observations, err := filepath.Glob(filepath.Join(a.store.dir, "connections", "*", "drain.json"))
+	require.NoError(t, err)
+	require.NotEmpty(t, observations, "real IKE shutdown must confirm drain with both production guards still armed")
+	for _, path := range observations {
+		data, err := readRegularFile(path)
+		require.NoError(t, err)
+		var observation drainObservation
+		require.NoError(t, json.Unmarshal(data, &observation))
+		require.Equal(t, lease.NodeUID, observation.NodeUID)
+		require.Equal(t, lease.Lease, observation.Lease)
+		require.False(t, observation.Observed.IsZero())
+	}
 	probeBlocked()
 	require.NoError(t, os.WriteFile("/fixtures/guard-complete", nil, 0o600))
 	for {
