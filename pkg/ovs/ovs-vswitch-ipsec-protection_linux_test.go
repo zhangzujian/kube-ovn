@@ -141,13 +141,16 @@ func TestIPsecProtectionRejectsEmptyBridgeSnapshot(t *testing.T) {
 	require.NoError(t, c.PublishIPsecProtection(lease))
 }
 
-func TestIPsecDisableRequiresLocalTunnelConvergenceWithoutWithdrawingProtection(t *testing.T) {
+func TestIPsecDisableTunnelConvergence(t *testing.T) {
+	// The in-process server derives its Unix socket from t.Name. Create it at
+	// the parent test: subtest names contain slashes and are not socket paths.
+	c, lease, owned := protectionFixture(t)
+	foreign := addTestCNIPort(t, c, "foreign-encrypted", "foreign")
 	for _, tunnel := range []string{"geneve", "vxlan"} {
 		t.Run(tunnel, func(t *testing.T) {
-			c, lease, owned := protectionFixture(t)
 			owned.Type = tunnel
-			require.NoError(t, c.updateCNIModel(vswitch.InterfaceTable, owned.UUID, owned, &owned.Type))
-			foreign := addTestCNIPort(t, c, "foreign-encrypted", "foreign")
+			owned.Options = map[string]string{"remote_ip": "192.0.2.2", "remote_name": "peer", "key": "flow", "csum": "true"}
+			require.NoError(t, c.updateCNIModel(vswitch.InterfaceTable, owned.UUID, owned, &owned.Type, &owned.Options))
 			foreign.Type, foreign.Options = tunnel, map[string]string{"remote_name": "foreign-peer", "remote_ip": "198.51.100.2", "ipsec_reqid": "99", "ipsec_mark_out": "99/0xffffffff"}
 			require.NoError(t, c.updateCNIModel(vswitch.InterfaceTable, foreign.UUID, foreign, &foreign.Type, &foreign.Options))
 			require.NoError(t, c.PublishIPsecProtection(lease))
