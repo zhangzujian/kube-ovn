@@ -26,8 +26,22 @@ func (a *Agent) publishReceipt(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if state.Phase == DisablingPhase || state.Phase == CleanupPhase {
+	if state.Phase == DisablingPhase {
 		return nil // Protection remains until coordinated cleanup is complete.
+	}
+	if state.Phase == CleanupPhase {
+		a.protectionMu.Lock()
+		defer a.protectionMu.Unlock()
+		p := a.protection
+		if p == nil || state.Targets[a.config.NodeName] != p.owner.reservation.NodeUID {
+			return errors.New("IPsec cleanup target does not bind the local protection owner")
+		}
+		if err := p.verify(); err != nil {
+			return err
+		}
+		// No cleanup receipt or protection withdrawal is issued here. The
+		// local switch is a separate precondition from runtime/kernel drain.
+		return p.ovs.VerifyIPsecTunnelQuiescence(p.publicLease())
 	}
 	g, err := a.store.load("current")
 	if err != nil || g == nil {

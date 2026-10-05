@@ -160,3 +160,29 @@ func (c *VswitchClient) VerifyIPsecProtection(p IPsecProtection) error {
 	_, err = snapshot.tunnelOptions(p, true)
 	return err
 }
+
+// VerifyIPsecTunnelQuiescence confirms the local part of a coordinated disable
+// while the output lease is still published. Global NB/SB false alone cannot
+// prove that ovn-controller has removed every local encrypted peer. This is a
+// read-only preflight, not authorization to withdraw the lease or kernel guards.
+func (c *VswitchClient) VerifyIPsecTunnelQuiescence(p IPsecProtection) error {
+	snapshot, err := c.ipsecProtectionSnapshot()
+	if err != nil {
+		return err
+	}
+	owned, err := snapshot.tunnelOptions(p, true)
+	if err != nil {
+		return err
+	}
+	for _, iface := range snapshot.interfaces {
+		if _, ok := owned[iface.UUID]; !ok {
+			continue
+		}
+		for _, key := range []string{"remote_name", "ipsec_mark_out", "ipsec_reqid"} {
+			if iface.Options[key] != "" {
+				return errors.New("IPsec disable is waiting for local OVN tunnel convergence")
+			}
+		}
+	}
+	return nil
+}

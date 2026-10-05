@@ -140,3 +140,38 @@ func TestIPsecProtectionRejectsEmptyBridgeSnapshot(t *testing.T) {
 	require.NotContains(t, root.ExternalIDs, "ovn-ipsec-protection-mark")
 	require.NoError(t, c.PublishIPsecProtection(lease))
 }
+
+func TestIPsecDisableRequiresLocalTunnelConvergenceWithoutWithdrawingProtection(t *testing.T) {
+	for _, tunnel := range []string{"geneve", "vxlan"} {
+		t.Run(tunnel, func(t *testing.T) {
+			c, lease, owned := protectionFixture(t)
+			owned.Type = tunnel
+			require.NoError(t, c.updateCNIModel(vswitch.InterfaceTable, owned.UUID, owned, &owned.Type))
+			foreign := addTestCNIPort(t, c, "foreign-encrypted", "foreign")
+			foreign.Type, foreign.Options = tunnel, map[string]string{"remote_name": "foreign-peer", "remote_ip": "198.51.100.2", "ipsec_reqid": "99", "ipsec_mark_out": "99/0xffffffff"}
+			require.NoError(t, c.updateCNIModel(vswitch.InterfaceTable, foreign.UUID, foreign, &foreign.Type, &foreign.Options))
+			require.NoError(t, c.PublishIPsecProtection(lease))
+			require.ErrorContains(t, c.VerifyIPsecTunnelQuiescence(lease), "local OVN tunnel convergence")
+			// Observe OVN's updates independently: removing remote_name alone
+			// must not hide stale transport options during asynchronous rollout.
+			for _, key := range []string{"remote_name", "ipsec_reqid", "ipsec_mark_out"} {
+				require.NoError(t, c.patchCNIMap(vswitch.InterfaceTable, owned.UUID, "options", nil, []string{key}))
+				if key != "ipsec_mark_out" {
+					require.ErrorContains(t, c.VerifyIPsecTunnelQuiescence(lease), "local OVN tunnel convergence")
+				}
+			}
+			require.NoError(t, c.VerifyIPsecTunnelQuiescence(lease))
+			require.NoError(t, c.VerifyIPsecProtection(lease), "local convergence must preserve the output mark and public lease")
+			actual, err := c.CNIInterface(foreign.Name)
+			require.NoError(t, err)
+			require.Equal(t, foreign.Options, actual.Options, "foreign encrypted interfaces must be preserved")
+			stale := lease
+			stale.OVSUUID = "75980000-0000-0000-0000-000000000004"
+			require.Error(t, c.VerifyIPsecTunnelQuiescence(stale))
+			// A new peer appearing after a successful observation invalidates
+			// the next preflight; a cached result cannot complete node cleanup.
+			require.NoError(t, c.patchCNIMap(vswitch.InterfaceTable, owned.UUID, "options", map[string]string{"remote_name": "peer"}, nil))
+			require.Error(t, c.VerifyIPsecTunnelQuiescence(lease))
+		})
+	}
+}
