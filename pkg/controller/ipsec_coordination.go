@@ -93,22 +93,7 @@ func (c *Controller) reconcileIPsecCoordination(ctx context.Context) error {
 		cm = nil
 	}
 	if !c.config.EnableOVNIPSec {
-		if err == nil {
-			state, err := ipsec.DecodeCoordination([]byte(cm.Data["state"]))
-			if err != nil {
-				return err
-			}
-			if state.Phase != ipsec.DisablingPhase {
-				state.Phase, state.Epoch = ipsec.DisablingPhase, rand.Text()
-				if err := encodeIPsecCoordination(cm, state); err != nil {
-					return err
-				}
-				if _, err := client.Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
-					return err
-				}
-			}
-		}
-		return c.OVNNbClient.SetOVNIPSec(false)
+		return c.reconcileIPsecDisable(ctx, cm)
 	}
 	ds, err := c.config.KubeClient.AppsV1().DaemonSets(c.config.PodNamespace).Get(ctx, "kube-ovn-cni", metav1.GetOptions{})
 	if err != nil {
@@ -146,7 +131,7 @@ func (c *Controller) reconcileIPsecCoordination(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if state.Phase == ipsec.DisablingPhase {
+	if state.Phase == ipsec.DisablingPhase || state.Phase == ipsec.CleanupPhase {
 		return errors.New("IPsec disable cleanup must finish before a new enable generation")
 	}
 	data, err := json.Marshal(ds.Spec.Template, json.Deterministic(true))
@@ -223,6 +208,62 @@ func (c *Controller) reconcileIPsecCoordination(ctx context.Context) error {
 	}
 	_, err = client.Update(ctx, cm, metav1.UpdateOptions{})
 	return err
+}
+
+func (c *Controller) reconcileIPsecDisable(ctx context.Context, cm *corev1.ConfigMap) error {
+	if cm == nil {
+		return c.OVNNbClient.SetOVNIPSec(false)
+	}
+	state, err := ipsec.DecodeCoordination([]byte(cm.Data["state"]))
+	if err != nil {
+		return err
+	}
+	update := func(phase string) error {
+		state.Phase, state.Epoch = phase, rand.Text()
+		if phase != ipsec.CleanupPhase {
+			state.NBGlobalUUID, state.SBGlobalUUID = "", ""
+		}
+		if err := encodeIPsecCoordination(cm, state); err != nil {
+			return err
+		}
+		_, err := c.config.KubeClient.CoreV1().ConfigMaps(c.config.PodNamespace).Update(ctx, cm, metav1.UpdateOptions{})
+		return err
+	}
+	if state.Phase != ipsec.DisablingPhase && state.Phase != ipsec.CleanupPhase {
+		// Persist the new challenge before changing NB. A crash must not leave
+		// an old enable receipt that can be mistaken for cleanup authorization.
+		if err := update(ipsec.DisablingPhase); err != nil {
+			return err
+		}
+		return c.OVNNbClient.SetOVNIPSec(false)
+	}
+	if err := c.OVNNbClient.SetOVNIPSec(false); err != nil {
+		return err
+	}
+	nb, err := c.OVNNbClient.GetIPsecGlobal(ctx)
+	if err != nil {
+		return err
+	}
+	sb, err := c.OVNSbClient.GetIPsecGlobal(ctx)
+	if err != nil {
+		return err
+	}
+	if nb.Enabled || sb.Enabled {
+		if state.Phase == ipsec.CleanupPhase {
+			if err := update(ipsec.DisablingPhase); err != nil {
+				return err
+			}
+		}
+		return errors.New("IPsec disable is waiting for live NB/SB switch convergence")
+	}
+	if state.Phase == ipsec.CleanupPhase && state.NBGlobalUUID == nb.UUID && state.SBGlobalUUID == sb.UUID {
+		return nil
+	}
+	// This phase confirms only the global switch. Each node must additionally
+	// prove local tunnel convergence and exact connection/SA ownership while
+	// guards remain installed. It is not a completed Disabled receipt.
+	state.NBGlobalUUID, state.SBGlobalUUID = nb.UUID, sb.UUID
+	return update(ipsec.CleanupPhase)
 }
 
 func verifyIPsecReceipt(node *corev1.Node, ds *appsv1.DaemonSet, state *ipsec.Coordination, trust []byte, pods map[string]*corev1.Pod, requests map[string]*certv1.CertificateSigningRequest) error {

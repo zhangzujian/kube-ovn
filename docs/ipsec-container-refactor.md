@@ -93,6 +93,9 @@ a production barrier across API Server instances.
 endpoints, priority/capability inheritance, monitor crash recovery, and shutdown.
 `hack/test-ipsec-traffic.sh` runs two private network namespaces with synthetic
 certificate identities and UDP payloads on Geneve/VXLAN ports, for IPv4 and IPv6.
+Each peer first waits for the production startup gate and then uses its actual
+mark/reqid lease, including setting the socket mark before connecting. A fixed
+test reqid must not race bootstrap or bypass the production ownership checks.
 A separate fixture captures the outer interface and requires ESP packets with
 zero plaintext transport packets. The isolated test also prototypes a
 low-priority XFRM block policy before starting IKE and confirms it survives
@@ -184,6 +187,17 @@ unsigned Node annotation can satisfy the barrier. A removed/replaced target,
 changed template or changed trust blocks the in-progress barrier without
 silently shrinking or rewriting its cohort. Recovery/reconfiguration of such
 a blocked generation still needs a coordinated operator workflow.
+
+Disable first persists a new `Disabling` challenge and turns off NB. A separate
+`Cleanup` challenge is published only after synchronous native reads confirm
+both `NB_Global.ipsec=false` and `SB_Global.ipsec=false`. It includes the two
+global row UUIDs; rebuilding either database rotates the cleanup challenge.
+Read failures retain protection, and observed re-enablement revokes the old
+cleanup challenge. The SB read adds no monitor and cannot purge the existing
+Chassis cache. This is global convergence evidence only: node cleanup still
+needs current challenge/UUID checks, local tunnel convergence, proven connection
+and SA ownership, and a completed Disabled receipt. Those operations and the
+cleanup init container remain incomplete in this draft.
 
 The agent signs public status claims with its existing node identity key and
 references a CSR authenticated as its current bound Pod. This also binds a

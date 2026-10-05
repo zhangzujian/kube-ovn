@@ -26,7 +26,7 @@ func (a *Agent) publishReceipt(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if state.Phase == DisablingPhase {
+	if state.Phase == DisablingPhase || state.Phase == CleanupPhase {
 		return nil // Protection remains until coordinated cleanup is complete.
 	}
 	g, err := a.store.load("current")

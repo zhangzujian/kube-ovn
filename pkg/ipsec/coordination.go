@@ -8,6 +8,8 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 const (
@@ -17,6 +19,7 @@ const (
 	ArmPhase              = "Arm"
 	EnabledPhase          = "Enabled"
 	DisablingPhase        = "Disabling"
+	CleanupPhase          = "Cleanup"
 )
 
 // Coordination freezes node identities independently of Pod replacements.
@@ -30,6 +33,8 @@ type Coordination struct {
 	TemplateHash string            `json:"templateHash"`
 	TrustHash    string            `json:"trustHash"`
 	Targets      map[string]string `json:"targets"`
+	NBGlobalUUID string            `json:"nbGlobalUUID,omitempty"`
+	SBGlobalUUID string            `json:"sbGlobalUUID,omitempty"`
 }
 
 func DecodeCoordination(data []byte) (*Coordination, error) {
@@ -41,9 +46,16 @@ func DecodeCoordination(data []byte) (*Coordination, error) {
 		return nil, errors.New("invalid IPsec coordination state")
 	}
 	switch state.Phase {
-	case PreparePhase, ArmPhase, EnabledPhase, DisablingPhase:
+	case PreparePhase, ArmPhase, EnabledPhase, DisablingPhase, CleanupPhase:
 	default:
 		return nil, errors.New("invalid IPsec coordination phase")
+	}
+	if state.Phase == CleanupPhase {
+		if uuid.Validate(state.NBGlobalUUID) != nil || uuid.Validate(state.SBGlobalUUID) != nil {
+			return nil, errors.New("IPsec cleanup lacks live NB/SB database identities")
+		}
+	} else if state.NBGlobalUUID != "" || state.SBGlobalUUID != "" {
+		return nil, errors.New("IPsec cleanup evidence does not match the coordination phase")
 	}
 	for name, uid := range state.Targets {
 		if name == "" || uid == "" {

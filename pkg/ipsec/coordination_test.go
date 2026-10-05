@@ -70,3 +70,24 @@ func TestCoordinationReceiptRejectsForgeryAndReplay(t *testing.T) {
 		})
 	}
 }
+
+func TestCoordinationCleanupRequiresDatabaseEvidence(t *testing.T) {
+	state := Coordination{Version: 1, Generation: "generation", Epoch: "cleanup-epoch", Phase: CleanupPhase, DaemonSetUID: "ds-uid", TemplateHash: digest([]byte("template")), TrustHash: digest([]byte("trust")), Targets: map[string]string{"offline": "offline-uid"}, NBGlobalUUID: "75980000-0000-0000-0000-000000000001", SBGlobalUUID: "75980000-0000-0000-0000-000000000002"}
+	data, err := json.Marshal(state)
+	require.NoError(t, err)
+	_, err = DecodeCoordination(data)
+	require.NoError(t, err)
+	for _, change := range []func(*Coordination){
+		func(s *Coordination) { s.NBGlobalUUID = "" },
+		func(s *Coordination) { s.SBGlobalUUID = "invalid" },
+		func(s *Coordination) { s.Phase = EnabledPhase },
+		func(s *Coordination) { s.Phase = DisablingPhase },
+	} {
+		s := state
+		change(&s)
+		data, err := json.Marshal(s)
+		require.NoError(t, err)
+		_, err = DecodeCoordination(data)
+		require.Error(t, err, "incomplete or stale cleanup evidence cannot authorize protection removal")
+	}
+}
