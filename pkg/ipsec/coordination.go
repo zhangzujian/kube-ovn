@@ -9,7 +9,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/ovn-kubernetes/libovsdb/ovsdb"
 )
 
 const (
@@ -51,7 +51,7 @@ func DecodeCoordination(data []byte) (*Coordination, error) {
 		return nil, errors.New("invalid IPsec coordination phase")
 	}
 	if state.Phase == CleanupPhase {
-		if uuid.Validate(state.NBGlobalUUID) != nil || uuid.Validate(state.SBGlobalUUID) != nil {
+		if !ovsdb.IsValidUUID(state.NBGlobalUUID) || !ovsdb.IsValidUUID(state.SBGlobalUUID) {
 			return nil, errors.New("IPsec cleanup lacks live NB/SB database identities")
 		}
 	} else if state.NBGlobalUUID != "" || state.SBGlobalUUID != "" {

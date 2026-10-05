@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"crypto/x509"
+	"errors"
 	"os"
 	"time"
 
@@ -72,7 +73,13 @@ func validateIPsecBoundObjects(namespace string, csr *certv1.CertificateSigningR
 	if csr.Annotations[ipsec.NodeNameAnnotation] != "" && (csr.Annotations[ipsec.NodeNameAnnotation] != node.Name || csr.Annotations[ipsec.NodeUIDAnnotation] != string(node.UID)) {
 		return rejectIPsecIdentity("IPsec request Node UID does not match bound Pod")
 	}
-	if err := ipsec.ValidateRequestProfile(req, node.Annotations[util.ChassisAnnotation]); err != nil {
+	chassis := node.Annotations[util.ChassisAnnotation]
+	if chassis == "" {
+		// OVS registers after bootstrap protection; the Node annotation can lag
+		// the first CSR. Keep the request pending without weakening CN checks.
+		return errors.New("IPsec requester chassis has not registered")
+	}
+	if err := ipsec.ValidateRequestProfile(req, chassis); err != nil {
 		return rejectIPsecIdentity(err.Error())
 	}
 	return nil

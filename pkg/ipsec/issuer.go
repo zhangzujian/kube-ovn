@@ -80,7 +80,7 @@ func (i issuer) sign(ctx context.Context, csr []byte) ([]byte, error) {
 		}
 		for _, condition := range obj.Status.Conditions {
 			if condition.Status == "True" && (condition.Type == certv1.CertificateDenied || condition.Type == certv1.CertificateFailed) {
-				return false, fmt.Errorf("IPsec CSR %s: %s", condition.Type, condition.Reason)
+				return false, fmt.Errorf("IPsec CSR %s: %s: %s", condition.Type, condition.Reason, condition.Message)
 			}
 		}
 		return len(obj.Status.Certificate) != 0, nil

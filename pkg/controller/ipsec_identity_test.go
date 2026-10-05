@@ -133,6 +133,18 @@ func TestIPsecSignerRetriesCAOutageWithoutFailingPendingRequest(t *testing.T) {
 	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
 	require.NoError(t, indexer.Add(req))
 	c := &Controller{config: &Configuration{KubeClient: client, PodNamespace: "kube-system"}, csrLister: certlisters.NewCertificateSigningRequestLister(indexer)}
+	node, err := client.CoreV1().Nodes().Get(t.Context(), "node-a", metav1.GetOptions{})
+	require.NoError(t, err)
+	delete(node.Annotations, util.ChassisAnnotation)
+	_, err = client.CoreV1().Nodes().Update(t.Context(), node, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	require.ErrorContains(t, c.handleAddOrUpdateCsr(req.Name), "chassis has not registered")
+	pending, err := client.CertificatesV1().CertificateSigningRequests().Get(t.Context(), req.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Equal(t, req.Status.Conditions, pending.Status.Conditions, "registration lag must not permanently fail the first CSR")
+	node.Annotations[util.ChassisAnnotation] = "chassis-a"
+	_, err = client.CoreV1().Nodes().Update(t.Context(), node, metav1.UpdateOptions{})
+	require.NoError(t, err)
 	require.Error(t, c.handleAddOrUpdateCsr(req.Name), "missing private CA must be retryable")
 	after, err := client.CertificatesV1().CertificateSigningRequests().Get(t.Context(), req.Name, metav1.GetOptions{})
 	require.NoError(t, err)
