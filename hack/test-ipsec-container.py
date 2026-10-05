@@ -151,6 +151,20 @@ def installer_issuer_policy():
 
 
 def main():
+    for registry in ("", "registry.test"):
+        rendered = subprocess.check_output([
+            "helm", "template", "hooks", str(ROOT / "charts/kube-ovn-v2"),
+            "--set-string", f"global.registry.address={registry}",
+            "--set-string", "global.images.kubeovn.repository=ipsec-candidate",
+            "--set-string", "global.images.kubeovn.tag=cleanup", "--set", "image.pullPolicy=Never",
+        ], text=True, stderr=subprocess.DEVNULL)
+        jobs = [item for item in yaml.safe_load_all(rendered) if item and item.get("kind") == "Job" and "helm.sh/hook" in item["metadata"].get("annotations", {})]
+        assert len(jobs) == 3
+        expected = f"{registry + '/' if registry else ''}ipsec-candidate:cleanup"
+        for job in jobs:
+            for container in job["spec"]["template"]["spec"]["containers"]:
+                assert container["image"] == expected
+                assert container["imagePullPolicy"] == "Never"
     for chart, switch, tproxy in (("kube-ovn", "func.ENABLE_OVN_IPSEC", "func.ENABLE_TPROXY"),
                                   ("kube-ovn-v2", "features.enableOvnIpsec", "features.enableTproxy")):
         for enabled in (False, True):
