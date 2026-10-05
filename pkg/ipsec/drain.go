@@ -168,9 +168,16 @@ func (r *runtimeManager) recordDrain(session connectionSession, kernel *netlink.
 	if err != nil {
 		return err
 	}
-	policies, err := kernel.XfrmPolicyList(netlink.FAMILY_ALL)
-	if err != nil {
-		return err
+	// FAMILY_ALL normalizes an IPv6 wildcard selector to IPv4 in netlink's
+	// policy parser. Preserve each family exactly, as readGuard does; never
+	// normalize a conflicting policy to make it match an owned guard.
+	var policies []netlink.XfrmPolicy
+	for _, family := range []int{netlink.FAMILY_V4, netlink.FAMILY_V6} {
+		familyPolicies, err := kernel.XfrmPolicyList(family)
+		if err != nil {
+			return err
+		}
+		policies = append(policies, familyPolicies...)
 	}
 	if err := drainedInventory(*reservation, bootID, ledgers, states, policies); err != nil {
 		return err
