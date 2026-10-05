@@ -49,6 +49,9 @@ func (c *Controller) validateIPsecRequester(csr *certv1.CertificateSigningReques
 	if err != nil {
 		return err
 	}
+	if err := validateIPsecBoundPod(namespace, csr, pod, ds); err != nil {
+		return err
+	}
 	node, err := c.config.KubeClient.CoreV1().Nodes().Get(ctx, pod.Spec.NodeName, metav1.GetOptions{})
 	if err != nil {
 		return err
@@ -60,6 +63,22 @@ func (c *Controller) validateIPsecRequester(csr *certv1.CertificateSigningReques
 // batch snapshots and this same identity contract, avoiding per-node API
 // requests while verifying a large frozen cohort.
 func validateIPsecBoundObjects(namespace string, csr *certv1.CertificateSigningRequest, req *x509.CertificateRequest, pod *corev1.Pod, node *corev1.Node, ds *appsv1.DaemonSet) error {
+	if err := validateIPsecBoundPod(namespace, csr, pod, ds); err != nil {
+		return err
+	}
+	if node == nil || node.DeletionTimestamp != nil || node.Name != pod.Spec.NodeName {
+		return rejectIPsecIdentity("IPsec requester node identity is no longer valid")
+	}
+	if csr.Annotations[ipsec.NodeNameAnnotation] != "" && (csr.Annotations[ipsec.NodeNameAnnotation] != node.Name || csr.Annotations[ipsec.NodeUIDAnnotation] != string(node.UID)) {
+		return rejectIPsecIdentity("IPsec request Node UID does not match bound Pod")
+	}
+	if err := ipsec.ValidateRequestProfile(req, node.Annotations[util.ChassisAnnotation]); err != nil {
+		return rejectIPsecIdentity(err.Error())
+	}
+	return nil
+}
+
+func validateIPsecBoundPod(namespace string, csr *certv1.CertificateSigningRequest, pod *corev1.Pod, ds *appsv1.DaemonSet) error {
 	if csr.Spec.Username != "system:serviceaccount:"+namespace+":kube-ovn-cni" {
 		return rejectIPsecIdentity("unexpected IPsec requester service account")
 	}
@@ -73,15 +92,6 @@ func validateIPsecBoundObjects(namespace string, csr *certv1.CertificateSigningR
 	owner := metav1.GetControllerOf(pod)
 	if ds == nil || ds.DeletionTimestamp != nil || ds.Namespace != namespace || owner == nil || owner.APIVersion != "apps/v1" || owner.Kind != "DaemonSet" || owner.Name != "kube-ovn-cni" || owner.UID != ds.UID || pod.Spec.NodeName == "" {
 		return rejectIPsecIdentity("IPsec requester is not a live CNI DaemonSet Pod")
-	}
-	if node == nil || node.DeletionTimestamp != nil || node.Name != pod.Spec.NodeName {
-		return rejectIPsecIdentity("IPsec requester node identity is no longer valid")
-	}
-	if csr.Annotations[ipsec.NodeNameAnnotation] != "" && (csr.Annotations[ipsec.NodeNameAnnotation] != node.Name || csr.Annotations[ipsec.NodeUIDAnnotation] != string(node.UID)) {
-		return rejectIPsecIdentity("IPsec request Node UID does not match bound Pod")
-	}
-	if err := ipsec.ValidateRequestProfile(req, node.Annotations[util.ChassisAnnotation]); err != nil {
-		return rejectIPsecIdentity(err.Error())
 	}
 	return nil
 }

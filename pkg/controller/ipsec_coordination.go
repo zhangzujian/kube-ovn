@@ -8,6 +8,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -39,12 +40,24 @@ func freezeIPsecTargets(ds *appsv1.DaemonSet, nodes []corev1.Node, trust []byte,
 	if err != nil {
 		return nil, err
 	}
-	state := &ipsec.Coordination{Version: 1, Generation: rand.Text(), Epoch: rand.Text(), Phase: ipsec.PreparePhase, DaemonSetUID: string(ds.UID), TemplateHash: ipsecPublicHash(data), TrustHash: ipsecPublicHash(trust), Targets: map[string]string{}}
+	targets, err := matchingIPsecTargets(ds, nodes)
+	if err != nil {
+		return nil, err
+	}
+	if len(targets) == 0 {
+		return nil, errors.New("IPsec cannot enable an empty node cohort")
+	}
+	state := &ipsec.Coordination{Version: 1, Generation: rand.Text(), Epoch: rand.Text(), Phase: ipsec.PreparePhase, DaemonSetUID: string(ds.UID), TemplateHash: ipsecPublicHash(data), TrustHash: ipsecPublicHash(trust), Targets: targets}
 	if enabled {
 		// Preserve a previously enabled legacy cluster during rolling takeover.
 		// This records the cohort, not proof that legacy nodes are protected.
 		state.Phase = ipsec.EnabledPhase
 	}
+	return state, nil
+}
+
+func matchingIPsecTargets(ds *appsv1.DaemonSet, nodes []corev1.Node) (map[string]string, error) {
+	targets := make(map[string]string)
 	affinity := nodeaffinity.GetRequiredNodeAffinity(&corev1.Pod{Spec: ds.Spec.Template.Spec})
 	for _, node := range nodes {
 		if node.DeletionTimestamp != nil || ds.Spec.Template.Spec.NodeName != "" && ds.Spec.Template.Spec.NodeName != node.Name {
@@ -58,13 +71,10 @@ func freezeIPsecTargets(ds *appsv1.DaemonSet, nodes []corev1.Node, trust []byte,
 			if node.UID == "" {
 				return nil, fmt.Errorf("IPsec target %s has no UID", node.Name)
 			}
-			state.Targets[node.Name] = string(node.UID)
+			targets[node.Name] = string(node.UID)
 		}
 	}
-	if len(state.Targets) == 0 {
-		return nil, errors.New("IPsec cannot enable an empty node cohort")
-	}
-	return state, nil
+	return targets, nil
 }
 
 func encodeIPsecCoordination(cm *corev1.ConfigMap, state *ipsec.Coordination) error {
@@ -139,12 +149,29 @@ func (c *Controller) reconcileIPsecCoordination(ctx context.Context) error {
 		return err
 	}
 	if state.Phase == ipsec.EnabledPhase && nb.Ipsec {
+		nodes, err := c.config.KubeClient.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return err
+		}
+		matching, err := matchingIPsecTargets(ds, nodes.Items)
+		if err != nil {
+			return err
+		}
+		targets := maps.Clone(state.Targets)
+		for name, uid := range matching {
+			if frozen := targets[name]; frozen != "" && frozen != uid {
+				return fmt.Errorf("IPsec frozen target %s was replaced; explicit retirement is required", name)
+			}
+			targets[name] = uid
+		}
 		// Refresh the acknowledgement challenge on rollout/trust changes, but
-		// retain the frozen Node UIDs and never toggle an enabled cluster off.
+		// retain frozen Node UIDs and add new members without toggling NB off.
+		// New members must already pass the independent local startup gate.
 		// This does not authorize removing old roots or dropping offline nodes.
-		if state.DaemonSetUID == string(ds.UID) && state.TemplateHash == ipsecPublicHash(data) && state.TrustHash == ipsecPublicHash(trust) {
+		if maps.Equal(targets, state.Targets) && state.DaemonSetUID == string(ds.UID) && state.TemplateHash == ipsecPublicHash(data) && state.TrustHash == ipsecPublicHash(trust) {
 			return nil
 		}
+		state.Targets = targets
 		state.DaemonSetUID, state.TemplateHash, state.TrustHash = string(ds.UID), ipsecPublicHash(data), ipsecPublicHash(trust)
 		state.Generation, state.Epoch = rand.Text(), rand.Text()
 		if err := encodeIPsecCoordination(cm, state); err != nil {
@@ -154,7 +181,7 @@ func (c *Controller) reconcileIPsecCoordination(ctx context.Context) error {
 		return err
 	}
 	if state.DaemonSetUID != string(ds.UID) || state.TemplateHash != ipsecPublicHash(data) || state.TrustHash != ipsecPublicHash(trust) {
-		return errors.New("CNI template or trust changed during a frozen IPsec barrier")
+		return c.restartIPsecBarrier(ctx, cm, state, ds, data, trust)
 	}
 	nodes, err := c.config.KubeClient.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {
@@ -207,6 +234,30 @@ func (c *Controller) reconcileIPsecCoordination(ctx context.Context) error {
 		return err
 	}
 	_, err = client.Update(ctx, cm, metav1.UpdateOptions{})
+	return err
+}
+
+func (c *Controller) restartIPsecBarrier(ctx context.Context, cm *corev1.ConfigMap, state *ipsec.Coordination, ds *appsv1.DaemonSet, template, trust []byte) error {
+	nb, err := c.OVNNbClient.GetIPsecGlobal(ctx)
+	if err != nil {
+		return err
+	}
+	// Changing configuration invalidates every previous receipt. Restart the
+	// challenge without shrinking the original Node UID cohort. In particular,
+	// a selector change cannot silently exclude an offline or replaced target.
+	state.DaemonSetUID, state.TemplateHash, state.TrustHash = string(ds.UID), ipsecPublicHash(template), ipsecPublicHash(trust)
+	state.Generation, state.Epoch = rand.Text(), rand.Text()
+	state.Phase = ipsec.PreparePhase
+	if nb.Enabled {
+		// NB may have committed immediately before a leader crashed at Arm.
+		// Preserve encryption during the subsequent rollout, just as for a
+		// recorded Enabled generation; never introduce an automatic off/on.
+		state.Phase = ipsec.EnabledPhase
+	}
+	if err := encodeIPsecCoordination(cm, state); err != nil {
+		return err
+	}
+	_, err = c.config.KubeClient.CoreV1().ConfigMaps(c.config.PodNamespace).Update(ctx, cm, metav1.UpdateOptions{})
 	return err
 }
 

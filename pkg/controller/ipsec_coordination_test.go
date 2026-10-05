@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
@@ -9,6 +10,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/json/v2"
 	"encoding/pem"
+	"strconv"
 	"testing"
 	"time"
 
@@ -22,6 +24,7 @@ import (
 
 	mockovs "github.com/kubeovn/kube-ovn/mocks/pkg/ovs"
 	"github.com/kubeovn/kube-ovn/pkg/ipsec"
+	"github.com/kubeovn/kube-ovn/pkg/ovs"
 	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
 	"github.com/kubeovn/kube-ovn/pkg/util"
 )
@@ -144,4 +147,57 @@ func TestIPsecCoordinationRequiresFreshBoundReceiptsBeforeEnable(t *testing.T) {
 	require.NotEqual(t, prepared.Generation, rolled.Generation)
 	require.Equal(t, ipsec.EnabledPhase, rolled.Phase)
 	require.True(t, nb.Ipsec)
+	_, err = kube.CoreV1().Nodes().Create(t.Context(), &corev1.Node{Name: "new-node", UID: "new-node-uid"}, metav1.CreateOptions{})
+	require.NoError(t, err)
+	require.NoError(t, c.reconcileIPsecCoordination(t.Context()))
+	joined := readState()
+	require.Equal(t, map[string]string{"node-a": "node-uid", "new-node": "new-node-uid"}, joined.Targets)
+	require.NotEqual(t, rolled.Generation, joined.Generation, "new members invalidate older cohort acknowledgements")
+	require.True(t, nb.Ipsec, "joining an already protected new node cannot toggle encryption off")
+	require.NoError(t, kube.CoreV1().Nodes().Delete(t.Context(), "new-node", metav1.DeleteOptions{}))
+	require.NoError(t, c.reconcileIPsecCoordination(t.Context()))
+	require.Equal(t, joined.Targets, readState().Targets, "a removed member still needs explicit retirement")
+	_, err = kube.CoreV1().Nodes().Create(t.Context(), &corev1.Node{Name: "new-node", UID: "replacement-uid"}, metav1.CreateOptions{})
+	require.NoError(t, err)
+	require.ErrorContains(t, c.reconcileIPsecCoordination(t.Context()), "explicit retirement")
+	require.Equal(t, joined.Targets, readState().Targets, "same-name replacement cannot overwrite a frozen identity")
+}
+
+func TestIPsecChangedBarrierRestartsChallengeWithoutDroppingTargets(t *testing.T) {
+	trust, _, err := newIPsecCA()
+	require.NoError(t, err)
+	for _, phase := range []string{ipsec.PreparePhase, ipsec.ArmPhase} {
+		for _, enabled := range []bool{false, true} {
+			t.Run(phase+"/"+strconv.FormatBool(enabled), func(t *testing.T) {
+				state := &ipsec.Coordination{Version: 1, Generation: "old-generation", Epoch: "old-epoch", Phase: phase, DaemonSetUID: "old-ds", TemplateHash: ipsecPublicHash([]byte("old-template")), TrustHash: ipsecPublicHash([]byte("old-trust")), Targets: map[string]string{"offline": "offline-uid"}}
+				cm := &corev1.ConfigMap{Name: ipsec.CoordinationConfigMap, Namespace: "kube-system"}
+				require.NoError(t, encodeIPsecCoordination(cm, state))
+				ds := &appsv1.DaemonSet{Name: "kube-ovn-cni", Namespace: "kube-system", UID: "new-ds", Spec: appsv1.DaemonSetSpec{Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "ipsec", Image: "new-candidate"}}, NodeSelector: map[string]string{"pool": "new-pool"}}}}}
+				kube := fake.NewClientset(cm, ds, &corev1.Secret{Name: util.DefaultOVNIPSecCA, Namespace: "kube-system", Data: map[string][]byte{"cacert": trust}})
+				nb := mockovs.NewMockNbClient(gomock.NewController(t))
+				// The cached value intentionally differs. Recovery must use a live
+				// read before choosing Prepare or preserving a committed enable.
+				nb.EXPECT().GetNbGlobal().Return(&ovnnb.NBGlobal{Ipsec: !enabled}, nil)
+				nb.EXPECT().GetIPsecGlobal(gomock.Any()).DoAndReturn(func(context.Context) (*ovs.IPsecGlobalState, error) {
+					return &ovs.IPsecGlobalState{UUID: "75980000-0000-0000-0000-000000000001", Enabled: enabled}, nil
+				})
+				c := &Controller{config: &Configuration{KubeClient: kube, PodNamespace: "kube-system", EnableOVNIPSec: true}, OVNNbClient: nb}
+				require.NoError(t, c.reconcileIPsecCoordination(t.Context()))
+				actual, err := kube.CoreV1().ConfigMaps("kube-system").Get(t.Context(), cm.Name, metav1.GetOptions{})
+				require.NoError(t, err)
+				restarted, err := ipsec.DecodeCoordination([]byte(actual.Data["state"]))
+				require.NoError(t, err)
+				require.Equal(t, state.Targets, restarted.Targets, "selector, template and trust changes retain the entire original cohort")
+				require.NotEqual(t, state.Generation, restarted.Generation)
+				require.NotEqual(t, state.Epoch, restarted.Epoch)
+				require.Equal(t, string(ds.UID), restarted.DaemonSetUID)
+				require.Equal(t, ipsecPublicHash(trust), restarted.TrustHash)
+				expectedPhase := ipsec.PreparePhase
+				if enabled {
+					expectedPhase = ipsec.EnabledPhase
+				}
+				require.Equal(t, expectedPhase, restarted.Phase)
+			})
+		}
+	}
 }

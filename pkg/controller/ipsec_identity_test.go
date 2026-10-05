@@ -8,6 +8,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/pem"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -75,6 +76,16 @@ func TestIPsecSignerBindsRequesterToLiveNode(t *testing.T) {
 	require.NoError(t, err)
 	other.Extensions = []pkix.Extension{{Id: asn1.ObjectIdentifier{2, 5, 29, 17}, Value: san}}
 	require.Error(t, c.validateIPsecRequester(base, &other), "x509 DNSNames alone does not expose every SAN type")
+	client.PrependReactor("get", "nodes", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, context.DeadlineExceeded
+	})
+	replaced := base.DeepCopy()
+	replaced.Spec.Extra["authentication.kubernetes.io/pod-uid"] = certv1.ExtraValue{"old-pod-uid"}
+	err = c.validateIPsecRequester(replaced, request)
+	_, rejected := errors.AsType[*ipsecIdentityError](err)
+	require.True(t, rejected, "a proven invalid Pod must remain terminal even when the node API is unavailable")
+	err = c.validateIPsecRequester(base, request)
+	require.ErrorIs(t, err, context.DeadlineExceeded, "valid Pod identity with an unavailable node lookup remains retryable")
 }
 
 func TestIPsecSignerDoesNotApproveDeniedOrFailedRequest(t *testing.T) {

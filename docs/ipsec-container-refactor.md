@@ -183,10 +183,16 @@ UID/template digest, public trust digest and all matching Node UIDs, including
 offline nodes. Required node affinity and selectors select the initial cohort.
 Prepare and Arm use separate random epochs; only fresh receipts from every
 frozen target allow `NB_Global.ipsec=true`. Neither Pod readiness alone nor an
-unsigned Node annotation can satisfy the barrier. A removed/replaced target,
-changed template or changed trust blocks the in-progress barrier without
-silently shrinking or rewriting its cohort. Recovery/reconfiguration of such
-a blocked generation still needs a coordinated operator workflow.
+unsigned Node annotation can satisfy the barrier. A removed/replaced target
+blocks the in-progress barrier without silently shrinking or rewriting its
+cohort. A changed template or trust starts a fresh Prepare generation retaining
+the original Node UIDs, after reading the current NB switch synchronously. If
+NB already committed at Arm before a leader crash, recovery records Enabled and
+preserves encryption during rollout. Existing receipts cannot cross the new
+generation/epoch. Enabled cohorts add matching new Node UIDs with a new challenge;
+those nodes independently pass the local startup gate first. Missing members
+remain frozen, and same-name replacement requires explicit retirement. That
+retirement workflow and actual new-node acceptance remain incomplete.
 
 Disable first persists a new `Disabling` challenge and turns off NB. A separate
 `Cleanup` challenge is published only after synchronous native reads confirm
