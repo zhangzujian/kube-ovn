@@ -1,0 +1,36 @@
+name: Validate PR 7407 backport
+on:
+  push:
+    branches: [validation/pr7407-release-1.16]
+permissions:
+  contents: read
+jobs:
+  lint-and-regressions:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      CI: 'true'
+      GOMAXPROCS: '2'
+      GOFLAGS: '-p=2'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: a1761c18d81eab7759fc9c6ef56ac59034400ff0
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install golangci-lint
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | bash -s -- -b "$(go env GOPATH)/bin" v2.14.0
+      - name: Verify exact source
+        run: test "$(git rev-parse HEAD)" = a1761c18d81eab7759fc9c6ef56ac59034400ff0
+      - name: Full make lint
+        run: make lint
+      - name: Controller and webhook regressions
+        run: go test -p 2 ./pkg/controller ./pkg/webhook -run 'TestRecordSubnetGatewayMACRetriesAfterFailedPatch|TestHandleAddVirtualIP_SwitchLBRule|TestVipUpdateHookLegacyMacRepair' -count=1
+      - name: OVS option regression
+        run: go test -p 2 ./pkg/ovs -run '^TestOvnClientTestSuite$/^Test_RemoveLogicalSwitchPortOption$' -count=1
+      - name: Verify clean source
+        run: git diff --exit-code
