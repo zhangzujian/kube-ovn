@@ -1,35 +1,114 @@
 name: Build Test
 
+on: workflow_dispatch
 permissions:
   contents: read
 
-on: workflow_dispatch
-
 env:
-  GO_VERSION: ''
+  CANDIDATE_SHA: 2c8e50dc6388eb09075d65edcdcb62c1e93b61af
+  GOMAXPROCS: '4'
 
 jobs:
-  build:
-    name: Build Test
+  checks:
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
-      - uses: docker/setup-buildx-action@v4
+        with:
+          ref: 2c8e50dc6388eb09075d65edcdcb62c1e93b61af
+          persist-credentials: false
       - uses: actions/setup-go@v7
         with:
-          go-version: ${{ env.GO_VERSION || '' }}
           go-version-file: go.mod
-          check-latest: true
-          cache: false
-
-      - name: Build
-        run: make image-test
-
-      - name: Push
-        env:
-          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
-          COMMIT: ${{ github.sha }}
+      - uses: azure/setup-helm@v5.0.1
+      - name: Install test tools
         run: |
-          echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-          docker push kubeovn/test:$(cat VERSION)
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends openvswitch-common python3-yaml
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
+      - name: Verify candidate and installation contracts
+        run: |
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          python3 hack/test-ipsec-container.py
+          python3 -m unittest discover -s hack -p 'test_e2e*.py'
+          bash dist/images/install-cni-security_test.sh
+      - name: Full repository lint
+        env:
+          CI: 'true'
+          GOMEMLIMIT: 5GiB
+        run: make lint
+      - name: Race and native OVSDB regression tests
+        run: |
+          mkdir /tmp/cni-ovs-tools
+          ln -s "$(command -v ovsdb-tool)" /tmp/cni-ovs-tools/ovsdb-tool
+          ln -s "$(command -v ovsdb-server)" /tmp/cni-ovs-tools/ovsdb-server
+          export OVSDB_CNI_TEST_BIN_DIR=/tmp/cni-ovs-tools
+          go test -race ./pkg/ipsec
+          go test -race ./pkg/controller -run TestIPsec -count=1
+          go test ./pkg/ovs -run TestIPsec -count=1
+          git diff --exit-code
+  api:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: 2c8e50dc6388eb09075d65edcdcb62c1e93b61af
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Install Kind
+        run: go install sigs.k8s.io/kind@v0.33.0
+      - name: Test real API signing and cleanup init identity
+        run: bash hack/test-ipsec-api.sh
+  runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: 2c8e50dc6388eb09075d65edcdcb62c1e93b61af
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: azure/setup-helm@v5.0.1
+      - name: Install Kind and manifest tools
+        run: |
+          go install sigs.k8s.io/kind@v0.33.0
+          pipx install jinjanator
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends python3-yaml
+      - name: Build the normal production Dockerfiles
+        run: |
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          GO_VERSION="$(go env GOVERSION | sed 's/^go//')"
+          export GO_VERSION
+          docker build --build-arg ARCH=amd64 --build-arg GO_VERSION --label org.opencontainers.image.revision="$CANDIDATE_SHA" -t kubeovn/kube-ovn-base:ipsec-validation -f dist/images/Dockerfile.base dist/images
+          make build-go
+          docker build --build-arg BASE_TAG=ipsec-validation --build-arg VERSION=ipsec-validation --label org.opencontainers.image.revision="$CANDIDATE_SHA" -t kubeovn/kube-ovn:ipsec-validation -f dist/images/Dockerfile dist/images
+          CGO_ENABLED=0 go test -c -o /tmp/ipsec-runtime-tests ./pkg/ipsec
+          docker image inspect kubeovn/kube-ovn:ipsec-validation --format '{{.Id}} {{json .Config.Labels}}'
+      - name: Test packaged monitor and node runtime
+        run: |
+          docker run --rm --network none --user 0:65534 --cap-drop ALL --security-opt no-new-privileges --mount "type=bind,src=$PWD/hack/test-ipsec-monitor.py,dst=/tmp/test-ipsec-monitor.py,readonly" kubeovn/kube-ovn:ipsec-validation python3 /tmp/test-ipsec-monitor.py /usr/share/openvswitch/scripts/ovs-monitor-ipsec
+          bash hack/test-ipsec-runtime.sh kubeovn/kube-ovn:ipsec-validation /tmp/ipsec-runtime-tests
+          bash hack/test-ipsec-traffic.sh kubeovn/kube-ovn:ipsec-validation /tmp/ipsec-runtime-tests
+      - name: Test sequential cleanup init and Disabled completion
+        env:
+          IPSEC_CLEANUP_STARTUP: 'true'
+        run: bash hack/test-ipsec-overlay.sh kubeovn/kube-ovn:ipsec-validation
+      - name: Test ordinary-network cert-manager bootstrap
+        run: |
+          make VERSION=ipsec-validation kind-init
+          make VERSION=ipsec-validation kind-install-ovn-ipsec-cert-manager
+          make VERSION=ipsec-validation kube-ovn-ipsec-cert-mgr-e2e
+      - name: Diagnose cluster failure
+        if: failure()
+        run: |
+          kubectl get pods -A -o wide || true
+          kubectl get events -A --sort-by=.lastTimestamp | tail -80 || true
+          for component in ovs kube-ovn-controller kube-ovn-cni; do
+            kubectl -n kube-system logs -l "app=$component" --all-containers=true --tail=60 --prefix=true || true
+          done
