@@ -5,7 +5,7 @@ permissions:
   contents: read
 
 env:
-  CANDIDATE_SHA: 226cae32c6fae2ef82c8777d2f1425cc505a69b7
+  CANDIDATE_SHA: e48d837f9bb880319f3dae265123457aab7aa36b
   GOMAXPROCS: '4'
 
 jobs:
@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: 226cae32c6fae2ef82c8777d2f1425cc505a69b7
+          ref: e48d837f9bb880319f3dae265123457aab7aa36b
           persist-credentials: false
       - uses: actions/setup-go@v7
         with:
@@ -53,7 +53,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: 226cae32c6fae2ef82c8777d2f1425cc505a69b7
+          ref: e48d837f9bb880319f3dae265123457aab7aa36b
           persist-credentials: false
       - uses: actions/setup-go@v7
         with:
@@ -68,7 +68,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: 226cae32c6fae2ef82c8777d2f1425cc505a69b7
+          ref: e48d837f9bb880319f3dae265123457aab7aa36b
           persist-credentials: false
       - uses: actions/setup-go@v7
         with:
