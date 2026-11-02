@@ -140,6 +140,7 @@ func (c *Controller) enqueueUpdateNp(oldObj, newObj any) {
 }
 
 func (c *Controller) createAsForNetpol(ns, name, direction, asName string, addresses []string) error {
+	observePolicyAddressSetUpdate("networkpolicy", "create")
 	if err := c.OVNNbClient.CreateAddressSet(asName, map[string]string{
 		networkPolicyKey: fmt.Sprintf("%s/%s/%s", ns, name, direction),
 	}); err != nil {
@@ -147,6 +148,7 @@ func (c *Controller) createAsForNetpol(ns, name, direction, asName string, addre
 		return err
 	}
 
+	observePolicyAddressSetUpdate("networkpolicy", "update")
 	if err := c.OVNNbClient.AddressSetUpdateAddress(asName, addresses...); err != nil {
 		klog.Errorf("failed to set addresses %q to address set %s: %v", strings.Join(addresses, ","), asName, err)
 		return err
@@ -1364,7 +1366,7 @@ func (c *Controller) podMatchNetworkPolicies(pod *corev1.Pod) []string {
 
 	match := []string{}
 	keys := c.policyEventIndexCandidatesForPod(pod, podNs)
-	if !c.policyEventIndex.isReady() {
+	if c.config.DisablePolicyEventIndex || !c.policyEventIndex.isReady() {
 		policies, err := c.npsLister.NetworkPolicies(corev1.NamespaceAll).List(labels.Everything())
 		if err != nil {
 			klog.Errorf("failed to list network policies: %v", err)
@@ -1376,6 +1378,7 @@ func (c *Controller) podMatchNetworkPolicies(pod *corev1.Pod) []string {
 			keys = append(keys, cache.MetaObjectToName(policy).String())
 		}
 	}
+	observePolicyCandidates("networkpolicy", "pod", len(keys))
 	for _, key := range keys {
 		namespace, name, err := cache.SplitMetaNamespaceKey(key)
 		if err != nil {
@@ -1399,7 +1402,7 @@ func (c *Controller) podMatchNetworkPolicies(pod *corev1.Pod) []string {
 
 func isPodMatchNetworkPolicy(pod *corev1.Pod, podNs *corev1.Namespace, policy *netv1.NetworkPolicy, policyNs string) bool {
 	sel, _ := metav1.LabelSelectorAsSelector(&policy.Spec.PodSelector)
-	if podNs.Name == policyNs && sel.Matches(labels.Set(pod.Labels)) {
+	if podNs.Name == policyNs && policySelectorMatches("networkpolicy", "subject-pod", sel, labels.Set(pod.Labels)) {
 		return true
 	}
 	for _, npr := range policy.Spec.Ingress {
@@ -1443,17 +1446,17 @@ func isPodMatchPolicyPeer(pod *corev1.Pod, podNs *corev1.Namespace, policyPeer n
 		if policyNs != podNs.Name {
 			return false
 		}
-	} else if !util.ObjectMatchesLabelSelector(podNs, policyPeer.NamespaceSelector) {
+	} else if !policyObjectMatchesSelector("networkpolicy", "peer-namespace", podNs, policyPeer.NamespaceSelector) {
 		return false
 	}
 
-	return policyPeer.PodSelector == nil || util.ObjectMatchesLabelSelector(pod, policyPeer.PodSelector)
+	return policyPeer.PodSelector == nil || policyObjectMatchesSelector("networkpolicy", "peer-pod", pod, policyPeer.PodSelector)
 }
 
 func (c *Controller) namespaceMatchNetworkPolicies(ns *corev1.Namespace) []string {
 	match := make([]string, 0)
 	keys := c.policyEventIndex.candidatesForNamespace(ns.Labels)
-	if !c.policyEventIndex.isReady() {
+	if c.config.DisablePolicyEventIndex || !c.policyEventIndex.isReady() {
 		policies, err := c.npsLister.NetworkPolicies(corev1.NamespaceAll).List(labels.Everything())
 		if err != nil {
 			klog.Errorf("failed to list network policies: %v", err)
@@ -1464,6 +1467,7 @@ func (c *Controller) namespaceMatchNetworkPolicies(ns *corev1.Namespace) []strin
 			keys = append(keys, cache.MetaObjectToName(policy).String())
 		}
 	}
+	observePolicyCandidates("networkpolicy", "namespace", len(keys))
 	for _, key := range keys {
 		namespace, name, err := cache.SplitMetaNamespaceKey(key)
 		if err != nil {
@@ -1492,7 +1496,7 @@ func isNamespaceMatchNetworkPolicy(ns *corev1.Namespace, policy *netv1.NetworkPo
 				if ns.Labels == nil {
 					ns.Labels = map[string]string{}
 				}
-				if nsSel.Matches(labels.Set(ns.Labels)) {
+				if policySelectorMatches("networkpolicy", "peer-namespace", nsSel, labels.Set(ns.Labels)) {
 					return true
 				}
 			}
@@ -1506,7 +1510,7 @@ func isNamespaceMatchNetworkPolicy(ns *corev1.Namespace, policy *netv1.NetworkPo
 				if ns.Labels == nil {
 					ns.Labels = map[string]string{}
 				}
-				if nsSel.Matches(labels.Set(ns.Labels)) {
+				if policySelectorMatches("networkpolicy", "peer-namespace", nsSel, labels.Set(ns.Labels)) {
 					return true
 				}
 			}

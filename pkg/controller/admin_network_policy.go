@@ -913,6 +913,11 @@ func (c *Controller) resolveDomainNames(domainNames []v1alpha1.DomainName) ([]st
 
 func (c *Controller) createAsForAnpRule(anpName, ruleName, direction, asName string, addresses []string, isBanp bool) error {
 	var err error
+	kind := "anp"
+	if isBanp {
+		kind = "banp"
+	}
+	observePolicyAddressSetUpdate(kind, "create")
 	if isBanp {
 		err = c.OVNNbClient.CreateAddressSet(asName, map[string]string{
 			baselineAdminNetworkPolicyKey: fmt.Sprintf("%s/%s", anpName, direction),
@@ -927,6 +932,7 @@ func (c *Controller) createAsForAnpRule(anpName, ruleName, direction, asName str
 		return err
 	}
 
+	observePolicyAddressSetUpdate(kind, "update")
 	if err := c.OVNNbClient.AddressSetUpdateAddress(asName, addresses...); err != nil {
 		klog.Errorf("failed to set addresses %q to address set %s: %v", strings.Join(addresses, ","), asName, err)
 		return err
@@ -1067,7 +1073,7 @@ func (c *Controller) updateAnpsByLabelsMatch(nsLabels, podLabels map[string]stri
 
 func (c *Controller) updateAnpsByLabelsChange(change labelChange) {
 	keys := c.policyEventIndex.candidatesForChange(policyEventAdminNetworkPolicy, change)
-	if !c.policyEventIndex.isReady() {
+	if c.config.DisablePolicyEventIndex || !c.policyEventIndex.isReady() {
 		anps, err := c.anpsLister.List(labels.Everything())
 		if err != nil {
 			klog.Errorf("failed to list admin network policies for label update: %v", err)
@@ -1077,6 +1083,7 @@ func (c *Controller) updateAnpsByLabelsChange(change labelChange) {
 			keys = append(keys, anp.Name)
 		}
 	}
+	observePolicyCandidates("anp", "label", len(keys))
 	for _, key := range keys {
 		anp, err := c.anpsLister.Get(key)
 		if err != nil {
@@ -1103,7 +1110,7 @@ func (c *Controller) updateAnpsByLabelsChange(change labelChange) {
 	}
 
 	keys = c.policyEventIndex.candidatesForChange(policyEventBaselineAdminNetworkPolicy, change)
-	if !c.policyEventIndex.isReady() {
+	if c.config.DisablePolicyEventIndex || !c.policyEventIndex.isReady() {
 		banps, err := c.banpsLister.List(labels.Everything())
 		if err != nil {
 			klog.Errorf("failed to list baseline admin network policies for label update: %v", err)
@@ -1113,6 +1120,7 @@ func (c *Controller) updateAnpsByLabelsChange(change labelChange) {
 			keys = append(keys, banp.Name)
 		}
 	}
+	observePolicyCandidates("banp", "label", len(keys))
 	for _, key := range keys {
 		banp, err := c.banpsLister.Get(key)
 		if err != nil {
@@ -1155,7 +1163,7 @@ func isLabelsMatch(namespaces *metav1.LabelSelector, pods *v1alpha1.NamespacedPo
 			return false
 		}
 		klog.V(3).Infof("namespaces is not nil, nsSelector %s", nsSelector.String())
-		if nsSelector.Matches(labels.Set(nsLabels)) {
+		if policySelectorMatches("anp", "namespace", nsSelector, labels.Set(nsLabels)) {
 			return true
 		}
 	} else if pods != nil {
@@ -1170,7 +1178,7 @@ func isLabelsMatch(namespaces *metav1.LabelSelector, pods *v1alpha1.NamespacedPo
 			return false
 		}
 		klog.V(3).Infof("pods is not nil, nsSelector %s, podSelector %s", nsSelector.String(), podSelector.String())
-		if nsSelector.Matches(labels.Set(nsLabels)) && (podLabels == nil || podSelector.Matches(labels.Set(podLabels))) {
+		if policySelectorMatches("anp", "namespace", nsSelector, labels.Set(nsLabels)) && (podLabels == nil || policySelectorMatches("anp", "pod", podSelector, labels.Set(podLabels))) {
 			return true
 		}
 	}

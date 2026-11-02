@@ -96,4 +96,5 @@ func registerMetrics() {
 	metrics.Registry.MustRegister(metricSubnetIPAssignedInfo)
 	metrics.Registry.MustRegister(metricACLSamplingControllerAvailable)
 	metrics.Registry.MustRegister(metricACLSamplingControllerFailures)
+	registerPerformanceMetrics()
 }

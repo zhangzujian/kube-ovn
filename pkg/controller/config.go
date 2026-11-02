@@ -142,12 +142,13 @@ type Configuration struct {
 
 	// EnableOvnLB enables the OVN load balancer implementation. The flag that sets it keeps its
 	// historical name (--enable-lb), which is a user-facing interface.
-	EnableOvnLB       bool
-	EnableNP          bool
-	EnableEipSnat     bool
-	EnableExternalVpc bool
-	EnableEcmp        bool
-	EnableKeepVMIP    bool
+	EnableOvnLB             bool
+	EnableNP                bool
+	DisablePolicyEventIndex bool
+	EnableEipSnat           bool
+	EnableExternalVpc       bool
+	EnableEcmp              bool
+	EnableKeepVMIP          bool
 	// EnablePodLbSvc runs one Pod per LoadBalancer Service, which forwards the Service's EIP to its
 	// backends with iptables. The flag that sets it keeps its historical name (--enable-lb-svc).
 	EnablePodLbSvc bool
@@ -259,6 +260,7 @@ func ParseFlags() (*Configuration, error) {
 		argPodNicType                  = pflag.String("pod-nic-type", "veth-pair", "The default pod network nic implementation type")
 		argEnableOvnLB                 = pflag.Bool("enable-lb", true, "Enable the OVN load balancer")
 		argEnableNP                    = pflag.Bool("enable-np", true, "Enable network policy support")
+		argDisablePolicyEventIndex     = pflag.Bool("disable-policy-event-index", false, "Disable the NetworkPolicy event index for controlled performance experiments")
 		argNPEnforcement               = pflag.String("np-enforcement", "standard", "Network policy enforcement mode: standard or lax")
 		argEnableACLSampling           = pflag.Bool("enable-acl-sampling", false, "Enable experimental ACL sampling for NetworkPolicy events")
 		argACLSamplingSetID            = pflag.Uint32("acl-sampling-set-id", aclsampling.DefaultSetID, "Observation domain ID used by ACL sample collectors")
@@ -377,6 +379,7 @@ func ParseFlags() (*Configuration, error) {
 		LeaderElection:                 leaderElectionConfig,
 		EnableOvnLB:                    *argEnableOvnLB,
 		EnableNP:                       *argEnableNP,
+		DisablePolicyEventIndex:        *argDisablePolicyEventIndex,
 		ACLSampling: aclsampling.ControllerConfig{
 			Enabled:                       *argEnableACLSampling,
 			SetID:                         *argACLSamplingSetID,

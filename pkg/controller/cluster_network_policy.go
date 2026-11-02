@@ -679,6 +679,7 @@ func (c *Controller) generateCnpEgressAddressSet(cnpName, pgName string, rule v1
 
 // createCnpAddressSet creates an address set in the OVN DBs for a particular rule
 func (c *Controller) createCnpAddressSet(cnpName, ruleName, direction, asName string, addresses []string) error {
+	observePolicyAddressSetUpdate("cnp", "create")
 	if err := c.OVNNbClient.CreateAddressSet(asName, map[string]string{
 		clusterNetworkPolicyKey: fmt.Sprintf("%s/%s", cnpName, direction),
 	}); err != nil {
@@ -686,6 +687,7 @@ func (c *Controller) createCnpAddressSet(cnpName, ruleName, direction, asName st
 		return err
 	}
 
+	observePolicyAddressSetUpdate("cnp", "update")
 	if err := c.OVNNbClient.AddressSetUpdateAddress(asName, addresses...); err != nil {
 		klog.Errorf("failed to set addresses %q to address set %s: %v", strings.Join(addresses, ","), asName, err)
 		return err
@@ -892,7 +894,7 @@ func (c *Controller) updateCnpsByLabelsMatch(nsLabels, podLabels map[string]stri
 
 func (c *Controller) updateCnpsByLabelsChange(change labelChange) {
 	keys := c.policyEventIndex.candidatesForChange(policyEventClusterNetworkPolicy, change)
-	if !c.policyEventIndex.isReady() {
+	if c.config.DisablePolicyEventIndex || !c.policyEventIndex.isReady() {
 		cnps, err := c.cnpsLister.List(labels.Everything())
 		if err != nil {
 			klog.Errorf("failed to list cluster network policies for label update: %v", err)
@@ -902,6 +904,7 @@ func (c *Controller) updateCnpsByLabelsChange(change labelChange) {
 			keys = append(keys, cnp.Name)
 		}
 	}
+	observePolicyCandidates("cnp", "label", len(keys))
 	for _, key := range keys {
 		cnp, err := c.cnpsLister.Get(key)
 		if err != nil {
@@ -1410,7 +1413,7 @@ func doCnpLabelsMatch(namespaces *metav1.LabelSelector, pods *v1alpha2.Namespace
 			klog.Errorf("invalid namespace selector for CNP label update: %v", err)
 			return false
 		}
-		if nsSelector.Matches(labels.Set(nsLabels)) {
+		if policySelectorMatches("cnp", "namespace", nsSelector, labels.Set(nsLabels)) {
 			return true
 		}
 	} else if pods != nil {
@@ -1424,7 +1427,7 @@ func doCnpLabelsMatch(namespaces *metav1.LabelSelector, pods *v1alpha2.Namespace
 			klog.Errorf("invalid pod selector for CNP label update: %v", err)
 			return false
 		}
-		if nsSelector.Matches(labels.Set(nsLabels)) && (podLabels == nil || podSelector.Matches(labels.Set(podLabels))) {
+		if policySelectorMatches("cnp", "namespace", nsSelector, labels.Set(nsLabels)) && (podLabels == nil || policySelectorMatches("cnp", "pod", podSelector, labels.Set(podLabels))) {
 			return true
 		}
 	}
