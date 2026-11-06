@@ -61,6 +61,7 @@ func TestWebSocketBinaryStreamsAndExitStatus(t *testing.T) {
 					status = metav1.Status{Status: metav1.StatusFailure, Reason: remotecommand.NonZeroExitCodeReason, Details: &metav1.StatusDetails{Causes: []metav1.StatusCause{{Type: remotecommand.ExitCodeCauseType, Message: strconv.Itoa(code)}}}}
 				}
 				if err := json.MarshalWrite(streams[3], status); err != nil {
+					reportJSONDiagnostic(t, status, err)
 					t.Errorf("write status: %v", err)
 				}
 			}))
@@ -199,6 +200,7 @@ func serveSPDY(t *testing.T, w http.ResponseWriter, r *http.Request, payload []b
 	}
 	status := metav1.Status{Status: metav1.StatusFailure, Reason: remotecommand.NonZeroExitCodeReason, Details: &metav1.StatusDetails{Causes: []metav1.StatusCause{{Type: remotecommand.ExitCodeCauseType, Message: "42"}}}}
 	if err := json.MarshalWrite(streams[corev1.StreamTypeError], status); err != nil {
+		reportJSONDiagnostic(t, status, err)
 		t.Errorf("write status: %v", err)
 	}
 }

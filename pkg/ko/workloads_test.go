@@ -163,6 +163,7 @@ func TestDaemonSetFailureReportsOwnedPodLogsAndPreservesError(t *testing.T) {
 			return
 		}
 		data, err := json.Marshal(value)
+		reportJSONDiagnostic(t, value, err)
 		require.NoError(t, err)
 		_, err = w.Write(data)
 		require.NoError(t, err)
