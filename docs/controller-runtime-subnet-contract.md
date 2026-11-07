@@ -65,3 +65,14 @@ has consistency and conflict tests should IPPool status/finalizer/address-set
 ownership move. IP is last because Pod, VM, LSP and `syncIPCR` paths depend on
 it. No full OVN `envtest` or production IPAM refactor belongs in this contract
 PR.
+
+The first seam is `IPAM.WithTransaction`. It holds the IPAM lock for the
+transaction lifetime, stages allocation and release on deep-copied Subnet and
+IPPool state, and atomically publishes touched Subnets only when the callback
+succeeds. A callback error discards every staged change, including a static
+address rebind or a dual-stack partial allocation. The callback may perform
+external API or OVN I/O, but it must use the transaction methods for IPAM
+access; calling the top-level IPAM methods from the callback would deadlock.
+The seam is not wired to a new writer yet, and its tests cover commit,
+rollback, rebind recovery, dual-stack recovery, and serialized concurrent
+allocation.
