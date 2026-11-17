@@ -24,6 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	kubeovnv1 "github.com/kubeovn/kube-ovn/pkg/apis/kubeovn/v1"
+	"github.com/kubeovn/kube-ovn/pkg/controller/distributed"
 	"github.com/kubeovn/kube-ovn/pkg/ipam"
 	"github.com/kubeovn/kube-ovn/pkg/ovs"
 	"github.com/kubeovn/kube-ovn/pkg/ovsdb/ovnnb"
@@ -638,25 +639,34 @@ func (c *Controller) getSubnetMTU(subnet *kubeovnv1.Subnet) (int, error) {
 }
 
 func (c *Controller) updateSubnetDHCPOption(ctx context.Context, subnet *kubeovnv1.Subnet, needRouter bool) error {
-	mtu, err := c.getSubnetMTU(subnet)
-	if err != nil {
-		return err
-	}
-
-	vpc, err := c.vpcsLister.Get(subnet.Spec.Vpc)
-	if err != nil {
-		klog.Errorf("failed to get subnet's vpc '%s', %v", subnet.Spec.Vpc, err)
-		return err
-	}
-
 	var routerPortNames []string
-	if needRouter {
-		routerPortNames = append(routerPortNames, fmt.Sprintf("%s-%s", vpc.Status.Router, subnet.Name))
+	var vpc *kubeovnv1.Vpc
+	var err error
+	if c.ownsGlobalState() {
+		vpc, err = c.vpcsLister.Get(subnet.Spec.Vpc)
+		if err != nil {
+			klog.Errorf("failed to get subnet's vpc '%s', %v", subnet.Spec.Vpc, err)
+			return err
+		}
+		if needRouter {
+			routerPortNames = append(routerPortNames, fmt.Sprintf("%s-%s", vpc.Status.Router, subnet.Name))
+		}
 	}
-	dhcpOptionsUUIDs, err := c.OVNNbClient.UpdateDHCPOptions(subnet, mtu, routerPortNames...)
+	dhcpOptionsUUIDs, err := c.reconcileSubnetDHCPRows(subnet, routerPortNames...)
 	if err != nil {
-		klog.Errorf("failed to update DHCP and RA options for switch %s: %v", subnet.Name, err)
+		klog.Errorf("failed to update dhcp options for switch %s, %v", subnet.Name, err)
 		return err
+	}
+	if !c.ownsGlobalState() {
+		return nil
+	}
+
+	if needRouter {
+		lrpName := fmt.Sprintf("%s-%s", vpc.Status.Router, subnet.Name)
+		if err := c.OVNNbClient.UpdateLogicalRouterPortRA(lrpName, subnet.Spec.IPv6RAConfigs, subnet.Spec.EnableIPv6RA); err != nil {
+			klog.Errorf("update ipv6 ra configs for logical router port %s, %v", lrpName, err)
+			return err
+		}
 	}
 
 	if subnet.Status.DHCPv4OptionsUUID != dhcpOptionsUUIDs.DHCPv4OptionsUUID || subnet.Status.DHCPv6OptionsUUID != dhcpOptionsUUIDs.DHCPv6OptionsUUID {
@@ -687,6 +697,9 @@ func (c *Controller) handleAddOrUpdateSubnet(key string) error {
 		}
 		klog.Error(err)
 		return c.recordSubnetKeyError(key, "GetSubnetFailed", err)
+	}
+	if !c.ownsGlobalState() {
+		return c.reconcileDistributedFollowerSubnet(cachedSubnet.DeepCopy())
 	}
 	return c.reconcileSubnetObject(context.Background(), cachedSubnet)
 }
@@ -820,6 +833,9 @@ func (c *Controller) RecoverSubnetRuntime(ctx context.Context, _ *kubeovnv1.Subn
 func (c *Controller) reconcileSubnetObject(ctx context.Context, cachedSubnet *kubeovnv1.Subnet) error {
 	if err := c.checkSubnetRuntimeFence(ctx); err != nil {
 		return err
+	}
+	if !c.ownsGlobalState() {
+		return c.reconcileDistributedFollowerSubnet(cachedSubnet.DeepCopy())
 	}
 	klog.V(3).Infof("handle add or update subnet %s", cachedSubnet.Name)
 	subnet, err := c.formatSubnetWithContext(ctx, cachedSubnet)
@@ -975,10 +991,17 @@ func (c *Controller) prepareOvnSubnet(ctx context.Context, subnet *kubeovnv1.Sub
 			klog.Errorf("failed to check subnet %s, %v", subnet.Name, err)
 			return err
 		}
-		// create or update logical switch
-		if err := c.OVNNbClient.CreateLogicalSwitch(subnet.Name, vpc.Status.Router, subnet.Spec.CIDRBlock, gateway, gatewayMAC, needRouter, randomAllocateGW); err != nil {
-			klog.Errorf("create logical switch %s: %v", subnet.Name, err)
-			return err
+		if c.config.EnableDistributedSharedSubnet {
+			if err := c.prepareDistributedSubnet(subnet, vpc, gateway, gatewayMAC, needRouter); err != nil {
+				klog.Errorf("prepare distributed subnet %s: %v", subnet.Name, err)
+				return err
+			}
+		} else {
+			// create or update logical switch
+			if err := c.OVNNbClient.CreateLogicalSwitch(subnet.Name, vpc.Status.Router, subnet.Spec.CIDRBlock, gateway, gatewayMAC, needRouter, randomAllocateGW); err != nil {
+				klog.Errorf("create logical switch %s: %v", subnet.Name, err)
+				return err
+			}
 		}
 		return nil
 	}(); err != nil {
@@ -1008,6 +1031,94 @@ func (c *Controller) prepareOvnSubnet(ctx context.Context, subnet *kubeovnv1.Sub
 		return nil, err
 	}
 	return vpc, nil
+}
+
+func (c *Controller) prepareDistributedSubnet(subnet *kubeovnv1.Subnet, vpc *kubeovnv1.Vpc, gateway, gatewayMAC string, needRouter bool) error {
+	plan, err := c.distributedPlan(subnet, vpc)
+	if err != nil {
+		return err
+	}
+	if c.config.DistributedZone == "" {
+		return errors.New("distributed zone is empty")
+	}
+	if c.distributedICClient == nil {
+		return errors.New("distributed interconnect client is not initialized")
+	}
+	for _, subnetPlan := range plan.Subnets {
+		if err := c.distributedICClient.EnsureTransitSwitch(subnetPlan.TransitSwitchName, subnetPlan.CIDR); err != nil {
+			return err
+		}
+	}
+
+	isGatewayOwner := c.config.DistributedZone == c.config.DistributedGatewayOwner
+	if isGatewayOwner {
+		if err := c.OVNNbClient.CreateLogicalSwitch(subnet.Name, vpc.Status.Router, subnet.Spec.CIDRBlock, gateway, gatewayMAC, needRouter, false); err != nil {
+			return err
+		}
+	} else if err := c.OVNNbClient.CreateBareLogicalSwitch(subnet.Name); err != nil {
+		return err
+	}
+	for _, subnetPlan := range plan.Subnets {
+		for _, zonePlan := range subnetPlan.Zones {
+			if zonePlan.ZoneUID != c.config.DistributedZone {
+				continue
+			}
+			if err := c.OVNNbClient.CreateBareLogicalSwitch(zonePlan.LeafSwitchName); err != nil {
+				return fmt.Errorf("create distributed leaf switch %s: %w", zonePlan.LeafSwitchName, err)
+			}
+		}
+	}
+
+	if err := distributed.RenderZone(c.OVNNbClient, plan, c.config.DistributedZone); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Controller) distributedPlan(subnet *kubeovnv1.Subnet, vpc *kubeovnv1.Vpc) (distributed.Plan, error) {
+	subnets, err := c.subnetsLister.List(labels.Everything())
+	if err != nil {
+		return distributed.Plan{}, fmt.Errorf("list subnets for distributed VPC %s: %w", vpc.Name, err)
+	}
+	vpcUID := string(vpc.UID)
+	if vpcUID == "" {
+		vpcUID = vpc.Name
+	}
+	request := distributed.Request{
+		VPCUID:       vpcUID,
+		RouterName:   vpc.Status.Router,
+		GatewayOwner: c.config.DistributedGatewayOwner,
+		Zones:        []string{c.config.DistributedZone},
+	}
+	for _, item := range subnets {
+		if item.Spec.Vpc != subnet.Spec.Vpc || item.Spec.Vlan != "" || !isOvnSubnet(item) || item.Spec.CIDRBlock == "" {
+			continue
+		}
+		itemUID := string(item.UID)
+		if itemUID == "" {
+			itemUID = item.Name
+		}
+		request.Subnets = append(request.Subnets, distributed.Subnet{
+			Name:       item.Name,
+			VPCUID:     vpcUID,
+			SubnetUID:  itemUID,
+			CIDR:       item.Spec.CIDRBlock,
+			GatewayIP:  item.Spec.Gateway,
+			GatewayMAC: gatewayMACForSubnet(item),
+		})
+	}
+	plan, err := distributed.BuildPlan(request)
+	if err != nil {
+		return distributed.Plan{}, err
+	}
+	return plan, nil
+}
+
+func gatewayMACForSubnet(subnet *kubeovnv1.Subnet) string {
+	if subnet.Status.U2OInterconnectionMAC != "" {
+		return subnet.Status.U2OInterconnectionMAC
+	}
+	return ""
 }
 
 func (c *Controller) updateSubnetLoadBalancers(subnet *kubeovnv1.Subnet, vpc *kubeovnv1.Vpc) error {
@@ -1106,6 +1217,9 @@ func (c *Controller) reconcileSubnetBaseACLsWithContext(ctx context.Context, sub
 	}
 	switch {
 	case subnet.Spec.Routed:
+		if !c.ownsGlobalState() {
+			return nil
+		}
 		gateway := subnet.Spec.Gateway
 		if subnet.Status.U2OInterconnectionIP != "" && subnet.Spec.U2OInterconnection {
 			gateway = subnet.Status.U2OInterconnectionIP
@@ -1209,6 +1323,9 @@ func (c *Controller) handleDeleteLogicalSwitchWithContext(ctx context.Context, k
 }
 
 func (c *Controller) handleDeleteSubnet(subnet *kubeovnv1.Subnet) (err error) {
+	if !c.ownsGlobalState() {
+		return c.handleDeleteLogicalSwitch(subnet.Name)
+	}
 	return c.handleDeleteSubnetWithContext(context.Background(), subnet)
 }
 
@@ -1367,6 +1484,12 @@ func (c *Controller) updateVlanStatusForSubnetDeletionWithContext(ctx context.Co
 func (c *Controller) reconcileSubnetWithContext(ctx context.Context, subnet *kubeovnv1.Subnet) error {
 	if err := c.checkSubnetRuntimeFence(ctx); err != nil {
 		return err
+	}
+	if c.config.EnableDistributedSharedSubnet {
+		if c.ownsGlobalState() {
+			return c.reconcileNamespaces(subnet)
+		}
+		return nil
 	}
 	if err := c.reconcileNamespaces(subnet); err != nil {
 		klog.Errorf("reconcile namespaces for subnet %s failed, %v", subnet.Name, err)
